@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { apiUrl } from '@/lib/api-base';
 import {
@@ -35,14 +35,19 @@ import {
   Palette,
   Puzzle,
   Sparkles,
-  ListTree,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { ThemeTab } from './settings/theme-tab';
 import { PluginsTab } from './settings/plugins-tab';
 import { BackendTab } from './settings/backend-tab';
+import { SpeechSettings } from './settings/speech-settings';
 import { ClientConfigTab } from './settings/client-config-tab';
+import { ChatConnectionSettings } from './settings/chat-connection-settings';
+import { ChatInputSettings } from './settings/chat-input-settings';
 import { UpdateTab } from './settings/update-tab';
+import { ManagementTab, navigateFromSettings } from './settings/management-tab';
+
+const PluginGallery = lazy(() => import('./sections/plugins/plugin-gallery').then(module => ({ default: module.PluginGallery })));
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -68,8 +73,6 @@ export function SettingsDialog() {
     connectionHistory,
     taskBoardVisible,
     setTaskBoardVisible,
-    classicNavigation,
-    setClassicNavigation,
     userLevel,
   } = useAgentTeamsStore();
 
@@ -160,9 +163,11 @@ export function SettingsDialog() {
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="connection" className="w-full">
-          <TabsList className={`grid w-full ${isStateless ? 'grid-cols-7' : 'grid-cols-6'}`}>
+        <Tabs defaultValue="management" className="w-full">
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 [&_[data-slot=tabs-trigger]]:h-9">
+            <TabsTrigger value="management">管理</TabsTrigger>
             <TabsTrigger value="connection">连接</TabsTrigger>
+            <TabsTrigger value="chat">聊天</TabsTrigger>
             {isStateless && (
               <TabsTrigger value="client">
                 <Cpu className="w-3.5 h-3.5 mr-1" />
@@ -191,6 +196,14 @@ export function SettingsDialog() {
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="management" className="py-4">
+            <ManagementTab />
+          </TabsContent>
+
+          <TabsContent value="chat" className="py-4">
+            <ChatInputSettings />
+          </TabsContent>
+
           <TabsContent value="updates" className="py-4">
             <UpdateTab />
           </TabsContent>
@@ -202,6 +215,7 @@ export function SettingsDialog() {
           )}
 
           <TabsContent value="connection" className="space-y-5 py-4">
+            <ChatConnectionSettings />
             {/* Controller URL — L1 only (F1b): the per-request ?controllerUrl=
                 override is ignored server-side for non-admin sessions, so the
                 field is hidden for them instead of silently mis-tested. */}
@@ -345,7 +359,7 @@ export function SettingsDialog() {
                       </span>
                       <span className="truncate flex-1">{attempt.url}</span>
                       {attempt.latency !== null && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">
+                        <Badge variant="outline" className="text-xs shrink-0">
                           {attempt.latency}ms
                         </Badge>
                       )}
@@ -372,7 +386,7 @@ export function SettingsDialog() {
                   任务看板
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  关闭后侧边栏的「任务看板」导航项会隐藏,直接访问 URL 仍然可以打开该 section
+                  关闭后工作台的任务与产物分类会隐藏，原有直接链接仍然可用
                 </p>
               </div>
               <Switch
@@ -381,26 +395,11 @@ export function SettingsDialog() {
               />
             </div>
 
-            {/* Classic navigation (PRD §5.4)：v1.x 平铺导航过渡开关 */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="flex items-center gap-2">
-                  <ListTree className="w-3.5 h-3.5" />
-                  经典导航
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  开启后侧边栏回退到旧版的「基础/运行时/资源中心」平铺布局；新版的「工作台/控制台」两级导航为默认。经典导航保留一个版本周期
-                </p>
-              </div>
-              <Switch
-                checked={classicNavigation}
-                onCheckedChange={setClassicNavigation}
-              />
-            </div>
           </TabsContent>
 
-          <TabsContent value="backends" className="py-4">
+          <TabsContent value="backends" className="space-y-6 py-4">
             <BackendTab />
+            <SpeechSettings canManage={isL1} />
           </TabsContent>
 
           <TabsContent value="theme" className="py-4">
@@ -408,7 +407,10 @@ export function SettingsDialog() {
           </TabsContent>
 
           <TabsContent value="plugins" className="py-4">
-            <PluginsTab />
+            <div className="space-y-6">
+              <Suspense fallback={<p className="text-sm text-muted-foreground">加载插件…</p>}><PluginGallery onNavigate={navigateFromSettings} /></Suspense>
+              <PluginsTab />
+            </div>
           </TabsContent>
         </Tabs>
 
@@ -434,7 +436,7 @@ export function SettingsDialog() {
           {testResult.error && (
             <p className="text-xs text-destructive">{testResult.error}</p>
           )}
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             测试地址: {tempUrl} · {new Date(testResult.timestamp).toLocaleTimeString('zh-CN')}
           </p>
         </div>

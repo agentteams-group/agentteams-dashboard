@@ -1,7 +1,13 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderUI, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownMessage } from './markdown-message';
+
+function render(ui: Parameters<typeof renderUI>[0]) {
+  const client = new QueryClient();
+  return renderUI(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+}
 
 vi.mock('./mermaid-renderer', () => ({
   MermaidRenderer: () => null,
@@ -14,6 +20,65 @@ afterEach(() => {
 });
 
 describe('MarkdownMessage', () => {
+  it.each([undefined, '<p>任务已完成，结果已通知 requester（admin）。</p>'])('integrates structured mentions into the message paragraph (HTML=%s)', formattedContent => {
+    const { container } = render(<MarkdownMessage content="任务已完成，结果已通知 requester（admin）。" formattedContent={formattedContent} mentionedUserIds={['@admin:hs.test']} memberMap={{ '@admin:hs.test': '管理员' }} />);
+    const mention = container.querySelector('.matrix-mention');
+    expect(mention).toHaveTextContent('@管理员');
+    expect(mention?.parentElement?.tagName).toBe('P');
+    expect(mention?.parentElement).toHaveTextContent('@管理员 任务已完成');
+    expect(screen.queryByText('@ 提到了你')).not.toBeInTheDocument();
+  });
+
+  it('does not repeat a mention already written in the body', () => {
+    const { container } = render(<MarkdownMessage content="xxx @admin 这样处理" mentionedUserIds={['@admin:hs.test']} memberMap={{ '@admin:hs.test': 'admin' }} />);
+    expect(container.querySelectorAll('.matrix-mention')).toHaveLength(1);
+    expect(container.querySelector('p')).toHaveTextContent('xxx @admin 这样处理');
+  });
+
+  it('does not repeat a mention represented by a Matrix user link', () => {
+    const { container } = render(<MarkdownMessage content="请看" mentionedUserIds={['@admin:hs.test']} formattedContent={'<p><a href="https://matrix.to/#/%40admin%3Ahs.test">admin</a> 请看</p>'} />);
+    expect(container.querySelectorAll('.matrix-mention')).toHaveLength(1);
+    expect(container.querySelector('p')).toHaveTextContent('@admin 请看');
+  });
+  it('keeps the @ prefix and highlights known mentions without changing code or email addresses', () => {
+    const { container } = render(<MarkdownMessage content={'@admin:hs.test 请看 **@张三**，联系 bob@example.com，代码 `@admin:hs.test`'} memberMap={{ '@admin:hs.test': '管理员', '@zhang:hs.test': '张三' }} />);
+    expect([...container.querySelectorAll('.matrix-mention')].map(node => node.textContent)).toEqual(['@管理员', '@张三']);
+    expect(container.querySelector('code')).toHaveTextContent('@admin:hs.test');
+    expect(container.textContent).toContain('bob@example.com');
+  });
+
+  it('highlights mentions in formatted Matrix messages', () => {
+    const { container } = render(<MarkdownMessage content="@admin 请看" formattedContent="<p>@admin 请看</p>" memberMap={{ '@admin:hs.test': 'admin' }} />);
+    expect(container.querySelector('.matrix-mention')).toHaveTextContent('@admin');
+    expect(container.querySelector('.matrix-mention')).toHaveClass('text-blue-600');
+  });
+  it('renders Matrix user links as blue @name mentions', () => {
+    const { container } = render(<MarkdownMessage content="@罗承华 请看" formattedContent={'<p><a href="https://matrix.to/#/%40luo%3Ahs.test">罗承华</a> 请看</p>'} />);
+    expect(container.querySelector('.matrix-mention')).toHaveTextContent('@罗承华');
+    expect(container.querySelector('.matrix-mention')).toHaveClass('text-blue-600');
+  });
+  it('renders monitoring, logs and tracing as readable evidence blocks with same-page detail links', () => {
+    const hrefs = ['#console/governance/monitoring?kind=worker&name=dev', '#console/governance/monitoring?kind=worker&name=dev&view=logs', '#console/governance/tracing?worker=dev&trace=abc&span=tool-1'];
+    const content = hrefs.map((href, index) => `> **${['运行监控', '关键日志', 'Tracing'][index]} · dev**\n>\n> 采样 11:00 · CPU 0.22% · HTTP 429\n>\n> [查看详情](${href})`).join('\n\n');
+    const { container } = render(<MarkdownMessage content={content} isStreaming />);
+    expect(container.querySelectorAll('[data-observability-evidence]')).toHaveLength(3);
+    for (const link of screen.getAllByRole('link', { name: '查看详情' })) {
+      expect(link).not.toHaveAttribute('target', '_blank');
+      expect(hrefs).toContain(link.getAttribute('href'));
+    }
+    expect(screen.getByText('关键日志 · dev')).toBeInTheDocument();
+  });
+
+  it.each([false, true])('supports formatted Matrix HTML evidence without changing normal quotes or external links (streaming=%s)', (isStreaming) => {
+    const href = '#console/governance/monitoring?kind=component&name=controller&view=logs';
+    const { container } = render(<MarkdownMessage content="日志查询结果" isStreaming={isStreaming} formattedContent={`<blockquote><p><strong>日志证据</strong></p><pre>11:00 request timed out</pre><p><a href="${href.replaceAll('&', '&amp;')}" target="_blank">查看日志</a></p></blockquote><blockquote><p>原消息引用</p></blockquote><a href="https://example.com">外部文档</a>`} />);
+    expect(container.querySelectorAll('[data-observability-evidence]')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '查看日志' })).not.toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: '外部文档' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByText('原消息引用').closest('blockquote')).toHaveClass('italic');
+    expect(screen.getByText('11:00 request timed out')).toBeInTheDocument();
+  });
+
   it('renders plain text through markdown', () => {
     render(<MarkdownMessage content="hello **world**" />);
 
@@ -24,6 +89,24 @@ describe('MarkdownMessage', () => {
     const { container } = render(<MarkdownMessage content={'```js\nconst a = 1;\n```'} />);
 
     expect(container.querySelector('pre code')).not.toBeNull();
+  });
+
+  it('preserves highlighted command text for display and copying', () => {
+    const command = 'agt tracing worker demo-hermes --limit 5 --output table';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const { container } = render(<MarkdownMessage content={'```bash\n' + command + '\n```'} />);
+    expect(container.querySelector('pre code')?.textContent?.trim()).toBe(command);
+    expect(screen.getByText('bash')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '复制代码' }));
+    expect(writeText).toHaveBeenCalledWith(command);
+  });
+
+  it('preserves inline code text in task results and artifact paths', () => {
+    const { container } = render(<MarkdownMessage content={'文件：`shared/tasks/demo/result.txt`，结果：`95`'} />);
+
+    expect([...container.querySelectorAll('code')].map(node => node.textContent))
+      .toEqual(['shared/tasks/demo/result.txt', '95']);
   });
 
   it('streaming + plain text uses the lightweight pre path with a cursor', () => {
@@ -261,38 +344,25 @@ describe('MarkdownMessage', () => {
     expect(link?.getAttribute('href')).toBe(
       '/api/matrix/media/v3/download/example.org/doc1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
     );
-    expect(screen.getByText('(2.0 KB)')).toBeInTheDocument();
+    expect(screen.getByText('PDF · 2.0 KB')).toBeInTheDocument();
   });
 
-  it('renders an HTML file message inline with a download link', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        text: async () => '<html><body><h1>Hello</h1></body></html>',
-      })
-    );
+  it('uses the attachment card for HTML file messages, without loading a preview until clicked', async () => {
+    const read = vi.fn().mockResolvedValue(new Response('<html><body><h1>Hello</h1></body></html>'));
+    vi.stubGlobal('fetch', read);
+    render(<MarkdownMessage content="index.html" msgType="m.file" mediaUrl="mxc://example.org/page1"
+      mediaInfo={{ mimetype: 'text/html', size: 1234 }} homeserver="https://hs.example.org" />);
 
-    render(
-      <MarkdownMessage
-        content="index.html"
-        msgType="m.file"
-        mediaUrl="mxc://example.org/page1"
-        mediaInfo={{ mimetype: 'text/html', size: 1234 }}
-        homeserver="https://hs.example.org"
-      />
-    );
-
-    const frame = await screen.findByTitle('index.html');
-    expect(frame.tagName).toBe('IFRAME');
-    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
-    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: '下载 index.html' })).toHaveAttribute('href',
+      '/api/matrix/media/v3/download/example.org/page1/?homeserver=https%3A%2F%2Fhs.example.org&download=true');
+    fireEvent.click(screen.getByRole('button', { name: '查看 index.html' }));
+    const frame = await waitFor(() => {
+      const iframe = document.querySelector('iframe[title="index.html"]');
+      expect(iframe).not.toBeNull();
+      return iframe!;
+    });
     expect(frame.getAttribute('srcdoc')).toContain('<h1>Hello</h1>');
-
-    const link = screen.getByRole('link', { name: /下载 index\.html/ });
-    expect(link.getAttribute('href')).toBe(
-      '/api/matrix/media/v3/download/example.org/page1/?homeserver=https%3A%2F%2Fhs.example.org&download=true'
-    );
   });
 
   it('linkifies bare mxc:// URIs in plain text bodies', () => {

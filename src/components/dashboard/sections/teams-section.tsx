@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, Users, Download, ArrowUpDown, LayoutGrid, List, X, Rocket } from 'lucide-react';
+import { Plus, Users, ArrowUpDown, LayoutGrid, List, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Select,
   SelectContent,
@@ -14,7 +16,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useCreateTeam, useDeleteTeam, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,7 +27,7 @@ import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
 import { toast } from 'sonner';
 import { formatErrorMessage } from '@/lib/api-error';
-import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse, ManagerResponse } from '@/lib/agentteams-api';
+import type { CreateTeamRequest, UpdateTeamRequest, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { pickLlmTuningSet } from '@/lib/llm-tuning';
 import { ITEMS_PER_PAGE, SORT_OPTIONS, type SortKey } from './teams/team-types';
 import {
@@ -38,11 +39,9 @@ import {
 import { TeamCard } from './teams/team-card';
 import { TeamTable } from './teams/team-table';
 import { TeamCreateDialog } from './teams/team-create-dialog';
-import { DevelopmentSquadDialog } from './teams/development-squad-dialog';
 import { TeamEditDialog, type TeamEditForm } from './teams/team-edit-dialog';
-import { TeamDetailDialog } from './teams/team-detail-dialog';
+import { TeamDrawer } from './teams/team-drawer';
 import { TeamTopologyDialog } from './teams/team-topology-dialog';
-import { TopologyOverview } from './teams/team-topology-overview';
 import { PaginationFooter } from './teams/team-pagination';
 
 function TeamsSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
@@ -74,17 +73,13 @@ function TeamsSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' })
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的团队' : '暂无团队'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个团队
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={Users}
+          title={hasQuery ? '没有匹配的团队' : '暂无团队'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个团队', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );
@@ -93,17 +88,15 @@ function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () =>
 export function TeamsSection() {
   const { data: teams, isLoading, isError, refetch, isRefetching } = useTeams();
   const { data: workers } = useWorkers();
-  const { data: managers } = useManagers();
   const queryClient = useQueryClient();
   const { options: modelOptions, sessionIssue } = useModelSelection();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const createTeam = useCreateTeam();
   const deleteTeam = useDeleteTeam();
   const updateTeam = useUpdateTeam();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [developmentSquadOpen, setDevelopmentSquadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailTeam, setDetailTeam] = useState<TeamResponse | null>(null);
   const [editTeam, setEditTeam] = useState<TeamResponse | null>(null);
@@ -265,7 +258,10 @@ export function TeamsSection() {
   );
 
   const workersList: WorkerResponse[] = workers || [];
-  const managersList: ManagerResponse[] = managers || [];
+  // 抽屉打开期间跟随列表刷新（成员/阶段/模型保存后立即反映，不必关了重开）。
+  const liveDetailTeam = detailTeam
+    ? (teams?.find((team) => team.name === detailTeam.name) ?? detailTeam)
+    : null;
 
   if (isError && !isConnected) {
     return <ApiErrorState />;
@@ -273,31 +269,19 @@ export function TeamsSection() {
 
   return (
     <div className="space-y-6">
-      <TopologyOverview />
-
       <SectionHeader
-        title="团队"
+        title={`团队${teams ? ` · ${teams.length}` : ''}`}
         description="管理团队和协作配置"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!teams || teams.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
-            <Button size="sm" variant="outline" disabled={!isConnected} onClick={() => setDevelopmentSquadOpen(true)}>
-              <Rocket className="w-4 h-4 mr-1" aria-hidden="true" />部署开发小队
-            </Button>
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !teams || teams.length === 0 },
+            ]} />
             <Button
               size="sm"
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
@@ -415,16 +399,6 @@ export function TeamsSection() {
         </>
       )}
 
-      <DevelopmentSquadDialog
-        open={developmentSquadOpen}
-        onOpenChange={setDevelopmentSquadOpen}
-        onDeployed={() => {
-          for (const key of ['agentteams-teams', 'agentteams-workers', 'agentteams-skills', 'agentteams-worker-skills']) {
-            void queryClient.invalidateQueries({ queryKey: [key] });
-          }
-        }}
-      />
-
       <TeamCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -451,16 +425,27 @@ export function TeamsSection() {
         workers={workersList}
       />
 
-      <TeamDetailDialog
-        team={detailTeam}
+      <TeamDrawer
+        team={liveDetailTeam}
+        allTeams={teams || []}
         workers={workersList}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
         onOpenChange={(open) => !open && setDetailTeam(null)}
+        onChanged={() => {
+          void refetch();
+          void queryClient.invalidateQueries({ queryKey: ['agentteams-workers'] });
+        }}
+        onDeleted={() => {
+          setDetailTeam(null);
+          void refetch();
+        }}
       />
 
       <TeamTopologyDialog
         team={topologyTeam}
         workers={workersList}
-        managers={managersList}
         onOpenChange={(open) => !open && setTopologyTeam(null)}
       />
 

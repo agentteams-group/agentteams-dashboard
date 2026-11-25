@@ -1,7 +1,7 @@
 'use client';
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider, useTheme } from './theme-provider';
 import { useThemeStore } from '@/lib/theme/theme-store';
@@ -42,6 +42,50 @@ describe('ThemeProvider + useTheme', () => {
     cleanup();
     clearTheme();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('keeps a fixed theme across nightfall without a clock timer', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
+    useThemeStore.setState({ themeId: 'light' });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    expect(document.documentElement.dataset.theme).toBe('light');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    fireEvent.click(screen.getByText('go light'));
+    act(() => vi.advanceTimersByTime(0));
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.setSystemTime(new Date(2026, 10, 8, 23));
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('keeps an explicit warm theme after sleep at night', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
+    useThemeStore.setState({ themeId: 'warm' });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    expect(document.documentElement.dataset.theme).toBe('warm');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    act(() => {
+      vi.setSystemTime(new Date(2026, 10, 7, 22));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(document.documentElement.dataset.theme).toBe('warm');
+    expect(document.documentElement.classList.contains('warm')).toBe(true);
+  });
+
+  it('keeps the fixed theme when enterprise locking has no default override', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 18, 59, 59));
+    useThemeStore.setState({ themeId: 'light' });
+    render(<ThemeProvider disableEnterprise><Probe /></ThemeProvider>);
+    act(() => useThemeStore.getState().setEnterpriseConfig({ themes: [], locked: true }));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(document.documentElement.dataset.theme).toBe('light');
   });
 
   it('applies the selected built-in theme to the document', async () => {

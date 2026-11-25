@@ -88,6 +88,37 @@ const joinedRoom = (overrides: Partial<MatrixJoinedRoom> = {}): MatrixJoinedRoom
 });
 
 describe('useGlobalMatrixSync', () => {
+  it('hydrates exact receipts without rendering them or reordering the room', async () => {
+    const rid = '!receipt:test';
+    const queryClient = getQueryClientMock();
+    setRoomCache(queryClient, rid, [msgEvent('$message', 100)]);
+    useRoomMetaStore.getState().setRoomMeta(rid, { lastMessageTs: 100 });
+    const receipt: MatrixEvent = {
+      event_id: '$ack', sender: '@agent:test', type: 'com.agentteams.session_receipt', origin_server_ts: 9999,
+      content: { version: 1, status: 'read', 'm.relates_to': { rel_type: 'com.agentteams.session_receipt', event_id: '$message' } },
+    };
+    vi.mocked(matrixApi.sync).mockResolvedValueOnce(syncWith({ [rid]: joinedRoom({ timeline: { events: [receipt], limited: false, prev_batch: 'p' } }) }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useRoomMetaStore.getState().meta[rid].lastMessageTs).toBe(100);
+    expect(queryClient.getQueryData(['message-read-status', 'https://matrix.test', '@user:test', rid, '$message'])).toEqual([receipt]);
+    expect(queryClient.getQueryData<{ pages: Array<{ chunk: MatrixEvent[] }> }>(['matrix-messages', rid])?.pages[0].chunk.map((event) => event.event_id)).toEqual(['$message']);
+    unmount();
+  });
+  it('refreshes resource projections on a new join, without refreshing on every message', async () => {
+    vi.useFakeTimers();
+    resetStores();
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({ '!new:test': joinedRoom({}) }));
+    const queryClient = getQueryClientMock();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['agentteams-teams'] });
+    const count = invalidate.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(invalidate.mock.calls.length).toBe(count);
+    unmount();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     resetStores();
@@ -130,6 +161,25 @@ describe('useGlobalMatrixSync', () => {
     expect(meta['!r2:test'].lastMessageTs).toBe(2000);
     expect(meta['!r2:test'].lastMessagePreview).toBe('msg $e2');
 
+    unmount();
+  });
+
+  it('does not replace the sidebar preview or ordering with a background assistant wake', async () => {
+    const wake = msgEvent('$wake', 2000, { msgtype: 'm.notice',
+      'org.agentteams.coordination': { channel_meta: { sender_id: '@agent:test',
+        agent_matrix_user_id: '@agent:test', teamharness_coordination: { kind: 'assistant_digest' } } },
+    });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      '!r1:test': joinedRoom({ timeline: { events: [msgEvent('$answer', 1000), wake], limited: false, prev_batch: 'p' },
+        unread_notifications: { highlight_count: 0, notification_count: 0 } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useRoomMetaStore.getState().meta['!r1:test']).toMatchObject({
+      lastMessageTs: 1000, lastMessagePreview: 'msg $answer', unreadCount: 0,
+    });
     unmount();
   });
 

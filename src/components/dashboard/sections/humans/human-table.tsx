@@ -1,11 +1,12 @@
 'use client';
 
-import { Eye, Trash2, UserCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
-import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
+import { OverflowText } from '@/components/dashboard/overflow-text';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { PERMISSION_BADGE_CLASSES, PERMISSION_LABELS } from './human-types';
 import {
   Table,
@@ -24,23 +25,24 @@ function permissionLabel(level: number): string {
 export function HumanTable({
   humans,
   onView,
+  onEdit,
   onDelete,
+  onResetPassword,
 }: {
   humans: HumanResponse[];
   onView: (_human: HumanResponse) => void;
+  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
+  onResetPassword?: (_human: HumanResponse) => void;
 }) {
   return (
-    <Card className="glass-card overflow-hidden">
-      <Table>
+    <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+      <Table className="min-w-[640px] table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead>显示名称</TableHead>
-            <TableHead>阶段</TableHead>
-            <TableHead>权限</TableHead>
-            <TableHead>邮箱</TableHead>
-            <TableHead>房间</TableHead>
+            <TableHead className="w-[40%]">用户</TableHead>
+            <TableHead>状态</TableHead>
+            <TableHead>角色</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -49,16 +51,29 @@ export function HumanTable({
             // CR 标尺缺省按 2（团队成员）显示，与 controller/插件默认一致
             const level = human.permissionLevel ?? 2;
             return (
-              <TableRow key={human.name}>
+              <TableRow
+                key={human.name}
+                className="cursor-pointer"
+                onClick={() => onView(human)}
+              >
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    <StatusDot phase={human.phase} />
-                    <UserCheck className="w-4 h-4 text-teal-500 shrink-0" aria-hidden="true" />
-                    <span className="font-medium truncate max-w-[180px]">{human.name}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <AccountAvatar kind="human" name={human.name} label={human.displayName || human.name} className="size-6" />
+                    <button
+                      type="button"
+                      className="max-w-[180px] truncate text-left font-medium hover:underline"
+                      title={human.displayName || human.name}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onView(human);
+                      }}
+                    >
+                      {human.displayName || human.name}
+                    </button>
+                    {human.displayName && human.displayName !== human.name && (
+                      <OverflowText text={human.name} className="text-xs text-muted-foreground" />
+                    )}
                   </div>
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs truncate max-w-[120px] block">{human.displayName}</span>
                 </TableCell>
                 <TableCell>
                   <PhaseBadge kind="human" phase={human.phase} />
@@ -71,40 +86,24 @@ export function HumanTable({
                     {permissionLabel(level)}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  {human.email ? (
-                    <span className="text-xs truncate max-w-[150px] block">{human.email}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground">
-                    {human.rooms?.length || 0}
-                  </span>
-                </TableCell>
-                <TableCell>
+                <TableCell onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0"
                       onClick={() => onView(human)}
                       title="查看详情"
                       aria-label={`查看 ${human.name} 详情`}
                     >
-                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                      详情
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                      onClick={() => onDelete(human.name)}
-                      title="删除"
-                      aria-label={`删除 ${human.name}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                    </Button>
+                    <ResourceListMenu label={`${human.name} 更多操作`} items={[
+                      { label: '编辑', onSelect: () => onEdit(human) },
+                      ...(onResetPassword && human.passwordResetAvailable
+                        ? [{ label: '重置密码', onSelect: () => onResetPassword(human) }]
+                        : []),
+                      { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
+                    ]} />
                   </div>
                 </TableCell>
               </TableRow>

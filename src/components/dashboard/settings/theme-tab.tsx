@@ -62,45 +62,45 @@ import {
  */
 
 const LIGHT_PRESET: Record<string, string> = {
-  '--primary': '#10b981',
+  '--primary': '#25282d',
   '--primary-foreground': '#ffffff',
   '--background': '#ffffff',
-  '--foreground': '#111827',
+  '--foreground': '#22252a',
   '--card': '#ffffff',
-  '--card-foreground': '#111827',
+  '--card-foreground': '#22252a',
   '--popover': '#ffffff',
-  '--popover-foreground': '#111827',
-  '--secondary': '#f3f4f6',
-  '--secondary-foreground': '#111827',
-  '--muted': '#f3f4f6',
-  '--muted-foreground': '#6b7280',
-  '--accent': '#f3f4f6',
-  '--accent-foreground': '#111827',
+  '--popover-foreground': '#22252a',
+  '--secondary': '#f1f2f4',
+  '--secondary-foreground': '#22252a',
+  '--muted': '#f1f2f4',
+  '--muted-foreground': '#6f747d',
+  '--accent': '#eceef1',
+  '--accent-foreground': '#22252a',
   '--border': '#e5e7eb',
-  '--input': '#e5e7eb',
-  '--ring': '#10b981',
+  '--input': '#d4d7dc',
+  '--ring': '#858b94',
   '--destructive': '#ef4444',
   '--destructive-foreground': '#ffffff',
 };
 
 const DARK_PRESET: Record<string, string> = {
-  '--primary': '#10b981',
-  '--primary-foreground': '#ffffff',
-  '--background': '#0a0a0a',
-  '--foreground': '#fafafa',
-  '--card': '#171717',
-  '--card-foreground': '#fafafa',
-  '--popover': '#171717',
-  '--popover-foreground': '#fafafa',
-  '--secondary': '#262626',
-  '--secondary-foreground': '#fafafa',
-  '--muted': '#262626',
-  '--muted-foreground': '#a3a3a3',
-  '--accent': '#262626',
-  '--accent-foreground': '#fafafa',
-  '--border': '#3f3f46',
-  '--input': '#3f3f46',
-  '--ring': '#10b981',
+  '--primary': '#e9ebef',
+  '--primary-foreground': '#24262c',
+  '--background': '#1b1d22',
+  '--foreground': '#eeeff3',
+  '--card': '#22252b',
+  '--card-foreground': '#eeeff3',
+  '--popover': '#25282e',
+  '--popover-foreground': '#eeeff3',
+  '--secondary': '#2b2e35',
+  '--secondary-foreground': '#eeeff3',
+  '--muted': '#2b2e35',
+  '--muted-foreground': '#a5aab4',
+  '--accent': '#2d3037',
+  '--accent-foreground': '#eeeff3',
+  '--border': '#34373e',
+  '--input': '#41464f',
+  '--ring': '#9198a4',
   '--destructive': '#f87171',
   '--destructive-foreground': '#ffffff',
 };
@@ -324,7 +324,7 @@ export function ThemeTab() {
           >
             {themeIcon(t.id, t.base)}
             <span className="flex-1 truncate">{t.nameZh || t.name}</span>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               {t.base === 'dark' ? '暗色底' : '亮色底'}
             </Badge>
             {theme === t.id && (
@@ -391,7 +391,7 @@ function ThemeCard({
       {badges.length > 0 && (
         <span className="flex gap-1">
           {badges.map((b) => (
-            <Badge key={b} variant="secondary" className="text-[11px] px-1 h-4">
+            <Badge key={b} variant="secondary" className="text-xs px-1 h-4">
               {b}
             </Badge>
           ))}

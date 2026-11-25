@@ -11,7 +11,7 @@ vi.mock('@/lib/dashboard-session', () => ({
   getSessionFromRequest: async () => null,
 }));
 
-import { POST, auditActionFor } from './route';
+import { POST, auditActionFor } from './handlers';
 
 function buildRequest(eventType: string, content: Record<string, unknown>): NextRequest {
   return new NextRequest(

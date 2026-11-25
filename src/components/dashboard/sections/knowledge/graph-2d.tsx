@@ -457,7 +457,7 @@ export function KnowledgeGraph({
         <button type="button" onClick={() => { setFocus(null); animateTo(view, 320); }} title="复位视野" aria-label="复位视野"
           className="h-6 w-6 rounded-md border border-border bg-background/85 text-sm leading-none hover:bg-accent">⟳</button>
       </div>
-      <div className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-muted-foreground">
+      <div className="pointer-events-none absolute bottom-1 left-2 text-xs text-muted-foreground">
         滚轮缩放 · 拖拽平移 · 点簇根聚焦 · 双击节点邻域 · Esc 退出
       </div>
     </div>

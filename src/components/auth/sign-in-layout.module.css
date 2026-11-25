@@ -1,0 +1,9 @@
+.surface {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #f4faf7;
+  background:
+    linear-gradient(110deg, rgb(8 17 28 / 70%), rgb(8 17 28 / 18%) 72%),
+    #101e26 url('../../../public/images/workspace-night.webp') 57% center / cover no-repeat;
+}

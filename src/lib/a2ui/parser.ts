@@ -46,6 +46,12 @@ export interface ParsedA2uiBlock {
   text?: string;
   /** Whether this block is still streaming (incomplete) */
   isStreaming?: boolean;
+  /**
+   * Narration text ChatIR moved into the run's process fold (qwenpaw thread
+   * commentary, earlier steps of a multi-step answer). Rendered inside the
+   * "过程" disclosure instead of the answer bubble.
+   */
+  inProcess?: boolean;
   /** Runtime the block was attributed to (drives corner badges in Chat). */
   runtimeHint?: string;
 }
@@ -223,6 +229,9 @@ export function parseA2uiContent(
     };
   }
 
+  const teamAdminSelection = parseTeamAdminSelection(body);
+  if (teamAdminSelection) return teamAdminSelection;
+
   const confirmation = parseToolGuardConfirmation(body);
   if (confirmation) {
     return {
@@ -243,9 +252,31 @@ export function parseA2uiContent(
       hasToolCall: false,
     };
   }
-
-  // 2. No A2UI markers found: try legacy format parsing.
   return parseLegacyContent(body, formattedBody);
+}
+
+/** Plain-text runtimes can request a dropdown without custom Matrix content. */
+export function parseTeamAdminSelection(body: string): A2uiParseResult | null {
+  const selection = body.match(/```team-admin\s*\n([\s\S]*?)\n```/);
+  if (selection) {
+    try {
+      const request = JSON.parse(selection[1]);
+      const normalized = normalizeConfirmationPayload({ ...request, tool_name: 'select_team_admin' });
+      if (normalized?.payload.options?.length && normalized.payload.question) {
+        const before = body.slice(0, selection.index).trim();
+        const after = body.slice((selection.index ?? 0) + selection[0].length).trim();
+        return {
+          blocks: [
+            ...(before ? [{ type: 'text' as const, text: before }] : []),
+            { type: 'confirmation', payload: normalized.payload },
+            ...(after ? [{ type: 'text' as const, text: after }] : []),
+          ],
+          hasA2ui: false, hasThinking: false, hasToolCall: false,
+        };
+      }
+    } catch { /* Keep malformed requests visible. */ }
+  }
+  return null;
 }
 
 /**
@@ -337,6 +368,7 @@ function hasUnclosedA2uiMarker(content: string, isHtml: boolean): boolean {
 }
 
 export function parseEmbeddedAgentReprBlocks(body: string): A2uiParseResult | null {
+  if (typeof body !== 'string') return null;
   const blocks: ParsedA2uiBlock[] = [];
   let hasThinking = false;
   let hasToolCall = false;
@@ -399,6 +431,125 @@ export function parseToolGuardConfirmation(body: string): Record<string, unknown
     approveReply: '/approve',
     rejectReply: '拒绝',
   };
+}
+
+/**
+ * Recognize the QwenPaw tool-guard channel approval notification
+ * (`format_channel_approval_body`). Unlike the Tool Guard prompt above this
+ * one is markdown with bullet fields and an explicit action list:
+ *
+ *   🛡️ **Approval Required**
+ *
+ *   • **Tool**: `execute_shell_command`
+ *   • **Severity**: 🔴 CRITICAL
+ *   • **Findings**: 3
+ *
+ *   **Risk Details:**
+ *   - [CRITICAL] ...
+ *
+ *   **Parameters:**
+ *   ```json
+ *   { "command": "rm 123" }
+ *   ```
+ *
+ *   💡 **Actions**
+ *   - Approve: `/approval approve`
+ *   - Deny: `/approval deny`
+ *
+ * The request id is NOT part of the shipped template (and the Matrix channel
+ * does not forward the `tool_guard_approval` event metadata), so callers must
+ * treat a missing `requestId` as "cannot target this request precisely" and
+ * must not bind the no-id commands to arbitrary queue-head requests.
+ */
+export function parseRuntimeApprovalConfirmation(body: string): Record<string, unknown> | null {
+  if (
+    !/(?:🛡️?\s*)?\*{0,2}\s*Approval Required\s*\*{0,2}/i.test(body) ||
+    !/\/approval\s+(approve|deny)/i.test(body)
+  ) {
+    return null;
+  }
+
+  const field = (label: string) => {
+    const match = body.match(
+      new RegExp(`^[ \\t]*[•\\-*]?[ \\t]*\\*{0,2}${label}\\*{0,2}[ \\t]*[:：][ \\t]*(.+?)[ \\t]*$`, 'mi'),
+    );
+    return match?.[1]?.replace(/^`|`$/g, '').trim();
+  };
+
+  const parameters =
+    body.match(/\*{0,2}Parameters\*{0,2}\s*[:：]\s*\**\s*\n?```(?:json|JSON)?\s*\n([\s\S]*?)```/)?.[1]?.trim()
+    ?? field('Parameters');
+
+  const riskDetails = extractApprovalRiskDetails(body)
+    // No-findings variant drops the header and states it inline.
+    ?? body.match(/^[ \t]*No specific risk rules matched\.[ \t]*$/mi)?.[0]?.trim();
+  // Severity carries a leading emoji (🔴 CRITICAL); match the known level word
+  // instead of stripping emoji so any runtime glyph stays harmless.
+  const severity = field('Severity')?.match(/CRITICAL|HIGH|MEDIUM|LOW|INFO|WARN(?:ING)?/i)?.[0]?.toUpperCase();
+  const findingsRaw = body.match(
+    /^[ \t]*[•\-*]?[ \t]*\*{0,2}Findings\*{0,2}[ \t]*[:：][ \t]*(\d+)/mi,
+  )?.[1];
+
+  const command = (label: string) => {
+    const match = body.replace(/```[\s\S]*?```/g, ' ').match(
+      new RegExp(`\\*{0,2}${label}\\*{0,2}\\s*[:：]\\s*\`?(\/approval\\s+[^\`\\n]*)\`?`, 'i'),
+    );
+    return match?.[1]?.trim();
+  };
+
+  // The shipped template documents id-less commands. When a request id is
+  // present anywhere in the body (template variant / forwarded metadata) the
+  // commands are re-targeted at that id so coexisting requests stay isolated.
+  const requestId = extractApprovalRequestId(body);
+  const withId = (cmd: string | undefined) => {
+    if (!cmd) return undefined;
+    if (!requestId) return cmd;
+    return /\/approval\s+\w+\s+\S/.test(cmd) ? cmd : `${cmd} ${requestId}`;
+  };
+
+  return {
+    runtime: 'Tool Guard',
+    toolName: field('Tool') || '未知工具',
+    ...(severity ? { severity } : {}),
+    ...(findingsRaw ? { findings: Number(findingsRaw) } : {}),
+    ...(riskDetails ? { riskDetails } : {}),
+    ...(parameters ? { parameters } : {}),
+    ...(requestId ? { requestId, runtimeApproval: true } : {}),
+    approveReply: requestId ? `/approval approve ${requestId}` : '/approval approve',
+    rejectReply: requestId ? `/approval deny ${requestId}` : '/approval deny',
+    ...(withId(command('Cancel')) ? { cancelReply: withId(command('Cancel')) } : {}),
+  };
+}
+
+/**
+ * Request id from a template variant that carries one: an explicit
+ * `request[ _]?id` field, an id argument already present on the documented
+ * `/approval approve <id>` action line. Tool arguments and unrelated UUIDs
+ * are never treated as approval identifiers.
+ */
+function extractApprovalRequestId(body: string): string | undefined {
+  const withoutFences = body.replace(/```[\s\S]*?```/g, ' ');
+  const explicit = withoutFences.match(/^[ \t]*[•*-]?[ \t]*\*{0,2}request[ _]?id\*{0,2}\s*[:：]\s*`?([0-9a-zA-Z][\w.-]*)`?[ \t]*$/im)?.[1];
+  if (explicit) return explicit;
+  const withArg = withoutFences.match(/^[ \t]*[-•]?[ \t]*(?:Approve|Deny|Cancel):\s*`?\/approval\s+(?:approve|deny|cancel)\s+([0-9a-zA-Z][\w.-]*)`?[ \t]*$/im)?.[1];
+  if (withArg) return withArg;
+  return undefined;
+}
+
+/** Bullet lines between `Risk Details:` and the next section (or the fence). */
+function extractApprovalRiskDetails(body: string): string | undefined {
+  // 冒号后的 `**` 是 Markdown 加粗收尾，一并吃掉，否则首行残留星号。
+  const start = body.match(/\*{0,2}Risk Details\*{0,2}\s*[:：]\s*\**\s*/i);
+  if (!start || start.index === undefined) return undefined;
+  const rest = body.slice(start.index + start[0].length);
+  const stop = rest.search(/\*{0,2}Parameters\*{0,2}\s*[:：]|\*{0,2}Actions\*{0,2}\s*[:：]|💡|\n```/);
+  const section = (stop >= 0 ? rest.slice(0, stop) : rest).trim();
+  if (!section) return undefined;
+  const lines = section
+    .split('\n')
+    .map((line) => line.replace(/^\s*[•\-*]+\s*/, '').trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 /**
@@ -530,7 +681,9 @@ export function parseLegacyContent(
 
   // Add remaining text
   if (lastEnd < content.length) {
-    const textAfter = content.slice(lastEnd).trim();
+    // With no legacy blocks, use Matrix's readable body for the Markdown
+    // renderer rather than displaying formatted_body HTML as literal tags.
+    const textAfter = (lastEnd === 0 ? body : content.slice(lastEnd)).trim();
     if (textAfter) {
       blocks.push({ type: 'text', text: textAfter });
     }
@@ -561,6 +714,7 @@ export function parseLegacyContent(
  * recognition the timeline renders a raw bold line and a wide code fence.
  */
 export function parseHermesToolCalls(body: string): ParsedA2uiBlock[] | null {
+  if (typeof body !== 'string') return null;
   const pattern = /🔧\s*\*\*([^*\n]+)\*\*\s*\n```[^\n]*\n([\s\S]*?)\n```/g;
   const blocks: ParsedA2uiBlock[] = [];
   let lastEnd = 0;

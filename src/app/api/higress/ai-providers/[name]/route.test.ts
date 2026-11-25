@@ -1,7 +1,8 @@
+vi.mock('../../controller-helper', () => ({ callControllerGateway: vi.fn() }));
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { DELETE, PUT } from './route';
-import { callHigressConsole } from '../../proxy-helper';
+import { callControllerGateway as callHigressConsole } from '../../controller-helper';
 import { requireHigressConsoleAccess } from '../../access';
 
 vi.mock('../../proxy-helper', () => ({
@@ -35,10 +36,9 @@ describe('AI provider item route', () => {
     }), params);
 
     expect(response.status).toBe(200);
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers/provider%2Fa', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/providers/provider%2Fa', {
       method: 'PUT',
       body: { ...payload, name: 'provider/a' },
-      cookie: null,
     });
     await expect(response.json()).resolves.toEqual({ name: 'provider/a', tokenCount: 1 });
   });
@@ -55,9 +55,8 @@ describe('AI provider item route', () => {
     }), params);
 
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(mockCallHigressConsole).toHaveBeenCalledWith('/v1/ai/providers/provider%2Fa', {
+    expect(mockCallHigressConsole).toHaveBeenCalledWith(expect.any(NextRequest), '/v1/ai/providers/provider%2Fa', {
       method: 'DELETE',
-      cookie: 'higress_session=session-value',
     });
   });
 });

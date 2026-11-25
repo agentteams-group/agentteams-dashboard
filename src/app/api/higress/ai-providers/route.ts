@@ -1,9 +1,10 @@
-// GET/POST /api/higress/ai-proxies — List / Create AI Providers via Higress Console
+import { callControllerGateway } from '../controller-helper';
+// GET/POST /api/higress/ai-proxies — List / Create AI Providers via Controller
 import { NextRequest, NextResponse } from 'next/server';
-import { callHigressConsole, higressErrorResponse, higressProxyErrorResponse } from '../proxy-helper';
+import { higressErrorResponse, higressProxyErrorResponse } from '../proxy-helper';
 import { requireHigressConsoleAccess } from '../access';
 import { validateProviderPayload } from '@/lib/higress-api';
-import { getSessionCookie, isRecord, unwrapData, maskProvider } from '../helpers';
+import { isRecord, unwrapData, maskProvider } from '../helpers';
 
 function getProviders(body: unknown): Array<Record<string, unknown>> {
   const data = unwrapData(body);
@@ -17,10 +18,9 @@ export async function GET(request: NextRequest) {
   try {
     const rejected = await requireHigressConsoleAccess(request);
     if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
-    const { response, body } = await callHigressConsole('/v1/ai/providers', {
+
+    const { response, body } = await callControllerGateway(request, '/v1/ai/providers', {
       method: 'GET',
-      cookie,
     });
 
     if (!response.ok) {
@@ -41,15 +41,14 @@ export async function POST(request: NextRequest) {
   try {
     const rejected = await requireHigressConsoleAccess(request);
     if (rejected) return rejected;
-    const cookie = getSessionCookie(request);
+
     const body: unknown = await request.json().catch(() => null);
     const validationErrors = validateProviderPayload(body);
     if (validationErrors.length > 0) return NextResponse.json({ success: false, error: validationErrors[0] }, { status: 400 });
 
-    const { response, body: resBody } = await callHigressConsole('/v1/ai/providers', {
+    const { response, body: resBody } = await callControllerGateway(request, '/v1/ai/providers', {
       method: 'POST',
       body: body as Record<string, unknown>,
-      cookie,
     });
 
     if (!response.ok) {

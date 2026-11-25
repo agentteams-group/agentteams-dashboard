@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bot, Crown, MessageSquare, UserCheck, Users } from 'lucide-react';
+import { Bot, Crown, FolderKanban, MessageSquare, UserCheck, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { WorkerSessionDot, WorkerSessionRunningDot } from '@/components/worker-session-dot';
 import {
@@ -11,24 +11,20 @@ import {
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { PHASE_STATUS_TOKEN, statusDotClass, statusTextClass } from '@/lib/status-tokens';
+import { INTERACTIVE_STATES_CLASS } from '@/lib/interaction-states';
+import { canOpenConversation, LEADER_ACCESS_LABELS } from './agent-conversations';
+import { TaskAttention, type ConversationAttention } from './conversation-switcher';
 import type { RoomInfo } from './room-info';
-
-const PHASE_COLOR: Record<string, string> = {
-  Running: 'text-emerald-500',
-  Active: 'text-emerald-500',
-  Ready: 'text-emerald-500',
-  Sleeping: 'text-amber-500',
-  Pending: 'text-amber-500',
-  Failed: 'text-red-500',
-  Stopped: 'text-gray-500',
-};
 
 function roomTypeIcon(type: RoomInfo['type']) {
   switch (type) {
     case 'team':
-      return <Users className="w-4 h-4 text-emerald-500" />;
+      return <Users className="w-4 h-4 text-muted-foreground" />;
+    case 'project':
+      return <FolderKanban className="w-4 h-4 text-sky-500" />;
     case 'worker':
-      return <Bot className="w-4 h-4 text-emerald-500" />;
+      return <Bot className="w-4 h-4 text-muted-foreground" />;
     case 'manager':
       return <Crown className="w-4 h-4 text-violet-500" />;
     case 'human':
@@ -39,22 +35,20 @@ function roomTypeIcon(type: RoomInfo['type']) {
   }
 }
 
-function statusDot(phase: string | undefined): string {
-  if (!phase) return 'bg-gray-400';
-  if (phase === 'Running' || phase === 'Active' || phase === 'Ready') return 'bg-emerald-500';
-  if (phase === 'Sleeping' || phase === 'Pending') return 'bg-amber-500';
-  if (phase === 'Failed') return 'bg-red-500';
-  return 'bg-gray-400';
-}
-
 export function RoomListItem({
   room,
   isSelected,
   onClick,
+  attention,
+  attentionPending,
+  teamList = false,
 }: {
   room: RoomInfo;
   isSelected: boolean;
   onClick: () => void;
+  attention?: ConversationAttention;
+  attentionPending?: string;
+  teamList?: boolean;
 }) {
   // Clear the unread red dot immediately on click. The actual m.fully_read
   // upload (and any subsequent server-confirmed reset) is handled by
@@ -85,38 +79,44 @@ export function RoomListItem({
   const pendingCount = useHitlInboxStore((state) =>
     Object.values(state.confirmations).filter((item) => item.roomId === room.id).length,
   );
+  // 阶段名 → 语义色只走 PHASE_STATUS_TOKEN 一处（方案 v3 A-2）；认不出的阶段
+  // （旧服务端可能回别的词）给中性色，不替它编一个运行状态。
+  const phaseToken = room.phase ? PHASE_STATUS_TOKEN[room.phase] : undefined;
+  const accessible = canOpenConversation(room);
+  const accessLabel = room.access && room.access !== 'joined' ? LEADER_ACCESS_LABELS[room.access] : undefined;
   return (
     <motion.button
       onClick={handleClick}
-      className={`w-full text-left p-3 rounded-lg transition-colors ${
-        isSelected
-          ? 'bg-emerald-500/10 border border-emerald-500/30'
-          : 'hover:bg-accent border border-transparent'
+      disabled={!accessible}
+      aria-current={isSelected ? 'page' : undefined}
+      title={accessLabel}
+      className={`w-full border text-left p-3 rounded-lg ${INTERACTIVE_STATES_CLASS} ${
+        isSelected ? 'bg-primary/5 border-primary/15' : 'border-transparent hover:bg-accent'
       }`}
       whileTap={{ scale: 0.99 }}
     >
       <div className="flex items-center gap-2.5">
         <div className="relative">
           {roomTypeIcon(room.type)}
-          {room.phase && PHASE_COLOR[room.phase] && (
+          {phaseToken && (
             <div
-              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${statusDot(room.phase)}`}
+              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${statusDotClass(phaseToken)}`}
             />
           )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="font-medium text-sm truncate">{room.name}</p>
+            <p className="font-medium text-sm truncate">{teamList ? room.team?.teamName || room.team?.name || room.parentTeam || room.name : room.name}</p>
             {isWorkerRoom && room.matrixUserId ? (
               <WorkerSessionDot state={workerRoomState} />
             ) : null}
             {isTeamRoom ? (
               <WorkerSessionRunningDot running={teamRunning} />
             ) : null}
-            {room.phase ? (
+            {!teamList && !room.agentRole && room.phase ? (
               <Badge
                 variant="outline"
-                className={`text-[10px] px-1 py-0 h-3.5 shrink-0 ${PHASE_COLOR[room.phase] || ''}`}
+                className={`text-xs px-1 py-0 shrink-0 ${phaseToken ? statusTextClass(phaseToken) : ''}`}
               >
                 {room.phase}
               </Badge>
@@ -125,25 +125,26 @@ export function RoomListItem({
           {/* Runtime badge on its own row (below the name) so long room
               names are never pushed off-screen by a second badge. */}
           <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-            {room.runtime ? (
+            {!room.agentRole && room.runtime ? (
               <Badge
                 variant="outline"
-                className="text-[10px] px-1 py-0 h-3.5 shrink-0"
+                className="text-xs px-1 py-0 shrink-0"
                 title={room.runtime}
               >
                 {RUNTIME_LABELS[room.runtime] || room.runtime}
               </Badge>
             ) : null}
-            <p className="text-[10px] text-muted-foreground truncate min-w-0">
-              {room.lastMessagePreview || room.parentTeam || room.id}
+            <p className="text-xs text-muted-foreground truncate min-w-0">
+              {accessLabel || (teamList ? room.teamRole === 'admin' ? '管理员' : '成员' : room.lastMessagePreview || (room.agentRole === 'operations' ? '资源管理与日常运维' : room.agentRole === 'leader' ? '任务协调 · 与 Leader 私聊' : room.type === 'team' ? '团队协作群聊' : room.type === 'project' ? '项目协作群聊' : '暂无消息'))}
             </p>
           </div>
+          {(room.agentRole || teamList) && <TaskAttention counts={attention} pending={attentionPending} />}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {pendingCount > 0 && (
+          {pendingCount > 0 && !attention && (
             <Badge
               variant="secondary"
-              className="h-4 px-1.5 text-[10px]"
+              className="h-4 px-1.5 text-xs"
               aria-label={`${pendingCount} 条待处理`}
               title={`${pendingCount} 条待处理`}
             >

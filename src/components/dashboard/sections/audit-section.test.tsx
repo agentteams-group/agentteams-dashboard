@@ -1,4 +1,4 @@
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ vi.mock('@/hooks/use-audit-events', () => ({
 
 import { useAuditEvents, type AuditEventsResponse } from '@/hooks/use-audit-events';
 import { AuditSection } from './audit-section';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const mockedUseAuditEvents = vi.mocked(useAuditEvents);
 
@@ -17,7 +18,7 @@ function makeWrapper() {
     defaultOptions: { queries: { retry: false, refetchInterval: false } },
   });
   return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider>
   );
 }
 
@@ -112,10 +113,11 @@ describe('AuditSection', () => {
     });
     expect(screen.getByText('拒绝：delete')).toBeInTheDocument();
     expect(screen.getByText('L3')).toBeInTheDocument();
-    expect(screen.getByText('10.0.0.1')).toBeInTheDocument();
-    // Entity badges render the raw type string; both rows should be present.
-    expect(screen.getAllByText('worker').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('system').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]);
+    expect(within(screen.getByRole('dialog')).getByText('10.0.0.1')).toBeInTheDocument();
+    // Resource types use the same display names as resource management.
+    expect(screen.getAllByText('Agent').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('系统').length).toBeGreaterThan(0);
   });
 
   it('renders the controller source badge, kind badge and team attribution (B6)', async () => {
@@ -148,11 +150,12 @@ describe('AuditSection', () => {
       expect(screen.getByText('数据源：Controller')).toBeInTheDocument();
     });
     // kind badge replaces the entity-type badge; team line is attributed.
-    expect(screen.getByText('capability')).toBeInTheDocument();
-    expect(screen.getByText('团队：alpha-team')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '详情' }));
+    expect(within(screen.getByRole('dialog')).getByText('capability')).toBeInTheDocument();
+    expect(screen.getByText(/团队：alpha-team/)).toBeInTheDocument();
     // team-scoped description (appears in the header description AND the row
     // team line — assert the exact description string instead)
-    expect(screen.getByText(/MinIO 持久存储/)).toBeInTheDocument();
+    expect(screen.getByText('数据源：Controller')).toBeInTheDocument();
     expect(
       screen.getByText(/你的视图限定在团队「alpha-team」/),
     ).toBeInTheDocument();

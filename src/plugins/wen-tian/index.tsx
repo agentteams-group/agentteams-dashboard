@@ -73,7 +73,7 @@ function createHealthWidget(api: DashboardPluginApi) {
           <CardTitle className="text-sm flex items-center gap-1.5">
             <Stethoscope className="w-4 h-4 text-primary" />
             环境健康概览
-            <Badge variant="outline" className="text-[10px] ml-auto">问天</Badge>
+            <Badge variant="outline" className="text-xs ml-auto">问天</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm space-y-2">

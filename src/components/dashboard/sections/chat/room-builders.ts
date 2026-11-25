@@ -1,5 +1,7 @@
 import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import { managerRoomIds } from '@/lib/task-actors';
+import { workerIdentityName } from '@/lib/worker-display-name';
 import type { RoomInfo } from './room-info';
 
 export interface RoomMetaInput {
@@ -20,10 +22,11 @@ function managerDisplayName(
   manager: ManagerResponse,
   rid: string,
   lookup: RoomMetaByRoomId,
+  multiple: boolean,
 ): string {
+  if (rid === manager.roomID) return multiple ? `AT助手 · ${manager.name}` : 'AT助手';
   const named = lookup[rid]?.roomName;
   if (named) return named;
-  if (rid === manager.roomID) return `Manager: ${manager.name}`;
   return `${manager.name} 对话`;
 }
 
@@ -37,6 +40,10 @@ function managerDisplayName(
  * A Manager contributes every distinct room in `managerRoomIds` (own room
  * plus leader DM). Previously only one of the two was listed, so the
  * admin-manager DM vanished as soon as a leader DM existed.
+ *
+ * `workflows` (Controller project runs) is a second, Matrix-membership
+ * independent source for project rooms: source and task execution rooms become a
+ * "project" room when no team/worker/manager/human room already owns that id.
  */
 export function buildRooms(
   workers: WorkerResponse[] | undefined,
@@ -44,6 +51,7 @@ export function buildRooms(
   managers: ManagerResponse[] | undefined,
   metaByRoomId?: RoomMetaByRoomId,
   humans?: HumanResponse[],
+  workflows?: WorkflowResponse[],
 ): RoomInfo[] {
   const lookup = metaByRoomId ?? {};
   const enrich = (
@@ -79,6 +87,26 @@ export function buildRooms(
     workerMxidByTeam.get(worker.team)!.set(worker.name, worker.matrixUserID);
   });
   teams?.forEach((team) => {
+    if (team.leaderDMRoomID) {
+      const leader = workers?.find((worker) => worker.name === team.leaderName)
+        ?? managers?.find((manager) => manager.name === team.leaderName);
+      pushRoom({
+        id: team.leaderDMRoomID,
+        name: `${team.teamName || team.name}助手`,
+        type: 'manager',
+        agentRole: 'leader',
+        members: leader?.matrixUserID ? [leader.matrixUserID] : [],
+        matrixUserId: leader?.matrixUserID,
+        workerMatrixUserIds: leader?.matrixUserID ? [leader.matrixUserID] : [],
+        parentTeam: team.name,
+        workerName: team.leaderName,
+        runtime: leader?.runtime,
+        phase: team.leaderReady ? 'Running' : team.phase,
+        team,
+        memberCount: 2,
+        ...enrich(team.leaderDMRoomID),
+      });
+    }
     if (team.teamRoomID) {
       const teamWorkers = workerMxidByTeam.get(team.name);
       pushRoom({
@@ -101,7 +129,7 @@ export function buildRooms(
     if (worker.roomID) {
       pushRoom({
         id: worker.roomID,
-        name: lookup[worker.roomID]?.roomName || `${worker.name} 房间`,
+        name: workerIdentityName(worker.identity) || lookup[worker.roomID]?.roomName || `${worker.name} 房间`,
         type: 'worker',
         members: [worker.matrixUserID].filter(Boolean),
         parentTeam: worker.team,
@@ -120,8 +148,9 @@ export function buildRooms(
     for (const chatRoomId of managerRoomIds(manager)) {
       pushRoom({
         id: chatRoomId,
-        name: managerDisplayName(manager, chatRoomId, lookup),
+        name: managerDisplayName(manager, chatRoomId, lookup, (managers?.length ?? 0) > 1),
         type: 'manager',
+        agentRole: leadingTeam ? undefined : 'operations',
         members: [manager.matrixUserID].filter(Boolean),
         matrixUserId: manager.matrixUserID,
         parentTeam: leadingTeam?.name,
@@ -142,6 +171,25 @@ export function buildRooms(
         members: [human.matrixUserID].filter(Boolean),
         matrixUserId: human.matrixUserID,
         phase: human.phase,
+        ...enrich(rid),
+      });
+    }
+  });
+  // TaskMeta.room_id is the execution room; source_room_id can be an assistant
+  // DM or an external conversation. Keep existing resource rooms authoritative.
+  workflows?.forEach((workflow) => {
+    const roomIds = [workflow.source_room_id, ...(workflow.tasks_detail ?? []).map(task => task.room_id)];
+    for (const rawId of roomIds) {
+      const rid = rawId?.replace(/^room:/, '');
+      if (!rid || !/^![^:]+:.+$/.test(rid)) continue;
+      pushRoom({
+        id: rid,
+        name: lookup[rid]?.roomName || workflow.title || `项目 ${workflow.project_id}`,
+        type: 'project',
+        members: [],
+        parentTeam: workflow.team_id,
+        projectId: workflow.project_id,
+        teamId: workflow.team_id,
         ...enrich(rid),
       });
     }
@@ -168,6 +216,7 @@ export function filterRooms(rooms: RoomInfo[], filter: string): RoomInfo[] {
   return rooms.filter(
     (r) =>
       r.name.toLowerCase().includes(q) ||
+      Boolean(r.team?.teamName?.toLowerCase().includes(q)) ||
       r.id.toLowerCase().includes(q) ||
       r.members.some((m) => m && m.toLowerCase().includes(q)) ||
       (r.parentTeam ? r.parentTeam.toLowerCase().includes(q) : false) ||
@@ -196,10 +245,11 @@ export function sortRoomsByRecency(rooms: RoomInfo[]): RoomInfo[] {
   });
 }
 
-export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'worker', 'manager', 'human', 'unknown'];
+export const ROOM_TYPE_ORDER: RoomInfo['type'][] = ['team', 'project', 'worker', 'manager', 'human', 'unknown'];
 
 export const ROOM_TYPE_LABELS: Record<RoomInfo['type'], string> = {
   team: '团队',
+  project: '项目',
   worker: 'Agent',
   manager: 'Manager',
   human: 'Human',

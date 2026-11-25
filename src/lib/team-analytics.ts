@@ -48,7 +48,7 @@ export function computeTeamAnalytics(
   // Combined score: 60% readiness + 40% health
   const combinedScore = Math.round(readinessPct * 0.6 + avgHealth * 0.4);
 
-  const trend = combinedScore >= 70 ? 'healthy' : combinedScore >= 40 ? 'degraded' : 'critical';
+  const trend = team.phase === 'Failed' ? 'critical' : combinedScore >= 70 ? 'healthy' : combinedScore >= 40 ? 'degraded' : 'critical';
   const label = trend === 'healthy' ? '健康' : trend === 'degraded' ? '降级' : '异常';
 
   return {

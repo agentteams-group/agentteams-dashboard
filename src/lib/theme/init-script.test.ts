@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildThemeInitScript } from './init-script';
 import { THEME_STORAGE_KEY } from './types';
 
@@ -33,21 +33,47 @@ function runScript(storageValue: string | null, prefersDark = false) {
 }
 
 describe('buildThemeInitScript', () => {
+  it('keeps fixed light after nightfall for new and retired scheduled preferences', () => {
+    vi.setSystemTime(new Date(2026, 10, 7, 23));
+    runScript(null, true);
+    expect(document.documentElement.dataset.theme).toBe('light');
+    runScript(JSON.stringify({ state: { themeId: 'scheduled' }, version: 0 }), true);
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
     document.documentElement.className = '';
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.cssText = '';
     localStorage.clear();
   });
+  afterEach(() => vi.useRealTimers());
 
   it('is syntactically valid javascript', () => {
     expect(() => new Function(buildThemeInitScript(THEME_STORAGE_KEY))).not.toThrow();
   });
 
-  it('defaults to dark (app default) when nothing is persisted and OS is dark', () => {
+  it('defaults to fixed light regardless of OS preference', () => {
     runScript(null, true);
-    expect(document.documentElement.classList.contains('dark')).toBe(true);
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('pre-paints fixed light at the night boundary', () => {
+    vi.setSystemTime(new Date(2026, 10, 7, 19));
+    runScript(null, false);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('pre-paints an explicit warm-white choice as light-based', () => {
+    runScript(JSON.stringify({ state: { themeId: 'warm' } }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('warm');
+    expect(document.documentElement.classList.contains('warm')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
+    runScript(JSON.stringify({ state: { themeId: 'warm' } }));
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 
   it('applies the light theme when persisted', () => {
@@ -89,6 +115,35 @@ describe('buildThemeInitScript', () => {
     expect(root.style.getPropertyValue('--radius')).toBe('0.75rem');
     expect(root.style.fontSize).toBe('18px');
     expect(root.classList.contains('dark')).toBe(true);
+    expect(root.style.colorScheme).toBe('dark');
+  });
+
+  it('pre-paints a base:"light" custom theme without the dark class (f6-2)', () => {
+    runScript(
+      JSON.stringify({
+        state: {
+          themeId: 'brand-light',
+          customThemes: [
+            {
+              id: 'brand-light',
+              name: 'Brand Light',
+              base: 'light',
+              variables: { '--primary': '#1677ff' },
+              radius: 0.75,
+            },
+          ],
+        },
+        version: 0,
+      })
+    );
+    const root = document.documentElement;
+    // 预绘制阶段按 base 判定：首帧不渲染成暗色（旧逻辑按 resolved!==‘light’
+    // 判定，自定义 id ≠ 'light' 会让首帧带上 dark 类）。
+    expect(root.classList.contains('dark')).toBe(false);
+    expect(root.style.colorScheme).toBe('light');
+    expect(root.getAttribute('data-theme')).toBe('brand-light');
+    // 变量消费不受判定改动影响。
+    expect(root.style.getPropertyValue('--primary')).toBe('#1677ff');
   });
 
   it('follows the system preference when themeId is system', () => {

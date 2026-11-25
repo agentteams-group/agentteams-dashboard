@@ -1,9 +1,10 @@
 'use client';
 
-import { Eye, Shield, Trash2, UserCheck } from 'lucide-react';
+import { Eye, Shield, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
@@ -19,11 +20,13 @@ export function HumanCard({
   human,
   index,
   onView,
+  onEdit,
   onDelete,
 }: {
   human: HumanResponse;
   index: number;
   onView: (_human: HumanResponse) => void;
+  onEdit: (_human: HumanResponse) => void;
   onDelete: (_name: string) => void;
 }) {
   const level = human.permissionLevel ?? 2;
@@ -34,27 +37,33 @@ export function HumanCard({
       transition={{ delay: index * 0.03 }}
       layout
     >
-      <Card className="glass-card hover-lift">
+      <Card
+        className="glass-card hover-lift cursor-pointer"
+        data-testid="human-card"
+        role="group"
+        tabIndex={0}
+        aria-label={`打开 ${human.name} 详情`}
+        onClick={() => onView(human)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onView(human);
+        }}
+      >
         <CardContent className="p-4">
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between gap-2 mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <StatusDot phase={human.phase} />
               <UserCheck className="w-5 h-5 text-teal-500 shrink-0" aria-hidden="true" />
-              <span className="font-medium truncate">{human.name}</span>
+              <span className="truncate font-medium">{human.displayName || human.name}</span>
             </div>
             <PhaseBadge kind="human" phase={human.phase} />
           </div>
 
           <div className="space-y-1.5 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">显示名称</span>
-              <span className="text-xs truncate ml-2">{human.displayName}</span>
-            </div>
-            {human.email && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">邮箱</span>
-                <span className="text-xs truncate ml-2">{human.email}</span>
-              </div>
+            {human.displayName && human.displayName !== human.name && (
+              <p className="truncate text-xs text-muted-foreground" title={human.name}>{human.name}</p>
             )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">权限</span>
@@ -66,34 +75,25 @@ export function HumanCard({
                 {permissionLabel(human)}
               </Badge>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">房间</span>
-              <span className="text-xs text-muted-foreground">
-                {human.rooms?.length || 0} 个
-              </span>
-            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
+          <div
+            className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border"
+            onClick={(event) => event.stopPropagation()}
+          >
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs flex-1"
+              className="h-9 flex-1 text-xs max-sm:h-11"
               onClick={() => onView(human)}
             >
               <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
               详情
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:text-destructive"
-              onClick={() => onDelete(human.name)}
-              aria-label={`删除 ${human.name}`}
-              title="删除"
-            >
-              <Trash2 className="w-3 h-3" aria-hidden="true" />
-            </Button>
+            <ResourceListMenu label={`${human.name} 更多操作`} items={[
+              { label: '编辑', onSelect: () => onEdit(human) },
+              { label: '删除', onSelect: () => onDelete(human.name), destructive: true },
+            ]} />
           </div>
         </CardContent>
       </Card>

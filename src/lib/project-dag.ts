@@ -56,6 +56,7 @@ export interface DagLayoutOptions {
   gapX?: number;
   gapY?: number;
   padding?: number;
+  centerLayers?: boolean;
 }
 
 export interface DagLayout {
@@ -102,14 +103,17 @@ export function layoutProjectDag(
     }
     width = Math.max(width, x - GX + PAD);
   }
+  if (options.centerLayers) {
+    for (const nodes of byLayer.values()) {
+      const offset = (width - (nodes.length * (W + GX) - GX + PAD * 2)) / 2;
+      for (const node of nodes) positions.get(node.id)!.x += offset;
+    }
+  }
   return { width, height, positions };
 }
 
-export function buildProjectDag(
-  tasks: BoardTask[],
-  projectId: string,
-): ProjectDag {
-  const projectTasks = tasks.filter((t) => t.projectId === projectId);
+export function buildTaskDag(tasks: BoardTask[]): ProjectDag {
+  const projectTasks = tasks;
   const byId = new Map(projectTasks.map((t) => [t.runId, t]));
 
   const nodes: DagNode[] = [];
@@ -172,6 +176,7 @@ export function buildProjectDag(
     nodes.push({
       id: task.runId,
       title: task.title,
+      assignee: task.assignedTo.replace(/^@([^:]+):.*$/, '$1'),
       status: task.status,
       ready: allDepsDone && !TERMINAL_DONE.has(task.status),
       layer: layerOf.get(task.runId) ?? 0,
@@ -345,4 +350,8 @@ export function criticalPathOf(dag: ProjectDag): Set<string> {
     cursor = (next as unknown as string) ?? null;
   }
   return path;
+}
+
+export function buildProjectDag(tasks: BoardTask[], projectId: string): ProjectDag {
+  return buildTaskDag(tasks.filter(task => task.projectId === projectId));
 }

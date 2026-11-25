@@ -24,6 +24,10 @@ import { ApiError } from '@/lib/api-error';
 import type { WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 import { ProjectTimelinePanel } from '../project-timeline-panel';
 import { ProjectEventsPanel } from '../project-events-panel';
+import { ProjectAttentionPanel } from '../project-attention-panel';
+import { ProjectSignalEventsPanel } from '../project-signal-events-panel';
+import { ProjectSpawnsPanel } from '../project-spawns-panel';
+import { useNowTick } from '@/hooks/use-now-tick';
 import {
   NODE_STATUS_COLOR,
   NODE_STATUS_LABEL,
@@ -32,6 +36,7 @@ import {
 } from './workflow-config';
 import { ProjectStatusBadge } from './status-views';
 import { TaskDetailRow } from './task-detail';
+import { MetaEditorEntry } from './meta-editor';
 
 // ----- Workflow detail panel -----
 
@@ -61,6 +66,9 @@ export function WorkflowDetail({
   const [replanText, setReplanText] = useState('');
 
   const mutationTeamId = teamId ?? wf?.team_id;
+  // Shared ticking clock for the attention panel's overdue highlight; the
+  // server-resolved expires_at is authoritative, this only re-renders it.
+  const now = useNowTick(30_000);
 
   const handlePause = () => {
     pauseMutation.mutate(
@@ -124,16 +132,17 @@ export function WorkflowDetail({
       list.push(edge.source);
       dependsOf.set(edge.target, list);
     }
-    const current = (wf?.tasks_detail ?? []).map((t) => ({
-      taskId: t.task_id,
-      title: t.summary ?? t.task_id,
-      ...(t.assigned_to ? { assignedTo: t.assigned_to } : {}),
+    const current = (wf?.nodes ?? []).map((node) => ({
+      taskId: node.id,
+      ...(node.parent_task_id ? { parentTaskId: node.parent_task_id } : {}),
+      title: node.name,
+      ...(node.assignee ? { assignedTo: node.assignee } : {}),
       // status deliberately omitted: the controller preserves the previous
       // status when a task id already exists (and defaults to planned) —
       // an explicit status here would override in-flight/completed states
       // and pollute the new plan.
-      ...((dependsOf.get(t.task_id)?.length ?? 0) > 0
-        ? { dependsOn: dependsOf.get(t.task_id) }
+      ...((dependsOf.get(node.id)?.length ?? 0) > 0
+        ? { dependsOn: dependsOf.get(node.id) }
         : {}),
     }));
     setReplanText(JSON.stringify(current, null, 2));
@@ -187,6 +196,14 @@ export function WorkflowDetail({
           <GitBranch className="h-4 w-4" />
           {wf.title}
           <ProjectStatusBadge status={wf.status} />
+          {/* 项目 meta 编辑（ETag/If-Match；405 → 入口静默隐藏） */}
+          <MetaEditorEntry
+            kind="project"
+            id={wf.project_id}
+            title={wf.title}
+            teamId={mutationTeamId}
+            onSaved={() => refetch()}
+          />
         </h3>
         <div className="flex items-center gap-1">
           {canPause && (
@@ -312,7 +329,7 @@ export function WorkflowDetail({
                 {it.description && <span className="font-normal opacity-75">— {it.description}</span>}
               </p>
               {it.action_request && (
-                <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                <p className="text-xs text-muted-foreground mt-1 font-mono">
                   action: {it.action_request.action}
                   {it.config?.allow_accept ? ' · 可接受(恢复)' : ''}
                 </p>
@@ -344,6 +361,16 @@ export function WorkflowDetail({
             Loop 进度
             {wf.loop.status && <span className="ml-2 font-normal opacity-75">{wf.loop.status}</span>}
           </p>
+          {wf.loop.pause_sources && wf.loop.pause_sources.length > 0 && (
+            // Additive pause gate (#1402/#1431): dispatch stays paused while
+            // any source remains. Resuming one source leaves the others.
+            <p className="text-amber-700 dark:text-amber-400">
+              暂停来源：
+              {wf.loop.pause_sources
+                .map((source) => (source === 'user' ? '人工' : source === 'project' ? '项目' : source))
+                .join('、')}
+            </p>
+          )}
           {typeof wf.loop.current_iteration === 'number' &&
             typeof wf.loop.max_iterations === 'number' && (
               <div className="flex items-center gap-2">
@@ -355,7 +382,7 @@ export function WorkflowDetail({
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {wf.loop.current_iteration}/{wf.loop.max_iterations}
                 </span>
               </div>
@@ -365,11 +392,11 @@ export function WorkflowDetail({
             <div className="pt-2 space-y-1">
               {wf.loop.tasks.map((t) => (
                 <div key={t.task_id} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono text-[10px] text-muted-foreground">{t.task_id}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{t.task_id}</span>
                   <span className="truncate">{t.title}</span>
-                  {t.assigned_to && <span className="text-[10px] text-muted-foreground">{t.assigned_to}</span>}
+                  {t.assigned_to && <span className="text-xs text-muted-foreground">{t.assigned_to}</span>}
                   {t.status && (
-                    <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[normalizeNodeStatus(t.status)]}`}>
+                    <Badge className={`text-xs border ${NODE_STATUS_COLOR[normalizeNodeStatus(t.status)]}`}>
                       {NODE_STATUS_LABEL[normalizeNodeStatus(t.status)]}
                     </Badge>
                   )}
@@ -392,7 +419,7 @@ export function WorkflowDetail({
               return (
                 <Badge
                   key={taskId}
-                  className="text-[10px] border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                  className="text-xs border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                 >
                   {node?.name ?? taskId}
                 </Badge>
@@ -408,7 +435,7 @@ export function WorkflowDetail({
           <p className="text-xs font-semibold text-muted-foreground mb-1.5">任务分布</p>
           <div className="flex flex-wrap gap-1.5">
             {statuses.map(([status, count]) => (
-              <Badge key={status} className={`text-[10px] border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
+              <Badge key={status} className={`text-xs border ${NODE_STATUS_COLOR[status as WorkflowNodeStatus] ?? ''}`}>
                 {NODE_STATUS_LABEL[status as WorkflowNodeStatus] ?? status}: {count}
               </Badge>
             ))}
@@ -430,17 +457,27 @@ export function WorkflowDetail({
                 projectId={wf.project_id}
                 teamId={mutationTeamId}
                 roomId={wf.source_room_id}
+                onMetaSaved={() => refetch()}
               />
             ))}
           </div>
         </div>
       )}
 
+      {/* Attention aggregate (controller /attention, upstream #1434) */}
+      <ProjectAttentionPanel projectId={wf.project_id} teamId={mutationTeamId} now={now} />
+
+      {/* Spawn subagent tree + lazy message stream (controller /spawns) */}
+      <ProjectSpawnsPanel projectId={wf.project_id} teamId={mutationTeamId} />
+
       {/* Intervention timeline (controller history endpoint) */}
       <ProjectTimelinePanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Task-transition event stream (controller /events, upstream #1233) */}
       <ProjectEventsPanel projectId={wf.project_id} teamId={mutationTeamId} />
+
+      {/* Protocol signal feed (controller /signal-events, upstream #1433) */}
+      <ProjectSignalEventsPanel projectId={wf.project_id} teamId={mutationTeamId} />
 
       {/* Nodes */}
       <div>
@@ -452,11 +489,11 @@ export function WorkflowDetail({
             <div key={n.id} className="rounded-lg border bg-background/40 p-2 text-xs flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate font-medium">{n.name}</p>
-                <p className="text-[10px] text-muted-foreground font-mono truncate">{n.id}</p>
+                <p className="text-xs text-muted-foreground font-mono truncate">{n.id}</p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {n.assignee && <span className="text-[10px] text-muted-foreground">{n.assignee}</span>}
-                <Badge className={`text-[10px] border ${NODE_STATUS_COLOR[n.status] ?? ''}`}>
+                {n.assignee && <span className="text-xs text-muted-foreground">{n.assignee}</span>}
+                <Badge className={`text-xs border ${NODE_STATUS_COLOR[n.status] ?? ''}`}>
                   {NODE_STATUS_LABEL[n.status] ?? n.status}
                 </Badge>
               </div>

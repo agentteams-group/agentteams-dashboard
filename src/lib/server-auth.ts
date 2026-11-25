@@ -13,7 +13,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkPermission, checkPermissionByLevel, type Permission } from '@/lib/rbac-engine';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { appendAuditEvent } from '@/lib/audit-log';
-import { isStatelessAuthMode } from './static-mode';
 
 export const SERVER_USER_HEADER = 'x-agentteams-user';
 export const SERVER_USER_LEVEL_HEADER = 'x-agentteams-user-level';
@@ -114,12 +113,11 @@ export async function enforceServerSideRbac(
   resourceType: 'worker' | 'team',
   resourceName: string,
 ): Promise<NextResponse | null> {
-  // F7 stateless mode: the browser bearer token IS the credential and the
-  // Controller applies native per-token RBAC to every proxied data call
-  // (fact #2/#3 — the true permission boundary). The dashboard's own
-  // pre-write check would only duplicate it from a mirrored level, so it
-  // defers to the Controller here (a denied write still 403s upstream).
-  if (isStatelessAuthMode()) return null;
+  // 纵深防御：dashboard 等级门与 Controller 原生 per-token RBAC 并行生效。
+  // stateless 模式下 middleware 仍按 token 解析身份并注入可信头
+  // （resolveStaticIdentity 给出 level 3/2/1），等级检查照常可执行；
+  // 直连 MinIO 的路由（storage/*、packages、skills）没有 Controller 兜底，
+  // 这里必须先行拦截越权写。
   const identity = readServerIdentity(request);
   if (!identity) return null;
   const result = evaluateServerSideRbac({ identity, action, resourceType, resourceName });
@@ -143,9 +141,9 @@ export async function enforceLevelOnlyRbac(
   resourceType: string,
   resourceName: string,
 ): Promise<NextResponse | null> {
-  // F7 stateless mode: defer to the Controller's native per-token RBAC
-  // (same rationale as enforceServerSideRbac above).
-  if (isStatelessAuthMode()) return null;
+  // 纵深防御：与 enforceServerSideRbac 相同——dashboard 等级门与
+  // Controller 原生 per-token RBAC 并行生效；直连 MinIO 的路由没有
+  // Controller 兜底，stateless 模式下也照常执行等级检查。
   const identity = readServerIdentity(request);
   if (!identity) return null;
   if (checkPermissionByLevel(identity.level, action)) return null;

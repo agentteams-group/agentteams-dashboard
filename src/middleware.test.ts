@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
 import { middleware } from './middleware';
@@ -11,6 +11,18 @@ import {
 import { __resetStaticIdentityCacheForTests } from '@/lib/static-identity';
 
 const SECRET = 'f'.repeat(64);
+
+it('serves a Dashboard built for /dashboard without the legacy redirect and keeps API authentication', async () => {
+  vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/dashboard');
+  try {
+    const page = new NextRequest('http://dashboard.test/dashboard/', { nextConfig: { basePath: '/dashboard' } });
+    expect((await middleware(page)).headers.get('location')).toBeNull();
+    const api = new NextRequest('http://dashboard.test/dashboard/api/agentteams/teams/', { nextConfig: { basePath: '/dashboard' } });
+    expect((await middleware(api)).status).toBe(401);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function dataRequest(path: string, cookie?: string) {
   const headers = new Headers();
@@ -83,6 +95,17 @@ describe('middleware auth gate (M19 dashboard session)', () => {
   it('gates setup/status behind the session (SEC-06: SA-token relay)', async () => {
     const res = await middleware(dataRequest('/api/agentteams/setup/status'));
     expect(res.status).toBe(401);
+  });
+
+  it('lets the pre-login healthz probe through without a session (with and without trailing slash)', async () => {
+    expect((await middleware(dataRequest('/api/agentteams/healthz'))).status).toBe(200);
+    expect((await middleware(dataRequest('/api/agentteams/healthz/'))).status).toBe(200);
+  });
+
+  it('keeps other data routes gated (healthz is public, workers are not)', async () => {
+    const res = await middleware(dataRequest('/api/agentteams/workers'));
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({ error: 'Unauthorized' });
   });
 
   it('keeps the AGENTTEAMS_AUTH_DISABLED escape hatch', async () => {
@@ -187,6 +210,11 @@ describe('middleware auth gate (F7 stateless mode)', () => {
 
   it('keeps the public /mode probe reachable without a bearer (F7 login flow)', async () => {
     const res = await middleware(staticRequest('/api/agentteams/mode'));
+    expect(res.status).toBe(200);
+  });
+
+  it('keeps the pre-login healthz probe public in stateless mode too', async () => {
+    const res = await middleware(staticRequest('/api/agentteams/healthz/'));
     expect(res.status).toBe(200);
   });
 

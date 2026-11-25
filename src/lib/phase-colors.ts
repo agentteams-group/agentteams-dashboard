@@ -1,16 +1,25 @@
 // Shared Phase Colors & Labels for AgentTeams Dashboard
 // Used by overview charts, worker/team/manager sections, and status dots
+//
+// 颜色单轨（方案 v3 A-2）：本文件不再自带一套调色盘，全部引用 A-1 的
+// 六个语义状态 token（--status-running/-waiting/-blocked/-done/-failed/-info）。
+// 以前 worker 徽章用 green/yellow、项目徽章用 emerald/amber、我的工作台内联写
+// text-sky-500，同一个「等待」在三个地方是三种颜色，高对比主题下也各自不同。
 
-// ============ Hex Colors (for charts / Recharts) ============
+// ============ Chart / canvas colors (CSS vars, resolved per theme) ============
 
+/**
+ * 给图表用的颜色。值是 CSS 变量引用：写在 `style` 里直接生效，
+ * 要真色的地方（Recharts 的 `fill` 属性、canvas）用 `useStatusColors()` 解算。
+ */
 export const WORKER_PHASE_COLORS: Record<string, string> = {
-  Running: '#10b981',
-  Ready: '#22c55e',
-  Sleeping: '#3b82f6',
-  Failed: '#ef4444',
-  Pending: '#f59e0b',
-  Stopped: '#6b7280',
-  Updating: '#8b5cf6',
+  Running: 'var(--status-running)',
+  Ready: 'var(--status-done)',
+  Sleeping: 'var(--status-info)',
+  Failed: 'var(--status-failed)',
+  Pending: 'var(--status-waiting)',
+  Stopped: 'var(--status-blocked)',
+  Updating: 'var(--status-info)',
 };
 
 
@@ -46,6 +55,7 @@ export const HUMAN_PHASE_LABELS: Record<string, string> = {
 };
 
 export const RUNTIME_LABELS: Record<string, string> = {
+  codex: 'Codex',
   openclaw: 'OpenClaw',
   copaw: 'CoPaw',
   hermes: 'Hermes',
@@ -55,34 +65,36 @@ export const RUNTIME_LABELS: Record<string, string> = {
 };
 
 // ============ Tailwind Badge Classes (for Badge components) ============
+// 运行 / 活跃复用主操作黄绿色底与深色文字；其他状态使用语义色。
+const ACTIVE_RESOURCE_BADGE = 'bg-[var(--action-primary)] text-[var(--action-primary-foreground)] border-transparent';
 
 export const WORKER_PHASE_BADGE_CLASSES: Record<string, string> = {
-  Pending: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  Running: 'bg-green-500/10 text-green-600 dark:text-green-400',
-  Sleeping: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  Updating: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  Stopped: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
-  Failed: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  Ready: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
+  Running: ACTIVE_RESOURCE_BADGE,
+  Sleeping: 'bg-status-info/15 text-status-info border-status-info/30',
+  Updating: 'bg-status-info/15 text-status-info border-status-info/30',
+  Stopped: 'bg-status-blocked/15 text-status-blocked border-status-blocked/30',
+  Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
+  Ready: 'bg-status-done/15 text-status-done border-status-done/30',
 };
 
 export const TEAM_PHASE_BADGE_CLASSES: Record<string, string> = {
-  Pending: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  Active: 'bg-green-500/10 text-green-600 dark:text-green-400',
-  Degraded: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  Failed: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
+  Active: ACTIVE_RESOURCE_BADGE,
+  Degraded: 'bg-status-blocked/15 text-status-blocked border-status-blocked/30',
+  Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 
 export const MANAGER_PHASE_BADGE_CLASSES: Record<string, string> = {
-  Running: 'bg-green-500/10 text-green-600 dark:text-green-400',
-  Pending: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  Failed: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  Running: ACTIVE_RESOURCE_BADGE,
+  Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
+  Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 
 export const HUMAN_PHASE_BADGE_CLASSES: Record<string, string> = {
-  Pending: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  Active: 'bg-green-500/10 text-green-600 dark:text-green-400',
-  Failed: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  Pending: 'bg-status-waiting/15 text-status-waiting border-status-waiting/30',
+  Active: ACTIVE_RESOURCE_BADGE,
+  Failed: 'bg-status-failed/15 text-status-failed border-status-failed/30',
 };
 
 // ============ Badge Variant Helper ============

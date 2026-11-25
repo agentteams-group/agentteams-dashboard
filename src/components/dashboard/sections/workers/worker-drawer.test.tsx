@@ -1,0 +1,321 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { WorkerResponse } from '@/lib/agentteams-api';
+import { agentteamsApi } from '@/lib/agentteams-api';
+
+const mounts = vi.hoisted(() => ({
+  surface: {} as Record<string, number>,
+  qwenpaw: 0,
+  mcp: 0,
+  tools: 0,
+  skills: 0,
+  channels: 0,
+  approval: 0,
+  coding: 0,
+  workspace: 0,
+  env: 0,
+  llm: 0,
+  plugins: 0,
+  checkpoints: 0,
+}));
+
+const detailState = vi.hoisted(() => ({ worker: null as unknown }));
+
+vi.mock('@/lib/worker-detail', () => ({
+  fetchWorkerDetail: vi.fn(async () => detailState.worker),
+  invalidateWorkerDetail: vi.fn(),
+}));
+vi.mock('@/hooks/use-now-tick', () => ({ useNowTick: () => 0 }));
+vi.mock('@/hooks/use-agentteams-worker-skills', () => ({
+  useWorkerSkills: () => ({ data: [] }),
+  useUploadWorkerSkill: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('./worker-runtime-config-surface', () => ({
+  WorkerRuntimeConfigSurface: ({ bucket = 'config' }: { bucket?: string }) => {
+    mounts.surface[bucket] = (mounts.surface[bucket] ?? 0) + 1;
+    return <div>{`surface-${bucket}`}</div>;
+  },
+}));
+vi.mock('./qwenpaw-runtime-config-panel', () => ({
+  QwenpawRuntimeConfigPanel: ({
+    workerName,
+    canWrite,
+  }: {
+    workerName: string;
+    canWrite?: boolean;
+  }) => {
+    mounts.qwenpaw += 1;
+    return <div>{`qwenpaw-runtime-${workerName}-${canWrite ? 'rw' : 'ro'}`}</div>;
+  },
+}));
+vi.mock('./worker-tools-panel', () => ({
+  WorkerToolsPanel: () => { mounts.tools += 1; return <div>tools-panel</div>; },
+}));
+vi.mock('./worker-mcp-panel', () => ({
+  WorkerMcpPanel: ({ worker }: { worker: { mcpServers?: Array<{ name: string }> } }) => {
+    mounts.mcp += 1;
+    return <div>{(worker.mcpServers ?? []).map((server) => server.name).join(',')}</div>;
+  },
+}));
+vi.mock('./worker-skill-assign', () => ({
+  WorkerSkillAssign: () => { mounts.skills += 1; return <div>skills-panel</div>; },
+}));
+vi.mock('./worker-skill-upload-dialog', () => ({
+  WorkerSkillUploadDialog: () => <div>upload-dialog</div>,
+}));
+vi.mock('./worker-channels-panel', () => ({
+  WorkerChannelsPanel: () => { mounts.channels += 1; return <div>channels-panel</div>; },
+}));
+vi.mock('./worker-approval-control', () => ({
+  WorkerApprovalControl: () => { mounts.approval += 1; return <div>approval-panel</div>; },
+}));
+vi.mock('./worker-coding-cli-panel', () => ({
+  WorkerCodingCliPanel: () => { mounts.coding += 1; return <div>coding-panel</div>; },
+}));
+vi.mock('./worker-workspace-files-panel', () => ({
+  WorkerWorkspaceFilesPanel: () => { mounts.workspace += 1; return <div>workspace-panel</div>; },
+}));
+vi.mock('./worker-env-card', () => ({
+  WorkerEnvCard: () => { mounts.env += 1; return <div>env-panel</div>; },
+}));
+vi.mock('./worker-llm-tuning-panel', () => ({
+  WorkerLlmTuningPanel: () => { mounts.llm += 1; return <div>llm-panel</div>; },
+}));
+vi.mock('./worker-plugins-card', () => ({
+  WorkerPluginsCard: () => { mounts.plugins += 1; return <div>plugins-panel</div>; },
+}));
+vi.mock('./worker-checkpoints-card', () => ({
+  WorkerCheckpointsCard: () => { mounts.checkpoints += 1; return <div>checkpoints-card</div>; },
+}));
+
+import { WorkerDrawer } from './worker-drawer';
+
+const worker = {
+  name: 'worker-a',
+  phase: 'Running',
+  state: 'Running',
+  containerManaged: true,
+  model: 'gpt-5',
+  // CoPaw exposes every card (legacy migration card included) and routes the
+  // capability cards through the runtime surface (non-QwenPaw path).
+  runtime: 'copaw',
+  image: 'img:latest',
+  containerState: 'running',
+  matrixUserID: '@worker-a:server',
+  roomID: '!room:server',
+  message: '',
+  team: 'team-alpha',
+  role: 'worker',
+  agentStatus: 'idle',
+  runningTaskCount: 0,
+  lastActivityAt: new Date(Date.now() - 60_000).toISOString(),
+  env: { A: '1', B: '2' },
+  skills: ['s1'],
+  mcpServers: [{ name: 'ctx7', url: 'http://mcp', transport: 'http' }],
+} as unknown as WorkerResponse;
+
+function renderDrawerFor(target: WorkerResponse, userLevel = 3) {
+  detailState.worker = target;
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <WorkerDrawer
+        worker={target}
+        onOpenChange={vi.fn()}
+        modelOptions={[]}
+        userLevel={userLevel}
+        onChanged={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+function renderDrawer(userLevel = 3) {
+  return renderDrawerFor(worker, userLevel);
+}
+
+beforeEach(() => {
+  mounts.surface = {};
+  mounts.qwenpaw = 0;
+  mounts.mcp = 0;
+  mounts.tools = 0;
+  mounts.skills = 0;
+  mounts.channels = 0;
+  mounts.approval = 0;
+  mounts.coding = 0;
+  mounts.workspace = 0;
+  mounts.env = 0;
+  mounts.llm = 0;
+  mounts.plugins = 0;
+  mounts.checkpoints = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/observability')) {
+      return new Response(JSON.stringify({ error: '仅管理员' }), { status: 403 });
+    }
+    return new Response('{}', { status: 404 });
+  }));
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it('shows a nonblocking skill warning while keeping skill editing available', async () => {
+  renderDrawerFor({ ...worker, runtime: 'qwenpaw', phase: 'Running', skillWarnings: ['Skill broken: load failed (ParserError)'] });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: /^技能/ }), { button: 0, ctrlKey: false });
+  expect(await screen.findByText('部分技能未能加载，Agent 可继续运行')).toBeInTheDocument();
+  expect(screen.getByText('Skill broken: load failed (ParserError)')).toBeInTheDocument();
+  expect(screen.getByText('skills-panel')).toBeInTheDocument();
+});
+
+it('saves the OpenClaw heartbeat switch without environment changes and reads it back', async () => {
+  const target: WorkerResponse = { ...worker, runtime: 'openclaw', envEditable: true, llmHeartbeatEnabled: true };
+  const update = vi.spyOn(agentteamsApi, 'updateWorker').mockImplementation(async (_name, data) => {
+    detailState.worker = { ...target, ...data };
+    return detailState.worker as WorkerResponse;
+  });
+  renderDrawerFor(target);
+  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeChecked();
+  fireEvent.click(screen.getByRole('switch', { name: '自主巡检' }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith('worker-a', { llmHeartbeatEnabled: false }));
+  await waitFor(() => expect(screen.getByRole('switch', { name: '自主巡检' })).not.toBeChecked());
+});
+
+it('keeps the heartbeat switch read-only for non-admin viewers', async () => {
+  renderDrawerFor({ ...worker, runtime: 'openclaw', envEditable: false, llmHeartbeatEnabled: true }, 2);
+  expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeDisabled();
+});
+
+it('does not show the OpenClaw heartbeat switch for other runtimes', async () => {
+  renderDrawer();
+  expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
+});
+
+const CARDS: Array<{ title: string; content: string }> = [
+  { title: '高级配置', content: 'surface-config' },
+  { title: 'MCP', content: 'surface-mcp' },
+  { title: '工具', content: 'surface-tools' },
+  { title: '技能', content: 'surface-skills' },
+  { title: '频道', content: 'surface-channels' },
+  { title: '审批模式', content: 'surface-approval' },
+  { title: 'Coding CLI', content: 'coding-panel' },
+  { title: '工作区文件', content: 'workspace-panel' },
+  { title: 'Worker 插件', content: 'plugins-panel' },
+  { title: '运行时升级', content: '通过 Controller 将此 Worker 交接到 QwenPaw。' },
+  { title: '检查点', content: 'checkpoints-card' },
+];
+
+describe('WorkerDrawer', () => {
+  it.each(['月见·研究助手', 'worker-a'])('shows the resource ID alongside the Worker name %s', (displayName) => {
+    renderDrawerFor({ ...worker, identity: `- Name: ${displayName}` });
+    expect(screen.getByText(displayName, { selector: 'h2 span' })).toBeInTheDocument();
+    expect(screen.getByText('ID worker-a')).toBeInTheDocument();
+  });
+
+  it('renders header, status and model card', () => {
+    renderDrawer();
+    expect(screen.getByText('worker-a')).toBeInTheDocument();
+    expect(screen.getByText('成员')).toBeInTheDocument();
+    expect(screen.getByText('心跳')).toBeInTheDocument();
+    expect(screen.getByText('最近活动')).toBeInTheDocument();
+    expect(screen.getByText('在跑任务')).toBeInTheDocument();
+    expect(screen.getByText('上次运行')).toBeInTheDocument();
+    expect(screen.getByText('上次完成')).toBeInTheDocument();
+    expect(screen.getAllByText('gpt-5').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('tab', { name: '基础配置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑基础配置' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '模型' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '环境变量与网关' })).not.toBeInTheDocument();
+  });
+
+  it('renders vertical resource tabs without mounting all configuration panels', () => {
+    renderDrawer();
+    expect(screen.getAllByRole('button', { name: /./ })).not.toHaveLength(0);
+    for (const card of CARDS.filter((card) => ['高级配置', 'MCP', '技能', '工作区文件'].includes(card.title))) {
+      expect(screen.getByRole('tab', { name: card.title })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('tablist', { name: 'Agent 配置' })).toHaveAttribute('aria-orientation', 'vertical');
+    expect(screen.queryByText('env-panel')).not.toBeInTheDocument();
+  });
+
+  it('does not mount panel content until a card is opened', () => {
+    renderDrawer();
+    expect(screen.queryByText('checkpoints-card')).not.toBeInTheDocument();
+    expect(mounts.checkpoints).toBe(0);
+    expect(mounts.surface).toEqual({});
+    expect(mounts.qwenpaw).toBe(0);
+    expect(mounts.coding).toBe(0);
+  });
+
+  it('routes QwenPaw runtime config to the legacy panel instead of the surface', async () => {
+    const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
+    renderDrawerFor(qwenpawWorker);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
+
+    expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
+    expect(mounts.qwenpaw).toBe(1);
+    expect(mounts.surface).toEqual({});
+  });
+
+  it('treats an empty runtime as non-QwenPaw (surface-driven, no fake fields)', async () => {
+    const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
+    renderDrawerFor(runtimeLessWorker);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
+
+    expect(await screen.findByText('surface-config')).toBeInTheDocument();
+    expect(mounts.qwenpaw).toBe(0);
+  });
+
+  it.each(CARDS)('switches to "$title" inline and returns to basic information', async ({ title, content }) => {
+    renderDrawer();
+    const standalone = ['高级配置', 'MCP', '技能', '工作区文件'].includes(title);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: standalone ? title : '高级配置' }), { button: 0, ctrlKey: false });
+    if (!standalone) {
+      const summary = screen.getByText(title, { selector: 'summary' });
+      (summary.parentElement as HTMLDetailsElement).open = true;
+      fireEvent(summary.parentElement!, new Event('toggle'));
+    }
+
+    expect(await screen.findByText(content)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '关闭弹窗' })).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '基础配置' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(screen.queryByText(content)).not.toBeInTheDocument());
+  });
+
+  it('selects resource tabs through the keyboard', async () => {
+    renderDrawer();
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'MCP' }), { key: 'Enter' });
+    expect(await screen.findByText('surface-mcp')).toBeInTheDocument();
+
+    expect(screen.getByRole('tab', { name: 'MCP' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('shows delete only for L1 (dashboard level 3)', () => {
+    const { unmount } = renderDrawer(2);
+    expect(screen.queryByRole('button', { name: /删除/ })).not.toBeInTheDocument();
+    unmount();
+    renderDrawer(3);
+    expect(screen.getByRole('button', { name: /删除/ })).toBeInTheDocument();
+  });
+
+  it('shows Tracing only when observability is configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/observability')) {
+        return new Response(JSON.stringify({ enabled: true, publicUrl: 'https://langfuse.example.com' }), { status: 200 });
+      }
+      return new Response('{}', { status: 404 });
+    }));
+    renderDrawer(3);
+    const link = await screen.findByRole('link', { name: /Tracing/ });
+    expect(link).toHaveAttribute('href', 'https://langfuse.example.com');
+  });
+});

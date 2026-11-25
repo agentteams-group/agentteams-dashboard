@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChevronDown, ChevronRight, FileCode2, FileSearch, FolderTree, HelpCircle, Search, Terminal, Wrench } from 'lucide-react';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
 import { EventDebugInfo } from '@/components/dashboard/event-debug-info';
 import type { ToolCallPayload } from './index';
 
@@ -22,6 +21,8 @@ export interface ToolCallCardProps {
   eventId?: string;
   /** Number of m.replace revisions merged into the message. */
   revisionCount?: number;
+  /** Rendered as a step inside the run-process disclosure. */
+  embedded?: boolean;
 }
 
 function parseArguments(payload: ToolCallPayload): Record<string, unknown> {
@@ -46,7 +47,9 @@ function displayValue(value: unknown): string {
 }
 
 function statusLabel(status?: string) {
-  if (status === 'success' || status === 'completed') return '已完成';
+  // `succeeded` is the v1 runtime protocol spelling; the legacy spellings are
+  // kept for heuristic cards.
+  if (status === 'success' || status === 'succeeded' || status === 'completed') return '已完成';
   if (status === 'error' || status === 'failed') return '失败';
   if (status === 'running' || status === 'in_progress') return '进行中';
   return status || '等待中';
@@ -73,7 +76,7 @@ function errorSummaryOf(payload: ToolCallPayload): string | null {
   return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
 }
 
-function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail, runtime, eventId, revisionCount }: ToolCallCardProps) {
+function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail, eventId, revisionCount, embedded }: ToolCallCardProps) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? (isRunningStatus(payload.status) || payload.isStreaming);
   const args = parseArguments(payload);
@@ -86,11 +89,17 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
   const errorSummary = isError ? errorSummaryOf(payload) : null;
 
   return (
-    <section className={`my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`}>
+    <section
+      className={
+        embedded
+          ? `w-full overflow-hidden rounded-sm border-l-2 ${accent}`
+          : `my-2 w-full overflow-hidden rounded-lg border border-l-4 ${accent}`
+      }
+    >
       <Button
         variant="ghost"
         size="sm"
-        className="h-auto w-full justify-between px-3 py-2 hover:bg-muted/50"
+        className={`h-auto w-full justify-between hover:bg-muted/50 ${embedded ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
         onClick={() => setUserOpen((previous) => !(previous ?? open))}
         aria-expanded={open}
       >
@@ -102,7 +111,6 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
             )}
           </span>
           <span className="truncate">{title}</span>
-          {runtime && <RuntimeBadge runtime={runtime} size="sm" withTooltip />}
           <Badge variant={isError ? 'destructive' : isRunning ? 'default' : 'secondary'}>
             {statusLabel(payload.status)}
           </Badge>
@@ -123,21 +131,21 @@ function ToolCallCard({ payload, icon: Icon, title, accent, detailLabel, detail,
       </Button>
       {isError && errorSummary && !open && (
         <p
-          className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 px-3 py-1.5 text-[11px] text-red-600"
+          className={`max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 text-xs text-red-600 ${embedded ? 'px-2.5 py-1.5' : 'px-3 py-1.5'}`}
           data-testid="tool-error-summary"
         >
           {errorSummary}
         </p>
       )}
       {open && (
-        <div className="space-y-2 px-3 pb-3 text-xs">
+        <div className={`space-y-2 text-xs ${embedded ? 'px-2.5 pb-2.5' : 'px-3 pb-3'}`}>
           {hasDetail && (
             <ToolValue label={detailLabel || '详情'} value={detail} kind="detail" />
           )}
           {hasArguments && <ToolValue label="参数" value={args} kind="in" />}
           {hasResult && <ToolValue label="结果" value={payload.result} kind={isError ? 'out-error' : 'out'} />}
           {typeof payload.note === 'string' && payload.note && (
-            <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">{payload.note}</p>
+            <p className="text-xs text-muted-foreground whitespace-pre-wrap">{payload.note}</p>
           )}
           {eventId && <EventDebugInfo eventId={eventId} revisionCount={revisionCount} />}
         </div>
@@ -157,11 +165,11 @@ function ToolValue({ label, value, kind }: { label: string; value: unknown; kind
     <div className="rounded-lg bg-muted/40 border border-border/30">
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/20">
         {kind === 'in' || kind === 'out' || kind === 'out-error' ? (
-          <Badge variant="outline" className={`h-4 px-1.5 text-[11px] font-semibold leading-none ${badge}`}>
+          <Badge variant="outline" className={`h-4 px-1.5 text-xs font-semibold leading-none ${badge}`}>
             {kind === 'in' ? 'IN' : 'OUT'}
           </Badge>
         ) : null}
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
       </div>
       <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-foreground">{displayValue(value)}</pre>
     </div>
@@ -178,36 +186,38 @@ export interface ToolRendererProps {
   runtime?: string | null;
   eventId?: string;
   revisionCount?: number;
+  /** Rendered as a step inside the run-process disclosure. */
+  embedded?: boolean;
 }
 
-export function ReadFileToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
-  return <ToolCallCard payload={payload} icon={FileSearch} title={`读取文件${pathFrom(payload) ? ` · ${pathFrom(payload)}` : ''}`} accent="border-l-emerald-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+export function ReadFileToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
+  return <ToolCallCard payload={payload} icon={FileSearch} title={`读取文件${pathFrom(payload) ? ` · ${pathFrom(payload)}` : ''}`} accent="border-l-emerald-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function WriteFileToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
-  return <ToolCallCard payload={payload} icon={FileCode2} title={`写入文件${pathFrom(payload) ? ` · ${pathFrom(payload)}` : ''}`} accent="border-l-amber-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+export function WriteFileToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
+  return <ToolCallCard payload={payload} icon={FileCode2} title={`写入文件${pathFrom(payload) ? ` · ${pathFrom(payload)}` : ''}`} accent="border-l-amber-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function ApplyPatchToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
+export function ApplyPatchToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
   const args = parseArguments(payload);
-  return <ToolCallCard payload={payload} icon={FileCode2} title="应用补丁" accent="border-l-violet-500" detailLabel="补丁" detail={args.patch || args.patchText} runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+  return <ToolCallCard payload={payload} icon={FileCode2} title="应用补丁" accent="border-l-violet-500" detailLabel="补丁" detail={args.patch || args.patchText} runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function WebSearchToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
+export function WebSearchToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
   const args = parseArguments(payload);
-  return <ToolCallCard payload={payload} icon={Search} title={`网页搜索${args.query ? ` · ${args.query}` : ''}`} accent="border-l-sky-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+  return <ToolCallCard payload={payload} icon={Search} title={`网页搜索${args.query ? ` · ${args.query}` : ''}`} accent="border-l-sky-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function ExecuteCommandToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
+export function ExecuteCommandToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
   const args = parseArguments(payload);
-  return <ToolCallCard payload={payload} icon={Terminal} title={`执行命令${args.command ? ` · ${args.command}` : ''}`} accent="border-l-orange-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+  return <ToolCallCard payload={payload} icon={Terminal} title={`执行命令${args.command ? ` · ${args.command}` : ''}`} accent="border-l-orange-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function ListDirectoryToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
+export function ListDirectoryToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
   const args = parseArguments(payload);
-  return <ToolCallCard payload={payload} icon={FolderTree} title={`列出目录${args.path ? ` · ${args.path}` : ''}`} accent="border-l-cyan-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+  return <ToolCallCard payload={payload} icon={FolderTree} title={`列出目录${args.path ? ` · ${args.path}` : ''}`} accent="border-l-cyan-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }
 
-export function FallbackToolCall({ payload, runtime, eventId, revisionCount }: ToolRendererProps) {
-  return <ToolCallCard payload={payload} icon={Wrench} title={payload.tool_name || '工具调用'} accent="border-l-blue-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} />;
+export function FallbackToolCall({ payload, runtime, eventId, revisionCount, embedded }: ToolRendererProps) {
+  return <ToolCallCard payload={payload} icon={Wrench} title={payload.tool_name || '工具调用'} accent="border-l-blue-500" runtime={runtime} eventId={eventId} revisionCount={revisionCount} embedded={embedded} />;
 }

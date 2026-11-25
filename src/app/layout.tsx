@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "AgentTeams Dashboard - AI 集群管理面板",
   description: "AgentTeams 控制器仪表盘，管理 Workers、Teams、Managers 和基础设施",
   icons: {
-    icon: "/agentteams-logo.svg",
+    icon: `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`,
   },
 };
 
@@ -26,13 +26,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="zh-CN" className={`${geistSans.variable} ${geistMono.variable} font-sans`} suppressHydrationWarning>
       <head>
         {/* Apply the persisted theme before first paint (no FOUC). */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className="antialiased"
       >
         <ClientAuthInstaller />
         {children}

@@ -18,6 +18,7 @@ export interface PluginNavItemsProps {
   activeSection: string;
   collapsed: boolean;
   onNavClick: (_sectionId: string) => void;
+  excludePluginIds?: readonly string[];
 }
 
 function targetSectionId(pluginId: string, item: MenuItemContribution): string | null {
@@ -30,15 +31,15 @@ function targetSectionId(pluginId: string, item: MenuItemContribution): string |
   return null;
 }
 
-export function PluginNavItems({ activeSection, collapsed, onNavClick }: PluginNavItemsProps) {
-  const items = usePluginMenuItems();
+export function PluginNavItems({ activeSection, collapsed, onNavClick, excludePluginIds }: PluginNavItemsProps) {
+  const items = usePluginMenuItems().filter(({ pluginId }) => !excludePluginIds?.includes(pluginId));
 
   if (items.length === 0) return null;
 
   return (
     <div data-testid="plugin-nav-group">
       {!collapsed && (
-        <div className="px-4 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+        <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
           插件
         </div>
       )}

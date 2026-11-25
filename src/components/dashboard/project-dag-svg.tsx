@@ -41,6 +41,10 @@ export function ProjectDagSvg({
   title,
   onNodeClick,
   onStuckNodeClick,
+  currentNodeId,
+  selectedNodeId,
+  neutral = false,
+  statusLabels,
 }: {
   dag: ProjectDag;
   nodeColors: Record<string, DagNodeColor>;
@@ -53,6 +57,10 @@ export function ProjectDagSvg({
   onNodeClick?: (_nodeId: string) => void;
   /** 卡住节点点击（跳对应 Agent 会话）；未传时卡住节点仍只有警示样式。 */
   onStuckNodeClick?: (_nodeId: string) => void;
+  currentNodeId?: string;
+  selectedNodeId?: string;
+  neutral?: boolean;
+  statusLabels?: Record<string, string>;
 }) {
   const W = nodeWidth;
   const H = nodeHeight;
@@ -63,20 +71,21 @@ export function ProjectDagSvg({
   // resolve to the first instance.
   const markerId = useId();
   const layout = useMemo(
-    () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY }),
-    [dag, W, H, GY],
+    () => layoutProjectDag(dag, { nodeWidth: W, nodeHeight: H, gapY: GY, centerLayers: neutral }),
+    [dag, W, H, GY, neutral],
   );
   const critical = useMemo(() => criticalPathOf(dag), [dag]);
   const { width, height, positions } = layout;
+  const renderedHeight = currentNodeId && dag.nodes.length ? Math.max(...dag.nodes.map(node => (positions.get(node.id)?.y ?? 0) + H + (node.assignee ? 12 : 0))) + 12 : height;
 
   if (dag.nodes.length === 0) return null;
 
   return (
     <svg
       width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
+      height={renderedHeight}
+      viewBox={`0 0 ${width} ${renderedHeight}`}
+      role={onNodeClick || onStuckNodeClick ? 'group' : 'img'}
       aria-label={title ?? '项目任务依赖图'}
     >
       {dag.edges.map((e, i) => {
@@ -84,19 +93,19 @@ export function ProjectDagSvg({
         const b = positions.get(e.target);
         if (!a || !b) return null;
         const x1 = a.x + W / 2;
-        const y1 = a.y + H;
+        const y1 = a.y + H + (dag.nodes.find(node => node.id === e.source)?.assignee ? 12 : 0);
         const x2 = b.x + W / 2;
         const y2 = b.y;
         const my = (y1 + y2) / 2;
-        const onCritical = critical.has(e.source) && critical.has(e.target);
+        const onCritical = !neutral && critical.has(e.source) && critical.has(e.target);
         return (
           <path
             key={`edge-${i}`}
-            d={`M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
+            d={neutral ? `M ${x1} ${y1} V ${my} H ${x2} V ${y2}` : `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
             fill="none"
-            stroke={onCritical ? CRITICAL_STROKE : 'rgba(148,163,184,0.55)'}
+            stroke={neutral ? 'var(--muted-foreground)' : onCritical ? CRITICAL_STROKE : 'rgba(148,163,184,0.55)'}
             strokeWidth={onCritical ? 2 : 1.2}
-            strokeDasharray={e.conditional ? '4 3' : undefined}
+            strokeDasharray={!neutral && e.conditional ? '4 3' : undefined}
             markerEnd={`url(#${markerId})`}
             opacity={onCritical ? 0.95 : undefined}
           />
@@ -104,7 +113,7 @@ export function ProjectDagSvg({
       })}
       <defs>
         <marker id={markerId} markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L7,3 L0,6 Z" fill="rgba(148,163,184,0.7)" />
+          <path d="M0,0 L7,3 L0,6 Z" fill={neutral ? 'var(--muted-foreground)' : 'rgba(148,163,184,0.7)'} />
         </marker>
       </defs>
       {dag.nodes.map((n) => {
@@ -115,7 +124,8 @@ export function ProjectDagSvg({
         const onCritical = critical.has(n.id);
         const clickable = Boolean(onNodeClick || (stuck && onStuckNodeClick));
         // ~14 CJK glyphs at 11px fit inside the default 190px node width.
-        const label = n.title.length > 14 ? `${n.title.slice(0, 14)}…` : n.title;
+        const maxLabel = statusLabels ? Math.floor((W - 92) / 12) : neutral && n.status === 'completed' ? Math.floor((W - 52) / 12) : W === 190 ? 14 : Math.floor((W - 32) / 12);
+        const label = n.title.length > maxLabel ? `${n.title.slice(0, maxLabel)}…` : n.title;
         const assignee = n.assignee && n.assignee.length > 18 ? `${n.assignee.slice(0, 18)}…` : n.assignee;
         const handleClick = () => {
           if (stuck && onStuckNodeClick) onStuckNodeClick(n.id);
@@ -125,46 +135,55 @@ export function ProjectDagSvg({
           <g
             key={n.id}
             onClick={clickable ? handleClick : undefined}
+            role={clickable ? 'button' : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            aria-label={clickable ? `${n.title} · ${n.assignee || '未分配'}` : undefined}
+            aria-pressed={clickable ? n.id === selectedNodeId : undefined}
+            data-current={n.id === currentNodeId || undefined}
+            onKeyDown={clickable ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleClick(); } } : undefined}
             className={clickable ? 'cursor-pointer' : undefined}
           >
             <title>{stuck ? `${n.title}（卡住 — 点击定位责任 Agent）` : n.title}</title>
+            {!neutral && n.id === currentNodeId && <rect x={p.x - 4} y={p.y - 4} width={W + 8} height={H + (assignee ? 12 : 0) + 8} rx={10} fill="none" stroke="currentColor" strokeDasharray="4 3" opacity={0.6} />}
             <rect
               x={p.x}
               y={p.y}
               width={W}
               height={H + (assignee ? 12 : 0)}
               rx={7}
-              fill={colors.fill}
-              stroke={stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
-              strokeWidth={stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
-              strokeDasharray={n.ready ? '5 3' : undefined}
+              fill={statusLabels && ['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.06)' : neutral ? 'var(--card)' : colors.fill}
+              stroke={statusLabels && ['in_progress', 'completed'].includes(n.status) ? '#10b981' : neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              strokeWidth={neutral ? 1 : n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
+              strokeDasharray={!neutral && n.ready ? '5 3' : undefined}
             />
-            {n.ready && (
+            {neutral && !statusLabels && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
+            {statusLabels && <g><rect x={p.x + W - 62} y={p.y + 9} width={52} height={19} rx={5} fill={['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.15)' : 'var(--muted)'} /><text x={p.x + W - 36} y={p.y + 22} textAnchor="middle" fontSize={10} fill={['in_progress', 'completed'].includes(n.status) ? '#047857' : 'var(--muted-foreground)'}>{statusLabels[n.status] ?? n.status}</text></g>}
+            {!neutral && n.ready && (
               <circle cx={p.x + 10} cy={p.y + H / 2 - (assignee ? 6 : 0)} r={3} fill="#22d3ee" />
             )}
-            {stuck && (
+            {!neutral && stuck && (
               <circle cx={p.x + W - 9} cy={p.y + 9} r={3.5} fill="#ef4444">
                 <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" />
               </circle>
             )}
             <text
               x={p.x + 18}
-              y={p.y + (assignee ? H / 2 - 2 : H / 2 + 4)}
-              fontSize={11}
-              fill={colors.text}
+              y={p.y + (assignee || statusLabels ? H / 2 - 2 : H / 2 + 4)}
+              fontSize={currentNodeId ? 12 : 11}
+              fill={currentNodeId ? 'currentColor' : colors.text}
               fontFamily="inherit"
             >
               {label}
             </text>
-            {assignee && (
+            {(assignee || statusLabels) && (
               <text
                 x={p.x + 18}
                 y={p.y + H - 2}
-                fontSize={9}
-                fill="rgba(113,113,122,0.9)"
+                fontSize={statusLabels ? 9 : currentNodeId ? 12 : 9}
+                fill={currentNodeId ? 'currentColor' : 'rgba(113,113,122,0.9)'}
                 fontFamily="inherit"
               >
-                @{assignee}
+                {assignee ? `@${assignee}` : '未分配'}
               </text>
             )}
           </g>

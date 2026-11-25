@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WorkerCodingCliPanel } from './worker-coding-cli-panel';
 
@@ -513,5 +513,195 @@ describe('B7 WorkerCodingCliPanel（#1360 消费）', () => {
     fireEvent.click(await screen.findByRole('button', { name: '通用 Coding（最小形态）' }));
     expect(await screen.findByText(/已套用 通用 Coding/)).toBeInTheDocument();
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+});
+
+describe('CodingCLI QwenCode 语音模型（voiceModel，对齐插件 16.142）', () => {
+  beforeEach(() => {
+    calls = [];
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('㉑ QwenCode settings 渲染「语音（Voice）」分组 + 字段，触控 ≥44', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    const input = await screen.findByLabelText('语音模型');
+    expect(screen.getByText('语音（Voice）')).toBeInTheDocument();
+    expect(screen.getByText(/语音模型 \/ Voice model/)).toBeInTheDocument();
+    expect(input).toHaveAttribute('placeholder', '留空使用 CLI 默认');
+    // 触控目标 44px（h-11），窄屏 w-full + min-w-0 不横溢
+    expect(input).toHaveClass('h-11');
+    expect(input).toHaveClass('w-full');
+    expect(input).toHaveClass('min-w-0');
+  });
+
+  it('㉒ 输入语音模型 → PUT body 含顶层 voiceModel', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+      { status: 200, body: { ok: true } },
+      {
+        status: 200,
+        body: { model: { name: 'qwen3-coder' }, voiceModel: 'qwen-voice-tts-1' },
+      },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    fireEvent.change(await screen.findByLabelText('语音模型'), {
+      target: { value: 'qwen-voice-tts-1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put!.body!)).toEqual({ voiceModel: 'qwen-voice-tts-1' });
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText('语音模型')).toHaveValue('qwen-voice-tts-1'),
+    );
+  });
+
+  it('㉓ 已有值回填；清空 → 空串清除覆盖（merge 无删键语义）', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' }, voiceModel: 'old-voice' } },
+      { status: 200, body: { ok: true } },
+      { status: 200, body: { model: { name: 'qwen3-coder' }, voiceModel: '' } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    const input = await screen.findByLabelText('语音模型');
+    expect(input).toHaveValue('old-voice');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeTruthy();
+      // controller settings PUT 只深合并、不删键：空串=清除覆盖（插件 16.142 同口径）
+      expect(JSON.parse(put!.body!)).toEqual({ voiceModel: '' });
+    });
+  });
+
+  it('㉔ 从未设置过 + 留空 → 不写空值、payload 无 voiceModel 键', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+    const input = await screen.findByLabelText('语音模型');
+    expect(input).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(2));
+    // 无实际改动 → 不 PUT；即使 PUT，body 也不会带空 voiceModel
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('㉕ OpenCode / Qoder 编辑配置不显示语音分组', async () => {
+    mockFetch([
+      {
+        status: 200,
+        body: {
+          clis: [
+            { id: 'qwen-code', installed: true, version: '0.25.0' },
+            { id: 'opencode', installed: true, version: '1.0.0' },
+            { id: 'qoder', installed: true, version: '1.2.3' },
+          ],
+        },
+      },
+      { status: 200, body: { model: { name: 'opencode-model' } } },
+      { status: 200, body: { model: { name: 'qoder-model' } } },
+    ]);
+    render(<WorkerCodingCliPanel workerName="w1" />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 OpenCode 配置' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('当前配置只读预览')).toHaveTextContent('opencode-model'),
+    );
+    expect(screen.queryByText('语音（Voice）')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('语音模型')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 Qoder 配置' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('当前配置只读预览')).toHaveTextContent('qoder-model'),
+    );
+    expect(screen.queryByText('语音（Voice）')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('语音模型')).not.toBeInTheDocument();
+  });
+
+  // CodingCLI 桥的唯一入口：QwenCode 卡展开、且 Worker 是 qwenpaw 运行时。
+  it('㉖ qwenpaw + QwenCode 卡展开 → 显示「QwenPaw × QwenCode 桥」', async () => {
+    mockFetch([{ status: 200, body: PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" runtime="qwenpaw" />);
+    expect(
+      await screen.findByLabelText('QwenPaw × QwenCode 桥'),
+    ).toBeInTheDocument();
+  });
+
+  it('㉗ 非 qwenpaw 运行时 → QwenCode 卡内不渲染桥栏', async () => {
+    mockFetch([{ status: 200, body: PROBE }]);
+    render(<WorkerCodingCliPanel workerName="w1" runtime="openclaw" />);
+    await screen.findByText('编码 CLI（探测 / 安装 / 配置）');
+    expect(screen.queryByLabelText('QwenPaw × QwenCode 桥')).not.toBeInTheDocument();
+  });
+});
+
+describe('CodingCLI 模型名候选（与 Worker 模型编辑同源）', () => {
+  beforeEach(() => {
+    calls = [];
+    if (!('ResizeObserver' in window)) {
+      Object.defineProperty(window, 'ResizeObserver', {
+        value: class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+        configurable: true,
+      });
+    }
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('模型名有别名候选，且仍可自由输入', async () => {
+    mockFetch([
+      { status: 200, body: PROBE },
+      { status: 200, body: { model: { name: 'qwen3-coder' } } },
+    ]);
+    render(
+      <WorkerCodingCliPanel
+        workerName="w1"
+        modelAliases={['qwen3.5-plus', 'team-chat']}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Qwen Code 配置' }));
+
+    const field = (await screen.findByLabelText('模型名')) as HTMLInputElement;
+    expect(field).toHaveValue('qwen3-coder');
+
+    fireEvent.focus(field);
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['qwen3.5-plus', 'team-chat']);
+
+    fireEvent.change(field, { target: { value: 'custom-cli-model' } });
+    expect(field).toHaveValue('custom-cli-model');
+
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put!.body!)).toEqual({ model: { name: 'custom-cli-model' } });
+    });
   });
 });

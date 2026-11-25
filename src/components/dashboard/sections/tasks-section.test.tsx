@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // 9/17 装验反馈回归：任务看板项目视图**右栏详情独立滚动**——
@@ -10,7 +10,7 @@ import '@testing-library/jest-dom/vitest';
 const FAKE_PROJECT = {
   runId: 'proj-1',
   name: '测试项目',
-  status: 'in_progress' as const,
+  status: 'active' as const,
   roomId: '!room:example.org',
   workers: ['w1'],
   phases: [],
@@ -19,7 +19,7 @@ const FAKE_PROJECT = {
 };
 
 vi.mock('@/lib/matrix-store', () => ({
-  useMatrixStore: (fn: (_s: unknown) => unknown) => fn({ isLoggedIn: true }),
+  useMatrixStore: (fn?: (_s: unknown) => unknown) => fn ? fn({ isLoggedIn: true }) : { isLoggedIn: true },
 }));
 vi.mock('@/components/dashboard/use-active-section', () => ({
   useActiveSection: () => ({ setActiveSection: vi.fn() }),
@@ -30,10 +30,15 @@ vi.mock('@/hooks/use-agentteams-managers', () => ({
 vi.mock('@/hooks/use-agentteams-workers', () => ({
   useWorkers: () => ({ data: [] }),
 }));
+vi.mock('@/hooks/use-room-archive', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/use-room-archive')>();
+  const data = { rooms: [] };
+  return { ...actual, useArchivedRooms: () => ({ data }) };
+});
 vi.mock('@/hooks/use-projects', () => ({
   useApiTaskBoard: () => ({
     projects: [FAKE_PROJECT],
-    tasks: [],
+    tasks: viewPreference.tasks,
     degraded: false,
     refetch: vi.fn(),
   }),
@@ -53,22 +58,27 @@ vi.mock('@/hooks/use-task-board', () => ({
 vi.mock('@/lib/task-store', () => ({
   useTaskStore: (sel?: (_s: unknown) => unknown) =>
     sel
-      ? sel({ tasks: {}, clearTasks: vi.fn() })
-      : { tasks: {}, clearTasks: vi.fn() },
+      ? sel({ tasks: viewPreference.live, clearTasks: vi.fn() })
+      : { tasks: viewPreference.live, clearTasks: vi.fn() },
 }));
 vi.mock('@/lib/hitl-inbox', () => ({
   useHitlInboxStore: { getState: () => ({ takePendingProjectKey: () => null }) },
 }));
+const viewPreference = vi.hoisted(() => ({ value: 'projects', tasks: [] as import('@/hooks/use-task-board').BoardTask[], live: {} as Record<string, import('@/lib/task-store').TaskEntry> }));
+const roomNavigation = vi.hoisted(() => ({ open: vi.fn(), joined: ['!execution:test'] as string[] }));
+vi.mock('@/lib/open-chat-room', () => ({ openChatRoom: roomNavigation.open }));
+vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: () => ({ state: 'joined', joinedRooms: roomNavigation.joined }) }));
 // 视图模式/选中项目持久化：直接给 projects 视图 + 选中 proj-1
 vi.mock('@/lib/use-persistent-state', () => ({
   usePersistentState: (key: string, initial: unknown) => {
-    if (key === 'agentteams:tasks-view') return ['projects', vi.fn()];
+    if (key === 'agentteams:tasks-view') return [viewPreference.value, vi.fn()];
     if (key === 'agentteams:tasks-selected-project') return ['proj-1', vi.fn()];
     return [initial, vi.fn()];
   },
 }));
 
 import { TasksSection } from './tasks-section';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // 真实 react-query 环境（项目视图的 room 时间戳兜底 hook 走 useQueries；
 // 此处 query 均为空列表/不启用，零网络）。
@@ -80,14 +90,51 @@ const renderSection = () => {
   const qc = makeQueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <TasksSection />
+      <TooltipProvider><TasksSection /></TooltipProvider>
     </QueryClientProvider>,
   );
 };
 
 describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反馈）', () => {
+  it('does not roll accepted subtask progress back when an older completion message is replayed', () => {
+    viewPreference.value = 'kanban';
+    const base = { projectId: 'proj-1', assignedTo: 'worker', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' };
+    viewPreference.tasks = [
+      { ...base, runId: 'main', title: '交付统计工具', status: 'in_progress' },
+      { ...base, runId: 'analysis', parentTaskId: 'main', title: '已验收的需求', status: 'completed' },
+    ];
+    viewPreference.live = { analysis: { runId: 'analysis', title: '已验收的需求', status: 'submitted', roomId: '!task:test', senderMatrixUserId: 'worker', subagents: [], steps: [], createdAt: 1, updatedAt: 1 } };
+    renderSection();
+    expect(screen.getByRole('region', { name: '任务流程' })).toHaveTextContent('子任务 1/1 已完成');
+  });
+  it('shows only main tasks on the board, then opens their subtasks and execution details', async () => {
+    viewPreference.value = 'kanban';
+    const base = {projectId:'proj-1',teamId:'team',assignedTo:'worker',roomId:'',dependsOn:[],createdAt:0,outcome:null,source:'api'};
+    viewPreference.tasks = [
+      {...base,runId:'main',title:'交付优先级筛选',status:'in_progress'},
+      {...base,runId:'analysis',parentTaskId:'main',title:'分析筛选规则',status:'completed'},
+      {...base,runId:'dev',parentTaskId:'main',title:'实现筛选接口',status:'pending',dependsOn:['analysis']},
+      {...base,runId:'other-main',title:'另一项独立交付',status:'pending'},
+    ];
+    renderSection();
+    const flow=screen.getByRole('region',{name:'任务流程'});
+    expect(within(flow).queryByText('分析筛选规则')).toBeNull();
+    expect(within(flow).queryByText('实现筛选接口')).toBeNull();
+    expect(within(flow).getByText(/子任务 1\/2 已完成/)).toBeInTheDocument();
+    fireEvent.click(within(flow).getByRole('button',{name:/交付优先级筛选/}));
+    const sheet=await screen.findByRole('dialog');
+    expect(within(sheet).getByRole('region',{name:'子任务列表'})).toHaveTextContent('分析筛选规则');
+    const subtasks = within(sheet).getByRole('region', { name: '子任务列表' });
+    fireEvent.click(within(subtasks).getByRole('button', { name: /实现筛选接口/ }));
+    expect(within(sheet).getByRole('button',{name:'返回主任务：交付优先级筛选'})).toBeInTheDocument();
+    expect(within(sheet).getByText('前置依赖')).toBeInTheDocument();
+  });
   afterEach(() => {
     cleanup();
+    viewPreference.value = 'projects';
+    viewPreference.tasks = [];
+    viewPreference.live = {};
+    window.history.replaceState(null, '', '#');
     vi.unstubAllGlobals();
   });
 
@@ -123,5 +170,269 @@ describe('任务看板项目视图：右栏详情独立滚动（9/17 验收反�
       '[class*="lg:max-h-none"][class*="lg:h-full"][class*="overflow-y-auto"]',
     ) as HTMLElement | null;
     expect(scroller).not.toBeNull();
+  });
+});
+
+it('shows one restrained empty board instead of eight colored empty columns', () => {
+  viewPreference.value = 'kanban';
+  renderSection();
+  expect(screen.getByText('暂无任务')).toBeInTheDocument();
+  expect(screen.queryByText('待办')).toBeNull();
+  expect(screen.queryByLabelText('任务状态汇总')).toBeNull();
+  const header = screen.getByRole('heading', { name: '任务看板' }).closest('[data-slot="section-header"]') as HTMLElement;
+  expect(within(header).getByRole('textbox', { name: '搜索任务' })).toBeInTheDocument();
+  expect(within(header).getByRole('button', { name: '归档任务' })).toBeInTheDocument();
+  cleanup();
+  viewPreference.value = 'projects';
+});
+
+it('puts the task title before subtask progress and hides an identical task ID', () => {
+  viewPreference.value = 'kanban';
+  const base = { projectId: 'proj-1', assignedTo: 'worker', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' };
+  viewPreference.tasks = [
+    { ...base, runId: 'delivery-01', title: 'delivery-01', status: 'in_progress' },
+    { ...base, runId: 'child', parentTaskId: 'delivery-01', title: '实现功能', status: 'completed' },
+  ];
+  renderSection();
+  const card = screen.getByRole('button', { name: /delivery-01/ });
+  const title = within(card).getByText('delivery-01');
+  const progress = within(card).getByLabelText('子任务进度');
+  expect(title.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('opens the selected task detail and keeps populated groups at a fixed height', async () => {
+  viewPreference.value = 'kanban';
+  viewPreference.tasks = [{ runId: 'task-demo', title: '检查交付文件', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ summary: '核对分析结论和原始文件', status: 'submitted', deliverables: ['报告.md'] }), { status: 200 })));
+  renderSection();
+  const card = screen.getByRole('button', { name: /检查交付文件/ });
+  expect(card.closest('[class*="h-[360px]"]')).not.toBeNull();
+  expect(within(card).queryByText('进行中')).toBeNull();
+  expect(within(card).getByLabelText('任务正在执行')).toHaveClass('motion-safe:animate-spin');
+  expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveStyle({ backgroundColor: '#CB9300' });
+  fireEvent.click(card);
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();
+  expect(screen.getByText('报告.md')).toBeInTheDocument();
+  expect(within(screen.getByRole('dialog')).getByText('待验收')).toBeInTheDocument();
+  cleanup();
+  vi.unstubAllGlobals();
+  viewPreference.value = 'projects';
+  viewPreference.tasks = [];
+});
+
+it('separates lifecycle columns from attention states and places submitted tasks in review', () => {
+  viewPreference.value = 'kanban';
+  viewPreference.tasks = [{ runId: 'review-task', title: '待确认的报告', status: 'submitted', assignedTo: '审核', projectId: 'proj-1', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  renderSection();
+  const flow = screen.getByRole('region', { name: '任务流程' });
+  const attention = screen.getByRole('region', { name: '需要关注' });
+  expect(within(flow).getAllByText(/^(待办|已派发|进行中|待验收|已完成)$/).map(el => el.textContent)).toEqual(['待办', '已派发', '进行中', '待验收', '已完成']);
+  expect(within(attention).getAllByText(/^(阻塞|需修订|失败)$/).map(el => el.textContent)).toEqual(['阻塞', '需修订', '失败']);
+  const card = within(flow).getByRole('button', { name: /待确认的报告/ });
+  expect(card.closest('[class*="h-[360px]"]')).toHaveTextContent('待验收');
+  expect(within(card).queryByLabelText('任务正在执行')).toBeNull();
+  cleanup();
+  viewPreference.value = 'projects';
+  viewPreference.tasks = [];
+});
+
+describe('task collaboration room entry', () => {
+  afterEach(() => {
+    cleanup();
+    viewPreference.value = 'projects';
+    viewPreference.tasks = [];
+    viewPreference.live = {};
+    roomNavigation.joined = ['!execution:test'];
+    roomNavigation.open.mockClear();
+    vi.unstubAllGlobals();
+  });
+  function task() {
+    viewPreference.value = 'kanban';
+    viewPreference.tasks = [{ runId: 'task-room', title: '执行分析', status: 'in_progress', assignedTo: '分析助手', projectId: 'proj-1', roomId: '!source:test', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  }
+  it('opens the same board details when following a conversation task link', async () => {
+    task();
+    viewPreference.tasks[0].teamId = 'travel-crew';
+    viewPreference.tasks[0].status = 'pending';
+    window.history.replaceState(null, '', '#workbench/tasks?task=task-room&team=travel-crew');
+    renderSection();
+    const detail = await screen.findByRole('dialog', { name: '执行分析' });
+    expect(within(detail).getByText('task-room')).toBeInTheDocument();
+    fireEvent.keyDown(detail, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '执行分析' })).toBeNull());
+    expect(window.location.hash).toBe('#workbench/tasks');
+  });
+  it('moves a refreshed task between columns while keeping the board mounted and ignoring a stale chat status', async () => {
+    task();
+    viewPreference.tasks[0].status = 'assigned';
+    viewPreference.live = { 'task-room': { runId: 'task-room', title: '执行分析', status: 'assigned', roomId: '!source:test', senderMatrixUserId: 'worker', steps: [], subagents: [], createdAt: 0, updatedAt: 1 } };
+    const client = makeQueryClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider>;
+    const { rerender } = render(<TasksSection />, { wrapper });
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    const previousColumn = card.closest('[class*="h-[360px]"]')!;
+    expect(previousColumn).toHaveTextContent('已派发');
+    viewPreference.tasks = viewPreference.tasks.map(item => ({ ...item, status: 'in_progress' }));
+    rerender(<TasksSection />);
+    await waitFor(() => expect(within(previousColumn as HTMLElement).queryByRole('button', { name: /执行分析/ })).toBeNull());
+    expect(screen.getByRole('button', { name: /执行分析/ }).closest('[class*="h-[360px]"]')).toHaveTextContent('进行中');
+    expect(previousColumn.isConnected).toBe(true);
+  });
+  it('disables an undispatched task room with an explicit reason and makes no metadata request', () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    expect(entry).toBeDisabled();
+    expect(entry).toHaveAttribute('title', '任务尚未派发，协作房间未创建');
+    fireEvent.click(entry);
+    fireEvent.click(entry.parentElement!);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('shows pending-task details without treating an absent task meta file as a server failure', async () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    fireEvent.focus(screen.getByRole('button', { name: /执行分析/ }));
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    expect(within(preview).getByText('任务尚未派发，协作房间未创建')).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(within(preview).getByRole('button', { name: '查看完整详情' }));
+    const detail = await screen.findByRole('dialog', { name: '执行分析' });
+    expect(within(detail).getByText('任务尚未派发，协作房间未创建')).toBeInTheDocument();
+    expect(within(detail).queryByText('详情暂时无法加载')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('keeps a known execution room reachable even if task dispatch status has not caught up', () => {
+    task();
+    viewPreference.tasks[0].status = 'pending';
+    viewPreference.tasks[0].executionRoomId = '!execution:test';
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    expect(entry).toBeEnabled();
+    fireEvent.click(entry);
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room');
+  });
+  it('keeps the source link and resolves the real collaboration room on click', async () => {
+    task();
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: 'room:!execution:test' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '进入协作房间' })).not.toHaveTextContent('进入协作房间');
+    expect(screen.getByRole('button', { name: '查看来源会话' })).not.toHaveTextContent('查看来源会话');
+    fireEvent.click(screen.getByRole('button', { name: '查看来源会话' }));
+    expect(roomNavigation.open).toHaveBeenLastCalledWith('!source:test');
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenLastCalledWith('!execution:test', 'task-room'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('opens a lazy preview on focus with real dependencies, assignees and no invented creation time', async () => {
+    task();
+    viewPreference.tasks.push({ ...viewPreference.tasks[0], runId: 'task-dev', title: '实现修复', assignedTo: '开发助手', status: 'pending', dependsOn: ['task-room'] });
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ history: [{ ts: '2026-11-15T03:00:00Z', action: 'report_progress', to: 'in_progress', note: '已完成需求核对' }] }), { status: 200 })));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    expect(fetch).not.toHaveBeenCalled();
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    fireEvent.focus(card);
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    expect(await within(preview).findByText('已完成需求核对')).toBeInTheDocument();
+    expect(within(preview).getByText('暂未提供')).toBeInTheDocument();
+    expect(within(preview).getByText('来源会话')).toBeInTheDocument();
+    expect(within(preview).getAllByText('分析助手').length).toBeGreaterThan(0);
+    expect(within(preview).getByRole('group', { name: '项目任务分工与依赖' })).toHaveTextContent('开发助手');
+    expect(within(preview).getByRole('button', { name: /实现修复/ })).toBeInTheDocument();
+    fireEvent.click(within(preview).getByRole('button', { name: /实现修复/ }));
+    expect(within(preview).getByText('所选任务：实现修复')).toBeInTheDocument();
+    expect(within(preview).getByRole('button', { name: /执行分析/ })).toHaveAttribute('data-current', 'true');
+    fireEvent.click(within(preview).getByRole('button', { name: '查看完整详情' }));
+    expect(await screen.findByRole('dialog', { name: '执行分析' })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('does not substitute the source room when there is no execution room', async () => {
+    task();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    expect(await screen.findByText('协作房间尚未创建')).toBeInTheDocument();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
+  });
+  it('separates project progress from a completed prerequisite task', async () => {
+    task();
+    viewPreference.tasks[0].status = 'completed';
+    viewPreference.tasks.push({ ...viewPreference.tasks[0], runId: 'downstream', title: '独立验证', status: 'in_progress', assignedTo: '测试助手', dependsOn: ['task-room'] });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 }))));
+    renderSection();
+    expect(screen.getByRole('button', { name: '归档任务 执行分析' })).toBeVisible();
+    fireEvent.focus(screen.getAllByRole('button', { name: /执行分析/ }).find(element => element.hasAttribute('aria-pressed'))!);
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    const project = within(preview).getByRole('region', { name: '项目整体进度' });
+    expect(project).toHaveTextContent('测试项目');
+    expect(project).toHaveTextContent('进行中');
+    expect(project).toHaveTextContent('已完成 1/2');
+    expect(within(preview).getByText('连线表示前置依赖，不是父子任务；前置任务完成后，下游任务才能开始。')).toBeInTheDocument();
+    expect(within(preview).getByRole('button', { name: /执行分析 ·/ }).querySelector('[data-completed]')).not.toBeNull();
+  });
+  it('waits for hover intent, stays open when entering the panel, and dismisses with Escape', async () => {
+    task();
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{"summary":"正在核对"}', { status: 200 })));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const card = screen.getByRole('button', { name: /执行分析/ });
+    fireEvent.pointerEnter(card, { pointerType: 'mouse' });
+    fireEvent.pointerLeave(card);
+    await new Promise(resolve => setTimeout(resolve, 280));
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(card, { pointerType: 'mouse' });
+    const preview = await screen.findByRole('dialog', { name: '任务预览：执行分析' });
+    fireEvent.pointerLeave(card);
+    fireEvent.pointerEnter(preview, { pointerType: 'mouse' });
+    await within(preview).findByText('正在核对');
+    await new Promise(resolve => setTimeout(resolve, 230));
+    expect(preview).toBeInTheDocument();
+    fireEvent.keyDown(preview, { key: 'Escape' });
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+  it('opens a workflow execution room directly and isolates keyboard activation from the card', async () => {
+    task();
+    viewPreference.tasks[0].executionRoomId = '!execution:test';
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    const entry = screen.getByRole('button', { name: '进入协作房间' });
+    fireEvent.keyDown(entry, { key: 'Enter' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(entry);
+    expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('also exposes the entry in task details and reuses the loaded task metadata', async () => {
+    task();
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: '!execution:test', summary: '协作详情已加载' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: /执行分析/ }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('协作详情已加载');
+    fireEvent.click(within(dialog).getByRole('button', { name: '进入协作房间' }));
+    await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room'));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('does not navigate to an execution room the user has not joined', async () => {
+    task();
+    roomNavigation.joined = [];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ room_id: '!execution:test' }), { status: 200 })));
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: '进入协作房间' }));
+    expect(await screen.findByText('尚未加入协作房间，请联系团队管理员')).toBeInTheDocument();
+    expect(roomNavigation.open).not.toHaveBeenCalled();
   });
 });

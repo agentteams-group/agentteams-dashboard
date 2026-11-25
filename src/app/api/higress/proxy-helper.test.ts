@@ -1,9 +1,11 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createServer, type Server } from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  callHigressConsole,
   getHigressConsoleURL,
   HigressConsoleConfigurationError,
   validateHigressConsoleURL,
@@ -138,5 +140,69 @@ describe('validateHigressConsoleURL: trusted-host ordering (Block 2 follow-up)',
     expect(() =>
       validateHigressConsoleURL('http://other.example.test:8001', { trustedHosts: ['saved.custom.test'] }),
     ).toThrow(HigressConsoleConfigurationError);
+  });
+});
+
+describe('callHigressConsole: per-address auth (higress-console)', () => {
+  let dir: string;
+  let server: Server;
+  let consoleUrl: string;
+  const receivedAuth: Array<string | undefined> = [];
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'console-auth-'));
+    server = createServer((req, res) => {
+      receivedAuth.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no server address');
+    consoleUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    receivedAuth.length = 0;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    const file = path.join(dir, 'config.json');
+    if (fs.existsSync(file)) fs.rmSync(file);
+  });
+
+  function writeConfig(entry: unknown): void {
+    const file = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, backends: { 'higress-console': { internal: entry } } }),
+    );
+    vi.stubEnv('DASHBOARD_CONFIG_FILE', file);
+  }
+
+  it('sends the saved Basic credential to the Console (公共 Basic 门)', async () => {
+    // base64("admin:pass") = YWRtaW46cGFzcw==
+    writeConfig({ url: consoleUrl, auth: { type: 'basic', username: 'admin', password: 'pass' } });
+
+    const { response, body } = await callHigressConsole('/v1/consumers');
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(receivedAuth).toEqual(['Basic YWRtaW46cGFzcw==']);
+  });
+
+  it('sends no Authorization header when the Console address has no stored credential', async () => {
+    writeConfig(consoleUrl);
+
+    await callHigressConsole('/v1/consumers');
+
+    // 服务自身认证 = 不加任何 Authorization（Console 会话仍走 Cookie）。
+    expect(receivedAuth).toEqual([undefined]);
   });
 });

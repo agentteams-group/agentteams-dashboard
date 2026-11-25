@@ -4,20 +4,22 @@ import { MessageBubble } from '../MessageBubble';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { ReadReceiptEntry } from '@/hooks/use-matrix';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../../confirmation-reply';
 
 interface EventTileProps {
   _message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
+  replyQuote?: React.ReactNode;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string) => void;
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
+  onOpenRoomFiles?: () => void;
   memberMap?: Record<string, string>;
   readReceipts?: Record<string, ReadReceiptEntry>;
   currentUserId?: string | null;
@@ -31,6 +33,7 @@ export function EventTile({
   _message,
   showSender,
   isContinuation,
+  replyQuote,
   onReply,
   onCopy,
   onOpenThread,
@@ -39,7 +42,7 @@ export function EventTile({
   onResend,
   onCancel,
   onSendConfirmation,
-  onOpenWorkerFiles,
+  onOpenRoomFiles,
   memberMap,
   readReceipts,
   currentUserId,
@@ -51,6 +54,7 @@ export function EventTile({
       message={_message}
       showSender={showSender}
       isContinuation={isContinuation}
+      replyQuote={replyQuote}
       onReply={onReply}
       onCopy={onCopy}
       onOpenThread={onOpenThread}
@@ -59,7 +63,7 @@ export function EventTile({
       onResend={onResend}
       onCancel={onCancel}
       onSendConfirmation={onSendConfirmation}
-      onOpenWorkerFiles={onOpenWorkerFiles}
+      onOpenRoomFiles={onOpenRoomFiles}
       memberMap={memberMap}
       readReceipts={readReceipts}
       currentUserId={currentUserId}

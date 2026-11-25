@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Crown, Plus, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Crown, Download, ArrowUpDown, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -13,8 +15,6 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useManagers } from '@/hooks/use-agentteams-managers';
-import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useCreateManager, useDeleteManager, useUpdateManager } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
@@ -39,9 +39,7 @@ import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
 import type {
   CreateManagerRequest,
   ManagerResponse,
-  TeamResponse,
   UpdateManagerRequest,
-  WorkerResponse,
 } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './managers/manager-types';
 import {
@@ -52,7 +50,7 @@ import { ManagerCard } from './managers/manager-card';
 import { ManagerTable } from './managers/manager-table';
 import { ManagerCreateDialog } from './managers/manager-create-dialog';
 import { ManagerEditDialog, type ManagerEditForm } from './managers/manager-edit-dialog';
-import { ManagerDetailDialog } from './managers/manager-detail-dialog';
+import { ManagerDrawer } from './managers/manager-drawer';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 
 function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
@@ -84,28 +82,23 @@ function ManagersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact'
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <Crown className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的 Manager' : '暂无 Manager'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个 Manager
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={Crown}
+          title={hasQuery ? '没有匹配的 Manager' : '暂无 Manager'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个 Manager', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );
 }
 
-export function ManagersSection() {
+export function ManagersSection({ compact = false, selectedManager }: { compact?: boolean; selectedManager?: ManagerResponse } = {}) {
   const { data: managers, isLoading, isError, refetch, isRefetching } = useManagers();
-  const { data: workers } = useWorkers();
-  const { data: teams } = useTeams();
   const { searchQuery } = useSearch();
   const { isConnected } = useAgentTeamsStore();
+  const userLevel = useAgentTeamsStore((state) => state.userLevel);
   const createManager = useCreateManager();
   const deleteManager = useDeleteManager();
   const updateManager = useUpdateManager();
@@ -230,15 +223,22 @@ export function ManagersSection() {
     );
   }, [editForm, editManager, updateManager, closeEdit, aiRoutes, providers, sessionIssue]);
 
-  const workersList: WorkerResponse[] = workers || [];
-  const teamsList: TeamResponse[] = teams || [];
-
   if (isError && !isConnected) {
     return <ApiErrorState />;
   }
 
   return (
-    <div className="space-y-6">
+    <div className={compact ? '' : 'space-y-6'}>
+      {compact ? <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MoreHorizontal className="size-4" />实例管理</Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setCreateOpen(true)}>新建助手</DropdownMenuItem>
+          <DropdownMenuItem disabled={!selectedManager} onSelect={() => selectedManager && openEdit(selectedManager)}>编辑实例配置</DropdownMenuItem>
+          {selectedManager && isLegacyCopaw(selectedManager.runtime) && <DropdownMenuItem onSelect={() => setUpgradeTarget(selectedManager)}>升级到 QwenPaw</DropdownMenuItem>}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={!selectedManager} className="text-destructive" onSelect={() => selectedManager && setDeleteTarget(selectedManager.name)}>删除助手</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu> : <>
       <SectionHeader
         title="Managers"
         description="管理团队领导和协调者"
@@ -319,7 +319,7 @@ export function ManagersSection() {
           onDelete={setDeleteTarget}
         />
       )}
-
+      </>}
       <ManagerCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -340,14 +340,21 @@ export function ManagersSection() {
         onOpenChange={(open) => !open && closeEdit()}
         onSubmit={handleUpdate}
         modelOptions={modelOptions}
+        modelProvider={editManager?.modelProvider}
         sessionIssue={sessionIssue}
       />
 
-      <ManagerDetailDialog
+      <ManagerDrawer
         manager={detailManager}
-        workers={workersList}
-        teams={teamsList}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
         onOpenChange={(open) => !open && setDetailManager(null)}
+        onEdit={(manager) => {
+          setDetailManager(null);
+          openEdit(manager);
+        }}
+        onChanged={() => refetch()}
       />
 
       <ConfirmDeleteDialog

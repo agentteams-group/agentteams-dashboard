@@ -6,8 +6,12 @@ import {
   SKILL_PACKAGE_MAX_BYTES,
 } from '@/lib/skill-package';
 import { GLOBAL_SKILLS_PREFIX, CUSTOM_SKILL_MARKER } from '@/lib/skill-center-types';
+import { enforceLevelOnlyRbac } from '@/lib/server-auth';
 
 export async function POST(request: NextRequest) {
+  // 全局技能包发布仅限 L3 会话（与 skills POST 的上传门同资源同动作）。
+  const denied = await enforceLevelOnlyRbac(request, 'create', 'skill', 'upload');
+  if (denied) return denied;
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {
     return NextResponse.json(

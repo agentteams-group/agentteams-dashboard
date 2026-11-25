@@ -11,6 +11,7 @@ vi.mock('../../debug-log/matrix', () => ({
 const identityMock = vi.fn();
 vi.mock('@/lib/server-auth', () => ({
   readServerIdentity: (...args: unknown[]) => identityMock(...args),
+  SERVER_USER_LEVEL_HEADER: 'x-agentteams-user-level',
 }));
 
 import { GET, POST, replayDir } from './route';
@@ -21,6 +22,15 @@ function authedPost(body: unknown): NextRequest {
     body: JSON.stringify(body),
     headers: { 'content-type': 'application/json', Authorization: 'Bearer matrix-token' },
   });
+}
+
+function getWithLevel(url: string, level?: number): NextRequest {
+  const headers: Record<string, string> = {};
+  if (level !== undefined) {
+    headers['x-agentteams-user'] = level === 3 ? 'admin' : 'observer';
+    headers['x-agentteams-user-level'] = String(level);
+  }
+  return new NextRequest(url, { headers });
 }
 
 let tmpDir: string;
@@ -97,5 +107,59 @@ describe('GET /api/agentteams/replay/export?id=', () => {
     );
     expect(found.status).toBe(200);
     expect(((await found.json()) as { replayId: string }).replayId).toBe('x');
+  });
+});
+
+describe('GET /api/agentteams/replay/export?room= 审计级门禁', () => {
+  async function seedReplay(room: string, replayId: string, createdAt: string): Promise<void> {
+    await fs.mkdir(replayDir(), { recursive: true });
+    await fs.writeFile(
+      path.join(replayDir(), `${replayId}.json`),
+      JSON.stringify({ replayId, room, createdAt }),
+      'utf8',
+    );
+  }
+
+  it('无身份 ?room= 被拒绝（403，需要审计权限）', async () => {
+    identityMock.mockReturnValue(null);
+    const res = await GET(
+      getWithLevel('http://localhost/api/agentteams/replay/export?room=!room%3Aserver'),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: '需要审计权限', requiredLevel: 2 });
+  });
+
+  it('level=1 会话 ?room= 被拒绝（403，拿不到 replayId）', async () => {
+    identityMock.mockReturnValue({ name: 'observer', level: 1 });
+    const res = await GET(
+      getWithLevel('http://localhost/api/agentteams/replay/export?room=!room%3Aserver', 1),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: '需要审计权限', requiredLevel: 2 });
+    expect(body).not.toHaveProperty('replayId');
+  });
+
+  it('level=2 会话 ?room= 返回最新回放引用（200 found，审计互查深链可用）', async () => {
+    identityMock.mockReturnValue({ name: 'carol', level: 2 });
+    const replayId = 'c'.repeat(32);
+    await seedReplay('!room:server', replayId, '2026-01-01T00:00:00Z');
+    const res = await GET(
+      getWithLevel('http://localhost/api/agentteams/replay/export?room=!room%3Aserver', 2),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ found: true, replayId, url: `/replay/${replayId}` });
+  });
+
+  it('?id= 无身份仍 200（capability 语义不回归，不经会话门）', async () => {
+    identityMock.mockReturnValue(null);
+    const id = 'd'.repeat(32);
+    await fs.mkdir(replayDir(), { recursive: true });
+    await fs.writeFile(path.join(replayDir(), `${id}.json`), '{"replayId":"cap"}');
+    const res = await GET(getWithLevel(`http://localhost/api/agentteams/replay/export?id=${id}`));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { replayId: string }).replayId).toBe('cap');
   });
 });

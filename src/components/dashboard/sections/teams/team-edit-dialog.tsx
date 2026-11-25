@@ -171,7 +171,6 @@ export function TeamEditDialog({
           <Button
             onClick={onSubmit}
             disabled={missingWorkerNames.length > 0 || isPending || !!llmError}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '更新中...' : '更新'}
           </Button>

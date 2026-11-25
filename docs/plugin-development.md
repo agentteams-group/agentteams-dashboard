@@ -25,7 +25,7 @@ This guide explains how to develop, debug, and publish plugins for the AgentTeam
 - **Plugin**: a standalone project with a `plugin.json` manifest and an ES-module entry. The entry exports `activate(api)` (and optionally `deactivate()`).
 - **Extension Point**: a fixed place in the Dashboard where plugins may inject UI. Five are provided: sidebar menu, standalone route, dashboard widget, detail-panel block, toolbar button.
 - **Plugin API**: the `api` object passed to `activate`. It is the only surface a plugin uses to talk to the Dashboard: registration methods, event bus, isolated store, HTTP wrapper, and cluster-data services.
-- **Registry**: the Dashboard's record of installed/enabled/disabled/uninstalled plugins and their metadata.
+- **Registry**: the Dashboard's record of plugins and their status: `installed` (manifest registered, module not activated), `enabled` (activation requested / loading), `active` (loaded and activated), `disabled` (turned off), `error` (load or activate failed). Uninstalling removes the record entirely.
 - **Loader**: loads plugin modules at runtime via dynamic `import()` (no Module Federation, no extra build configuration).
 
 ### Lifecycle
@@ -56,7 +56,9 @@ my-plugin/
 ├─ vite.config.mjs             # dev/build config
 ├─ vite-plugin-host-react.mjs  # maps react to the host instance
 ├─ public/plugin.json          # manifest
-└─ src/main.jsx                # entry: activate/deactivate
+├─ src/main.jsx                # entry: activate/deactivate
+├─ .gitignore
+└─ README.md
 ```
 
 Start the dev server and connect it to the Dashboard:
@@ -102,7 +104,8 @@ In the Dashboard, open *Settings → Plugins → Install from URL* and enter `ht
 | `dashboardVersion` | no | Compatible Dashboard version range (semver), e.g. `>=0.2.0`, `^0.2.0`, `0.x` |
 | `min_version` | no | Upstream-style field, equivalent to `>=min_version` |
 | `extensionPoints` | no | Declares which extension points are used; enforced when present |
-| `permissions` | no | Declarative permission list (informational) |
+| `permissions` | no | Declarative permission list; only validated and persisted, never enforced and never rendered |
+| `homepage` | no | Project homepage / documentation link |
 | `dependencies` | no | Other plugin ids this plugin depends on |
 
 **Version gating**: on install, the Dashboard matches its own version against `dashboardVersion`/`min_version` and rejects incompatible plugins with a clear message.
@@ -195,13 +198,17 @@ Host lifecycle events: `host:plugin-activated`, `host:plugin-deactivated`, `host
 
 ### HTTP `api.http`
 
-- `fetch(path, init)`, `get<T>(path)`, `post<T>(path, body?)` — basePath-aware, same-origin credentials.
+- `fetch(path, init)`, `get<T>(path)`, `post<T>(path, body?)` — basePath-aware. `get`/`post` set `credentials: 'same-origin'`; `fetch` passes `init` through unchanged, so set credentials yourself if you need them.
 
 ### Dashboard services `api.dashboard`
 
 - `navigate(sectionId)`
 - `toast(message, type?)`
-- `getClusterStatus()`, `getVersion()`, `listWorkers()`, `listTeams()`, `listManagers()`, `listHumans()`
+- Cluster: `getClusterStatus()`, `getVersion()`, `listWorkers()`, `listTeams()`, `listManagers()`, `listHumans()`
+- Monitoring: `getMonitoring({ page, limit, search })`, `getMonitoringLogs(kind, name, { tail, since })`
+- Object storage: `listBuckets()`, `listObjects(bucket, prefix?)`, `uploadObject(bucket, key, file)`, `getDownloadUrl(bucket, key)`, `presignDownloadUrl(bucket, key)`, `presignUploadUrl(bucket, key, contentType?)`
+
+The list above is the commonly used surface; the full contract lives in `src/lib/plugins/types.ts` (`PluginDashboardServices`).
 
 ### Logger `api.log`
 
@@ -220,7 +227,7 @@ Host lifecycle events: `host:plugin-activated`, `host:plugin-deactivated`, `host
 ## Dynamic Loading & Error Boundaries
 
 - **Lazy loading**: plugin entries load via runtime dynamic `import()`, off the first-paint critical path (LCP target ≤ 2.5s).
-- **Error boundaries**: every contribution renders inside its own boundary. A failing plugin shows its own error card and is marked `error` in the registry — **the main Dashboard is unaffected**.
+- **Error boundaries**: each component-type contribution (widget, route, detail block, toolbar button) renders inside its own boundary. A failing plugin shows its own error card and is marked `error` in the registry — **the main Dashboard is unaffected**. Sidebar menu entries are native buttons and carry no plugin component.
 - **Failure cleanup**: if `activate` throws, the host removes any contributions the plugin already registered.
 
 ---
@@ -233,15 +240,20 @@ Host lifecycle events: `host:plugin-activated`, `host:plugin-deactivated`, `host
 
 > Production build: `npm run build` outputs `dist/main.js`. Deploy it with a manifest whose `entry.dashboard` points to `dist/main.js`.
 
+### Installing from a package (zip)
+
+*Settings → Plugins* also accepts a plugin package: run `vite build`, zip `dist/` together with `plugin.json`, and upload it. The host unpacks the archive into `public/plugins/<id>/`; that directory is one of the plugin discovery sources, so the plugin becomes available without a static server. Uninstalling removes the package from `public/plugins/<id>/`. `POST /api/dashboard/plugins` is the underlying endpoint.
+
 ---
 
 ## Publishing
 
 1. Develop and test against a local Dashboard.
 2. `npm run build`.
-3. Host `plugin.json` + `dist/` on any static server; ensure `entry.dashboard` resolves.
-4. Users install via the manifest URL, or operators preconfigure `NEXT_PUBLIC_PLUGIN_DEV_URLS`.
-5. To upgrade, bump `version`, redeploy, and reload the plugin.
+3. Distribute either way:
+   - Host `plugin.json` + `dist/` on any static server; users install via the manifest URL, or operators preconfigure `NEXT_PUBLIC_PLUGIN_DEV_URLS`.
+   - Zip `dist/` + `plugin.json` and let users upload the package in *Settings → Plugins*.
+4. To upgrade, bump `version`, redeploy or re-upload, and reload the plugin.
 
 ---
 

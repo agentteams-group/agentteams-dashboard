@@ -75,9 +75,11 @@ export function deriveWorkerSessionState(opts: {
    * (typing keep-alive has no ceiling; lastFinishAt decays over 10 min).
    */
   phase?: string;
+  waitingUser?: boolean;
 }): WorkerSessionState {
   const { agentStatus, isTyping, lastMessageTs, now, phase } = opts;
   if (phase && INACTIVE_PHASES.has(phase)) return 'idle';
+  if (opts.waitingUser || agentStatus?.agentStatus === 'waiting_user') return 'waiting_user';
 
   // 1) Task-level truth from the heartbeat — no time ceiling.
   if (

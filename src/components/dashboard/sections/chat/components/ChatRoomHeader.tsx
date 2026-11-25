@@ -1,25 +1,33 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Avatar } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   FolderTree,
   ListTodo,
   MessagesSquare,
-  PanelRightClose,
-  PanelRightOpen,
   UserCheck,
   Users,
 } from 'lucide-react';
-import { WorkerSessionDot } from '@/components/worker-session-dot';
+import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
 import type { TeamResponse } from '@/lib/agentteams-api';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
+import { RUNTIME_LABELS, TEAM_PHASE_LABELS } from '@/lib/phase-colors';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import type { RoomContextTab } from './RoomContextPanel';
+import type { RoomInfo } from '../room-info';
 
 interface ChatRoomHeaderProps {
+  compact?: boolean;
+  headerActions?: ReactNode;
+  taskAction?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTitle?: ReactNode;
+  agentRole?: RoomInfo['agentRole'];
   roomName: string;
+  workerName?: string;
   /** Full AgentTeams team resource for team rooms (drives the header detail). */
   team?: TeamResponse;
   /** Worker phase shown in the conversation header. */
@@ -54,22 +62,30 @@ function ContextChip({
 }) {
   return (
     <Button
-      variant={active ? 'secondary' : 'outline'}
+      variant={active ? 'secondary' : 'ghost'}
       size="sm"
-      className="h-7 gap-1 px-2 text-[11px]"
+      className="h-8 gap-1.5 px-2 text-sm max-sm:gap-1 max-sm:px-1.5"
       onClick={onClick}
       title={`${active ? '隐藏' : '显示'}${label}`}
+      aria-label={`${active ? '隐藏' : '显示'}${label}`}
       aria-pressed={active}
     >
-      <Icon className="h-3.5 w-3.5" />
-      <span className="hidden lg:inline">{label}</span>
-      {typeof count === 'number' && count > 0 && <span className="font-mono">{count}</span>}
+      <Icon className="h-4 w-4" />
+      <span className="hidden max-sm:inline lg:inline">{label}</span>
+      {typeof count === 'number' && count > 0 && <span className="hidden font-mono sm:inline">{count}</span>}
     </Button>
   );
 }
 
 export function ChatRoomHeader({
+  compact = false,
+  headerActions,
+  taskAction,
+  headerLeading,
+  headerTitle,
+  agentRole,
   roomName,
+  workerName,
   team,
   topic,
   avatar,
@@ -83,41 +99,44 @@ export function ChatRoomHeader({
   onTogglePanel,
 }: ChatRoomHeaderProps) {
   const teamName = team ? team.teamName || team.name : '';
+  const compactTeam = compact && !!team && !!headerTitle && !agentRole;
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 overflow-hidden border-b border-border bg-card/70 px-4 backdrop-blur-sm sm:px-6">
-      {avatar ? (
-        <Avatar className="w-9 h-9 shrink-0 rounded-[10px]">
+    <div data-chat-room-header className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 sm:flex-nowrap sm:px-6 ${compactTeam ? 'min-h-14 py-2' : 'min-h-18 py-3'}`}>
+      {headerLeading}
+      <div className="relative shrink-0">
+      {workerName ? (
+        <AccountAvatar kind="agent" name={workerName} label={roomName} className="size-8 rounded-lg" />
+      ) : avatar ? (
+        <Avatar className="w-8 h-8 shrink-0 rounded-lg">
           <img src={avatar} alt={roomName} />
         </Avatar>
       ) : (
-        <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary/90 to-primary/55 flex items-center justify-center shadow-sm shrink-0">
-          <span className="text-xs font-semibold text-primary-foreground">{roomName.charAt(0).toUpperCase()}</span>
+        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <span className="text-xs font-semibold text-primary">{agentRole ? 'AT' : roomName.charAt(0).toUpperCase()}</span>
         </div>
       )}
+      {workerMatrixUserIds && workerMatrixUserIds.length > 0 && (!sessionDot.runningOnly || sessionDot.state === 'running') && (
+        <WorkerSessionCornerDot state={sessionDot.state} />
+      )}
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>
-          {workerMatrixUserIds && workerMatrixUserIds.length > 0
-            ? sessionDot.runningOnly
-              ? sessionDot.state === 'running'
-                ? <WorkerSessionDot state="running" />
-                : null
-              : <WorkerSessionDot state={sessionDot.state} />
-            : null}
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="实时同步" />
-          {roomPhase && (
-            <Badge variant="outline" className="text-[11px] px-1 py-0 h-4 shrink-0">
-              {roomPhase}
+          <div className="min-w-0">{headerTitle ?? <h3 className="font-semibold text-base leading-tight truncate" title={team?.description || roomName}>{roomName}</h3>}</div>
+          {!agentRole && roomPhase && (!compactTeam || roomPhase !== 'Active') && (
+            <Badge variant="outline" className="text-xs px-1 py-0 h-4 shrink-0">
+              {compactTeam ? TEAM_PHASE_LABELS[roomPhase] ?? roomPhase : roomPhase}
             </Badge>
           )}
-          {roomRuntime && (
-            <Badge variant="secondary" className="text-[11px] px-1 py-0 h-4 shrink-0">
+          {!agentRole && roomRuntime && (
+            <Badge variant="secondary" className="text-xs px-1 py-0 h-4 shrink-0">
               {RUNTIME_LABELS[roomRuntime] || roomRuntime}
             </Badge>
           )}
         </div>
-        {team ? (
-          <div className="flex min-w-0 items-center gap-2 text-[11.5px] text-muted-foreground">
+        {agentRole ? !headerTitle && (
+          <p className="mt-1 truncate text-sm text-muted-foreground">{agentRole === 'operations' ? '你的平台管理助手 · 资源、部署与日常运维' : '你的团队助手 · 目标拆解、任务协调与交付'}</p>
+        ) : compactTeam ? null : team ? (
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {teamName && teamName !== roomName && (
               <span className="inline-flex min-w-0 shrink items-center gap-1" title={teamName}>
                 <Users className="w-3 h-3 shrink-0" />
@@ -137,24 +156,25 @@ export function ChatRoomHeader({
           </div>
         ) : (
           topic && (
-            <p className="text-[11.5px] text-muted-foreground truncate">{topic}</p>
+            <p className="text-xs text-muted-foreground truncate" title={topic}>{topic}</p>
           )
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <ContextChip
+      <div className={`flex ${compact ? 'w-auto' : 'w-full sm:w-auto'} shrink-0 flex-wrap items-center justify-end gap-1 max-sm:gap-0.5 sm:flex-nowrap`}>
+        {!compact && <>
+        {taskAction ?? <ContextChip
           active={activePanel === 'tasks'}
           icon={ListTodo}
           label="任务"
           onClick={() => onTogglePanel('tasks')}
-        />
-        <ContextChip
+        />}
+        {!agentRole && <ContextChip
           active={activePanel === 'members'}
           icon={Users}
           label="成员"
           count={memberCount}
           onClick={() => onTogglePanel('members')}
-        />
+        />}
         <ContextChip
           active={activePanel === 'files'}
           icon={FolderTree}
@@ -168,18 +188,8 @@ export function ChatRoomHeader({
           count={threadCount}
           onClick={() => onTogglePanel('thread')}
         />
-        <Button
-          variant={activePanel === 'overview' ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => onTogglePanel('overview')}
-          title={activePanel === 'overview' ? '隐藏空间概览' : '显示空间概览'}
-          aria-pressed={activePanel === 'overview'}
-        >
-          {activePanel === 'overview'
-            ? <PanelRightClose className="h-3.5 w-3.5" />
-            : <PanelRightOpen className="h-3.5 w-3.5" />}
-        </Button>
+        </>}
+        {headerActions}
       </div>
     </div>
   );

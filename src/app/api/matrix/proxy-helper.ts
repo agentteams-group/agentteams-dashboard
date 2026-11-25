@@ -4,6 +4,7 @@ import {
   HomeserverValidationError,
   validateHomeserverUrl,
 } from '@/lib/homeserver-allowlist';
+import { backendAuthHeader } from '@/lib/backend-config';
 
 const TIMEOUT_MS = 30000; // Matrix sync can take longer
 
@@ -55,11 +56,14 @@ export async function proxyToMatrix(
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
+    // 逐地址覆盖凭据（公网网关 Basic / API key 门）：命中该地址已存凭据时
+    // 整体替换 Authorization（插件 headers_with_auth 语义）。凭据只进请求头。
+    const perAddressAuth = backendAuthHeader('matrix', homeserver).Authorization;
     const fetchOptions: RequestInit = {
       method,
       signal: controller.signal,
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        'Authorization': perAddressAuth ?? `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       } as Record<string, string>,
     };

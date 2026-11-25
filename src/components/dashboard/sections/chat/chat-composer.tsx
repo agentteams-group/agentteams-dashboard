@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding } from 'lucide-react';
+import { RefreshCw, Send, Paperclip, FolderOpen, HelpCircle, Trash2, Users, Hash, Pencil, X, Drama, PersonStanding, ListPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getAvatarColor } from './format';
@@ -9,6 +9,14 @@ import { CHAT_COLUMN_CLASS } from './layout';
 import { filterEmoji } from './composer-commands';
 import { FileRefPickerDialog } from './components/FileRefPickerDialog';
 import type { FileRef } from '@/lib/file-refs';
+import { VoiceInput } from './voice-input';
+import { useImeGuard } from './use-ime-guard';
+import type { DirectExecution } from '@/lib/direct-execution';
+import type { DisplayMessage } from '@/hooks/use-matrix';
+import { ComposerReply } from './views/ReplyQuote';
+import { MessageQueuePanel } from './components/MessageQueuePanel';
+import type { ChatMessageQueue } from '@/lib/chat-message-queue';
+import type { ReplyEnterAction } from '@/lib/agentteams-store';
 
 /** A single @mention that was inserted into the input */
 export interface MentionEntry {
@@ -46,18 +54,29 @@ const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 interface ChatComposerProps {
+  replyTo?: DisplayMessage | null;
+  onCancelReply?: () => void;
+  execution?: DirectExecution | null;
+  onStop?: () => void;
+  roomId?: string;
   value: string;
   onChange: (_value: string) => void;
   /** Sends the message; receives the currently attached file references (#87). */
   onSend: (_refs?: FileRef[]) => void;
+  onQueue?: (_refs?: FileRef[]) => void;
+  replyEnterAction?: ReplyEnterAction;
+  interruptsOnSend?: boolean;
+  queue?: ChatMessageQueue;
+  onSendQueued?: (_id: string) => void;
+  onRemoveQueued?: (_id: string) => void;
   isSending: boolean;
   sendError: string | null;
   placeholder: string;
   disabled: boolean;
   members?: Member[];
-  /** Browsable workspace space for file references (#87). Absent hides the button. */
+  /** Optional workspace space for references; personal files remain available through uploads. */
   fileRefTarget?: { kind: 'worker' | 'team'; ownerName: string };
-  onFileUpload?: (_file: File) => void;
+  onFileUpload?: (_file: File) => void | Promise<void>;
   isUploading?: boolean;
   onSlashCommand?: (_command: string, _args: string) => void;
   /** Called when mentions list changes (for the parent to build m.mentions on send) */
@@ -71,9 +90,20 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  replyTo,
+  onCancelReply,
+  execution,
+  onStop,
+  roomId,
   value,
   onChange,
   onSend,
+  onQueue,
+  replyEnterAction = 'send',
+  interruptsOnSend = false,
+  queue,
+  onSendQueued,
+  onRemoveQueued,
   isSending,
   sendError,
   placeholder,
@@ -89,6 +119,9 @@ export function ChatComposer({
   onCancelEdit,
   onRequestEditLast,
 }: ChatComposerProps) {
+  const working = execution?.status === 'running' || execution?.status === 'stopping';
+  const enterQueues = working && Boolean(onQueue) && replyEnterAction === 'queue';
+  const [voiceBusy, setVoiceBusy] = useState(false);
   // Track @mentions that were inserted
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   // Expose mentions to parent whenever they change
@@ -96,6 +129,10 @@ export function ChatComposer({
     onMentionsChange?.(mentions);
   }, [mentions, onMentionsChange]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (replyTo) inputRef.current?.focus({ preventScroll: true });
+  }, [replyTo]);
+  const ime = useImeGuard();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -201,16 +238,23 @@ export function ChatComposer({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [menuType]);
 
-  const handleSend = () => {
-    if (isSending) return;
+  const handleSend = (enqueue = false) => {
+    if (isSending || voiceBusy) return;
     if (!value.trim() && fileRefs.length === 0) return;
-    onSend(fileRefs);
+    if (enqueue) onQueue?.(fileRefs);
+    else onSend(fileRefs);
     // The parent owns `value` and clears it through onChange; refs are local
     // state so they are cleared here once handed to the parent.
     setFileRefs([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (ime.isImeKey(e)) return;
+
+    if (voiceBusy && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      return;
+    }
     // Menu navigation
     if (menuType) {
       if (e.key === 'ArrowDown') {
@@ -262,7 +306,7 @@ export function ChatComposer({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSend(enterQueues);
     }
   };
 
@@ -352,11 +396,13 @@ export function ChatComposer({
     [onChange, onSlashCommand]
   );
 
-  const autoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
-    const target = e.currentTarget;
+  useEffect(() => {
+    const target = inputRef.current;
+    if (!target) return;
     target.style.height = 'auto';
     target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-  };
+    target.style.overflowY = target.scrollHeight > 120 ? 'auto' : 'hidden';
+  }, [value]);
 
   const handleFileClick = () => {
     fileInputRef.current?.click();
@@ -374,7 +420,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
+    <div data-chat-composer className="relative shrink-0 border-t border-border bg-card/20 px-3 py-2.5 sm:px-6 sm:py-3">
       <div className={`mx-auto w-full ${CHAT_COLUMN_CLASS}`}>
       {/* Edit session bar (element-web style) */}
       {editSession && (
@@ -416,13 +462,13 @@ export function ChatComposer({
                   onMouseEnter={() => setMenuSelectedIdx(idx)}
                 >
                   <Avatar className="w-5 h-5 shrink-0">
-                    <AvatarFallback className={`text-[10px] ${color}`}>
+                    <AvatarFallback className={`text-xs ${color}`}>
                       {member.displayName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-xs font-medium truncate">{member.displayName}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono truncate">{member.userId}</p>
+                    <p className="text-xs text-muted-foreground font-mono truncate">{member.userId}</p>
                   </div>
                 </button>
               );
@@ -443,7 +489,7 @@ export function ChatComposer({
                 <span className="text-base leading-none shrink-0 w-6 text-center">{entry.char}</span>
                 <div className="min-w-0">
                   <p className="text-xs font-mono truncate">:{entry.name}:</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{entry.keywords}</p>
+                  <p className="text-xs text-muted-foreground truncate">{entry.keywords}</p>
                 </div>
               </button>
             ))}
@@ -463,7 +509,7 @@ export function ChatComposer({
                 <span className="text-muted-foreground shrink-0">{cmd.icon}</span>
                 <div className="min-w-0">
                   <p className="text-xs font-medium">{cmd.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{cmd.description}</p>
+                  <p className="text-xs text-muted-foreground">{cmd.description}</p>
                 </div>
               </button>
             ))}
@@ -492,9 +538,27 @@ export function ChatComposer({
         </div>
       )}
 
+      {!editSession && (execution || queue?.messages.length) && (
+        <div className="mb-2 flex min-w-0 items-center justify-between gap-2 px-1">
+        {execution && <p role="status" className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${working ? 'bg-amber-500' : 'bg-muted-foreground/50'}`} />
+          <span className="truncate">{working && interruptsOnSend ? '发送会打断当前会话'
+            : execution.status === 'running' ? '排队将在当前回复结束后自动发送。'
+            : execution.status === 'stopping' ? '正在停止执行，等待当前工具清理完成…'
+              : execution.status === 'stopped' ? '已停止。对话和已完成的结果会保留，可以继续补充。'
+                : execution.status === 'unavailable' ? '目标执行已结束或不可用，可以继续对话。'
+                  : execution.status === 'failed' ? '本轮执行已结束，请查看对话中的处理结果。' : '本轮已完成，可以继续对话。'}</span>
+        </p>}
+        {queue && onSendQueued && onRemoveQueued && <MessageQueuePanel messages={queue.messages} sendingId={queue.sendingId}
+          disabled={disabled || isSending || !execution} onSend={onSendQueued} onRemove={onRemoveQueued} />}
+        </div>
+      )}
+
       {/* Input area: bordered rounded container with an inline toolbar, as in
           the workbench prototype (text area on top, actions on the row below). */}
-      <div className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-emerald-500/40">
+      <div data-chat-composer-frame className="rounded-xl border border-border bg-background/60 transition-colors focus-within:border-ring">
+        {replyTo && onCancelReply && !editSession && <ComposerReply target={replyTo}
+          memberMap={Object.fromEntries(members.map(member => [member.userId, member.displayName]))} onCancel={onCancelReply} />}
         <input
           ref={fileInputRef}
           type="file"
@@ -514,19 +578,21 @@ export function ChatComposer({
           }}
           onSelect={(e) => setCursorPos(e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={ime.onCompositionStart}
+          onCompositionEnd={ime.onCompositionEnd}
           onPaste={handlePaste}
           placeholder={editSession ? '编辑消息... (Enter 保存, Esc 取消)' : placeholder}
-          disabled={disabled}
-          className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground/50"
+          aria-label="消息"
+          disabled={disabled || voiceBusy}
+          className="block w-full min-w-0 resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm focus:outline-none min-h-[40px] max-h-[160px] placeholder:text-muted-foreground"
           rows={1}
           style={{ height: 'auto', overflow: 'hidden' }}
-          onInput={autoResize}
         />
-        <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
+        <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-0.5">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={handleFileClick}
             disabled={disabled || isUploading}
             title="上传文件（也可直接粘贴或拖拽）"
@@ -538,59 +604,95 @@ export function ChatComposer({
             )}
           </Button>
 
-          {fileRefTarget && (
+          {(fileRefTarget || onFileUpload) && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={() => setPickerOpen(true)}
-              disabled={disabled}
-              title="引用工作空间文件"
+              disabled={disabled || isUploading || isSending}
+              title="选择文件（我的文件或工作空间）"
             >
               <FolderOpen className="w-4 h-4" />
             </Button>
           )}
 
-          <p className="ml-1 hidden min-w-0 truncate text-[10px] text-muted-foreground/60 sm:block">
-            Enter 发送 · Shift+Enter 换行 · ↑ 编辑上一条 · @ 提及 · : 表情 · / 命令
+          <p className="ml-2 hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title="↑ 编辑上一条 · @ 提及 · : 表情 · / 命令">
+            Enter {editSession ? '保存' : enterQueues ? '排队' : '发送'} · Shift+Enter 换行
           </p>
 
-          {editSession ? (
-            <Button
-              size="sm"
-              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-              onClick={() => value.trim() && onSubmitEdit?.(value)}
-              disabled={!value.trim() || isSending}
-              title="保存编辑 (Enter)"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">保存</span>
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              className="ml-auto h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-              onClick={handleSend}
-              disabled={(!value.trim() && fileRefs.length === 0) || isSending}
-              title="发送 (Enter)"
-            >
-              {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">发送</span>
-            </Button>
-          )}
+          <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-3">
+            <VoiceInput
+              key={`${roomId ?? ''}:${editSession?.eventId ?? 'draft'}`}
+              disabled={disabled || isSending || Boolean(editSession)}
+              onBusyChange={setVoiceBusy}
+              onTranscript={text => {
+                onChange(`${value}${value && !/\s$/.test(value) ? ' ' : ''}${text}`);
+                requestAnimationFrame(() => {
+                  const input = inputRef.current;
+                  input?.focus();
+                  input?.setSelectionRange(input.value.length, input.value.length);
+                });
+              }}
+            />
+
+            {working && onStop && !editSession && (
+              <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 rounded-full p-0"
+                aria-label="停止执行" title={execution?.status === 'stopping' ? '正在停止执行' : '停止执行'} onClick={onStop}
+                disabled={disabled || isSending || execution?.status === 'stopping'}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="12" cy="12" r="9" />
+                  <rect x="9" y="9" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" />
+                </svg>
+              </Button>
+            )}
+            {editSession ? (
+              <Button
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                onClick={() => value.trim() && onSubmitEdit?.(value)}
+                disabled={!value.trim() || isSending}
+                title="保存编辑 (Enter)"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">保存</span>
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+              {working && onQueue && <Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground"
+                aria-label="加入消息队列" title="排队，当前回复结束后发送" onClick={() => handleSend(true)}
+                disabled={disabled || (!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}>
+                <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />排队
+              </Button>}
+              <Button
+                size="sm"
+                data-chat-send
+                aria-label="发送消息"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                onClick={() => handleSend()}
+                disabled={(!value.trim() && fileRefs.length === 0) || isSending || voiceBusy}
+                title={working && interruptsOnSend ? '发送会打断当前会话' : enterQueues ? '立即发送' : '发送 (Enter)'}
+              >
+                {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>发送</span>
+              </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {sendError && (
-        <p className="mt-1 px-1 text-[10px] text-red-500 truncate">发送失败: {sendError}</p>
+        <p className="mt-1 px-1 text-xs text-red-500 truncate">发送失败: {sendError}</p>
       )}
       </div>
 
-      {fileRefTarget && (
+      {pickerOpen && (fileRefTarget || onFileUpload) && (
         <FileRefPickerDialog
           open={pickerOpen}
           onOpenChange={setPickerOpen}
-          kind={fileRefTarget.kind}
-          ownerName={fileRefTarget.ownerName}
+          kind={fileRefTarget?.kind ?? 'worker'}
+          ownerName={fileRefTarget?.ownerName ?? ''}
+          onSendPersonalFile={onFileUpload}
           onConfirm={(refs) => setFileRefs(prev => [...prev, ...refs.filter(r => !prev.some(p => p.key === r.key))])}
         />
       )}

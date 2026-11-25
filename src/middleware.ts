@@ -24,6 +24,11 @@ const PUBLIC_PATHS = [
   // F7: the mode probe must be reachable pre-login so the client can pick
   // the right login flow (discloses no secrets — only the deployment shape).
   '/api/agentteams/mode',
+  // Pre-login connectivity probe: client-auth-fetch polls this to check the
+  // data plane is up. It discloses nothing beyond reachability, and a 401
+  // here is indistinguishable to the client from a real auth failure, so
+  // it stays public (matches both /healthz and /healthz/ via startsWith).
+  '/api/agentteams/healthz',
 ];
 
 const USER_NAME_HEADER = 'x-agentteams-user';
@@ -47,7 +52,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Legacy redirect
-  if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
+  if (!process.env.NEXT_PUBLIC_BASE_PATH && (pathname === '/dashboard' || pathname.startsWith('/dashboard/'))) {
     const target = pathname.replace(/^\/dashboard/, '') || '/';
     const url = request.nextUrl.clone();
     url.pathname = target;

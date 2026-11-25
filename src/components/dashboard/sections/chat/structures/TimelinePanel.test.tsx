@@ -102,6 +102,16 @@ describe('TimelinePanel', () => {
     expect(separator.textContent).toContain('3');
   });
 
+  it('matches a read anchor folded into a worker turn', () => {
+    const turn = message('turn');
+    turn.message.sourceEventIds = ['root', 'step-2'];
+    renderPanel([turn, message('later')], 'step-2');
+
+    const separator = screen.getByRole('separator');
+    expect(separator).toBeInTheDocument();
+    expect(separator.textContent).toContain('1');
+  });
+
   it('lands on the divider instead of the latest message when unread exists', () => {
     renderPanel([message('a', '$a'), message('b')], '$a');
 

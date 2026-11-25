@@ -1,6 +1,10 @@
 import type { HumanResponse } from '@/lib/agentteams-api';
 import type { SortKey } from './human-types';
 
+export function isManagedHuman(human: HumanResponse): boolean {
+  return !human.systemAdmin;
+}
+
 export function filterHumans(
   humans: HumanResponse[] | undefined,
   searchQuery: string,

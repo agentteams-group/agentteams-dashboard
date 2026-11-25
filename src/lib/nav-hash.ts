@@ -15,6 +15,7 @@ export interface ResolvedHash {
   section: string;
   /** Room id for `#workbench/space/<roomId>` deep links. */
   roomId?: string;
+  taskId?: string;
   /** Query params (e.g. `project=<id>` on task deep links). */
   params?: URLSearchParams;
 }
@@ -23,24 +24,40 @@ export interface ResolvedHash {
 export const RESOURCE_TABS = ['workers', 'teams', 'humans', 'managers'] as const;
 export type ResourceTabId = (typeof RESOURCE_TABS)[number];
 
+/** 「团队与Agent」合并页的页签；旧 workers/teams 路由按此映射。 */
+export const TEAM_AGENTS_TABS = ['teams', 'agents'] as const;
+export type TeamAgentsTab = (typeof TEAM_AGENTS_TABS)[number];
+
 /** section id -> canonical layered hash path (without the leading '#'). */
 const SECTION_TO_HASH: Record<string, string> = {
   'my-workbench': 'workbench/me',
   chat: 'workbench/space',
+  'my-teams': 'workbench/teams',
   tasks: 'workbench/tasks',
   artifacts: 'workbench/tasks/artifacts',
   'coding-runs': 'workbench/tasks/coding-runs',
   loops: 'workbench/loop',
   resources: 'console/resources',
+  'team-agents': 'console/resources/team-agents',
   workers: 'console/resources/workers',
   teams: 'console/resources/teams',
   humans: 'console/resources/humans',
   managers: 'console/resources/managers',
+  'platform-assistant-settings': 'workbench/assistant/settings',
   skills: 'console/resources/skills',
   models: 'console/resources/models',
+  tools: 'console/resources/tools',
   knowledge: 'console/resources/knowledge',
   audit: 'console/governance/audit',
+  tracing: 'console/governance/tracing',
+  'plugin-route:monitor-panel/monitor': 'console/governance/monitoring',
   overview: 'console/system/overview',
+};
+
+/** 旧 workers/teams 路由落到合并页时选中的页签。 */
+const LEGACY_TEAM_AGENTS_TAB: Record<string, TeamAgentsTab> = {
+  workers: 'agents',
+  teams: 'teams',
 };
 
 /**
@@ -52,17 +69,20 @@ const SECTION_TO_HASH: Record<string, string> = {
 const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   overview: 'overview',
   chat: 'chat',
+  'my-teams': 'my-teams',
   tasks: 'tasks',
   artifacts: 'artifacts',
   'coding-runs': 'coding-runs',
   workers: 'workers',
   teams: 'teams',
   humans: 'humans',
-  managers: 'managers',
+  managers: 'platform-assistant-settings',
   skills: 'skills',
   models: 'models',
+  tools: 'tools',
   knowledge: 'knowledge',
   audit: 'audit',
+  tracing: 'tracing',
   // The standalone projects section was merged into the task board; the
   // alias predates the Workbench IA and keeps resolving.
   projects: 'tasks',
@@ -82,21 +102,123 @@ export function hashForSection(sectionId: string): string {
 }
 
 /**
+ * Deep link for a resource tab, with the leading '#' (`#console/resources/workers`).
+ * Producers that want a notification or CTA to land on a specific tab build
+ * its target here instead of hand-writing a hash literal.
+ */
+export function resourceHash(tab: ResourceTabId): string {
+  return `#${SECTION_TO_HASH.resources}/${tab}`;
+}
+
+/** 深链：「团队与Agent」合并页并选中页签（`#console/resources/team-agents?tab=agents`）。 */
+export function teamAgentsHash(tab?: TeamAgentsTab): string {
+  const base = `#${SECTION_TO_HASH['team-agents']}`;
+  return tab ? `${base}?tab=${tab}` : base;
+}
+
+/**
+ * Deep link for a Matrix room, with the leading '#'
+ * (`#workbench/space/!abc:hs.example`).
+ *
+ * Matrix room ids are `!localpart:server` with the localpart already
+ * percent-escaped at creation, so they survive a hash fragment untouched.
+ */
+export function roomHash(roomId: string): string {
+  return `#${SECTION_TO_HASH.chat}/${roomId}`;
+}
+
+export function platformAssistantSettingsHash(managerName?: string): string {
+  const base = `#${SECTION_TO_HASH['platform-assistant-settings']}`;
+  return managerName ? `${base}?manager=${encodeURIComponent(managerName)}` : base;
+}
+
+/**
+ * 深链：任务看板并选中某个项目（`#workbench/tasks?project=<runId>`）。
+ * 项目就是看板上的选中单元，所以参数名与 `TasksSection` 读的保持一致。
+ */
+export function tasksHash(projectRunId?: string): string {
+  const base = `#${SECTION_TO_HASH.tasks}`;
+  return projectRunId ? `${base}?project=${encodeURIComponent(projectRunId)}` : base;
+}
+
+export function taskCollaborationHash(taskId: string, roomId: string): string {
+  return `#workbench/tasks/${encodeURIComponent(taskId)}/collaboration?room=${encodeURIComponent(roomId)}`;
+}
+
+/** 深链：循环页并选中某个循环草案（`#workbench/loop?loop=<id>`）。 */
+export function loopHash(loopId?: string): string {
+  const base = `#${SECTION_TO_HASH.loops}`;
+  return loopId ? `${base}?loop=${encodeURIComponent(loopId)}` : base;
+}
+
+/** 深链：审计页并按实体类型筛选（`#console/governance/audit?entity=worker`）。 */
+export function auditHash(entityType?: string): string {
+  const base = `#${SECTION_TO_HASH.audit}`;
+  return entityType ? `${base}?entity=${encodeURIComponent(entityType)}` : base;
+}
+
+/**
+ * 当前 hash 上的深链查询参数。
+ *
+ * 消费端唯一的读取入口：section 组件自己 `split('?')` 会和这里的分层解析
+ * 漂移（旧的扁平 hash、`#workbench/space/<roomId>` 都各有写法），所以参数
+ * 一律经 `resolveLayeredHash` 解析一次再交出去。
+ */
+export function currentHashParams(): URLSearchParams | null {
+  if (typeof window === 'undefined') return null;
+  return resolveLayeredHash(window.location.hash.replace(/^#/, ''))?.params ?? null;
+}
+
+/**
  * Canonical hash for an active section while preserving a valid
- * `#console/resources/<tab>` deep link.
+ * `#console/resources/<tab>` deep link and the deep-link query of the page
+ * we are staying on.
  *
  * `hashForSection('resources')` collapses to `console/resources`, which would
  * silently reset the tab on mount. The third segment is reserved for resource
  * tabs, so keep it when it names a known tab.
+ *
+ * The query segment is kept only when the current hash already sits under the
+ * target section (`workbench/tasks?project=…`, `workbench/space/!room?q=…`):
+ * the shell rewrites the hash on every section change, and dropping a query
+ * that belongs to the page we land on is what killed the C-2 / B-1 deep links
+ * on reload. A query from a different section is dropped instead of drifting
+ * onto an unrelated surface.
  */
 export function hashForActiveSection(sectionId: string, currentHash: string): string {
   const canonical = hashForSection(sectionId);
-  if (sectionId !== 'resources') return canonical;
-  const path = currentHash.replace(/^#/, '').split('?')[0];
+  const raw = currentHash.replace(/^#/, '');
+  const sep = raw.indexOf('?');
+  const path = sep === -1 ? raw : raw.slice(0, sep);
+  const query = sep === -1 ? '' : raw.slice(sep);
+  // Preserve resource selection while normalizing old merged-page bookmarks.
+  const resolved = resolveHash(raw, () => true);
+  if (sectionId === 'tasks' && resolved?.taskId) return canonical;
+  if (['workers', 'teams', 'platform-assistant-settings'].includes(sectionId) && resolved?.section === sectionId) {
+    const params = new URLSearchParams(resolved.params);
+    params.delete('tab');
+    return canonical + (params.size ? `?${params}` : '');
+  }
+  const keep = query && (path === canonical || path.startsWith(`${canonical}/`)) ? query : '';
+
+  if (sectionId === 'team-agents') {
+    // Legacy workers/teams hashes must keep their page tab when the shell
+    // rewrites the URL to the canonical merged route (otherwise a
+    // notification pointing at `#console/resources/workers` would land on
+    // the teams tab).
+    const legacyTab =
+      LEGACY_TEAM_AGENTS_TAB[path] ??
+      LEGACY_TEAM_AGENTS_TAB[/^console\/resources\/(workers|teams)$/.exec(path)?.[1] ?? ''];
+    const tab = (new URLSearchParams(query).get('tab') ?? legacyTab) as TeamAgentsTab | undefined;
+    return tab && TEAM_AGENTS_TABS.includes(tab) ? `${canonical}?tab=${tab}` : canonical;
+  }
+
+  if (sectionId !== 'resources') return canonical + keep;
+
   const match = /^console\/resources\/([^/]+)$/.exec(path);
   return match && (RESOURCE_TABS as readonly string[]).includes(match[1])
-    ? path
-    : canonical;
+    ? path + keep
+    : canonical + keep;
 }
 
 /**
@@ -131,15 +253,26 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
   const [path, query] = hash.split('?');
   const segments = path.split('/').filter(Boolean);
   const params = query ? new URLSearchParams(query) : undefined;
+  let roomId = segments[2];
+  try {
+    if (roomId) roomId = decodeURIComponent(roomId);
+  } catch {
+    return null;
+  }
 
   // Workbench: space (chat) / tasks (+ artifacts, coding-runs) / loop
   if (segments[0] === 'workbench') {
+    if (path === 'workbench/assistant/settings') return { section: 'platform-assistant-settings', params };
     if (segments[1] === 'me') return { section: 'my-workbench' };
+    if (segments[1] === 'teams') return { section: 'my-teams', roomId, params };
     if (segments[1] === 'space') {
       // `workbench/space` or `workbench/space/<roomId>`
-      return { section: 'chat', roomId: segments[2], params };
+      return { section: 'chat', roomId, params };
     }
     if (segments[1] === 'tasks') {
+      if (segments.length === 4 && segments[3] === 'collaboration' && roomId && params?.get('room')) {
+        return { section: 'chat', taskId: roomId, roomId: params.get('room')!, params };
+      }
       if (segments[2] === 'artifacts') return { section: 'artifacts', params };
       if (segments[2] === 'coding-runs') return { section: 'coding-runs', params };
       return { section: 'tasks', params };
@@ -151,23 +284,31 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
 
   // Console: resources / governance / system
   if (segments[0] === 'console') {
-    // 资源收敛（F7.1）：workers/teams/humans/managers 分层路径全部进入
-    // Agent 目录容器（tab 由 ResourcesSection 从第三段解析）。
+    // Old merged-page links keep the selected resource on the separate pages.
+    if (path === 'console/resources/team-agents') {
+      const section = params?.has('manager') ? 'platform-assistant-settings'
+        : params?.get('tab') === 'agents' || params?.has('agent') ? 'workers' : 'teams';
+      return { section, params };
+    }
     const consoleMap: Record<string, string> = {
-      'resources': 'resources',
-      'resources/workers': 'resources',
-      'resources/teams': 'resources',
-      'resources/humans': 'resources',
-      'resources/managers': 'resources',
+      'resources': 'workers',
+      'resources/workers': 'workers',
+      'resources/teams': 'teams',
+      'resources/humans': 'humans',
+      'resources/managers': 'platform-assistant-settings',
       'resources/skills': 'skills',
       'resources/models': 'models',
+      'resources/tools': 'tools',
       'resources/knowledge': 'knowledge',
       'governance/audit': 'audit',
+      'governance/tracing': 'tracing',
+      'governance/monitoring': 'plugin-route:monitor-panel/monitor',
       'system/overview': 'overview',
     };
     const sub = segments.slice(1).join('/');
     const section = consoleMap[sub];
-    return section ? { section, params } : null;
+    if (!section) return null;
+    return { section, params };
   }
 
   return null;

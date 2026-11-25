@@ -137,9 +137,9 @@ export function TopologyCanvas({
     <div ref={containerRef} className="w-full h-[400px] border border-border rounded-lg bg-card/30 overflow-hidden">
       <svg width={size.width} height={size.height} role="img" aria-label="集群拓扑图：Manager → Team → Worker 三层节点与连线">
         {/* Layer labels */}
-        <text x={12} y={30} className="fill-muted-foreground text-[10px] font-medium">Managers</text>
-        <text x={12} y={size.height * 0.4 - 10} className="fill-muted-foreground text-[10px] font-medium">Teams</text>
-        <text x={12} y={size.height * 0.75 - 10} className="fill-muted-foreground text-[10px] font-medium">Workers</text>
+        <text x={12} y={30} className="fill-muted-foreground text-xs font-medium">Managers</text>
+        <text x={12} y={size.height * 0.4 - 10} className="fill-muted-foreground text-xs font-medium">Teams</text>
+        <text x={12} y={size.height * 0.75 - 10} className="fill-muted-foreground text-xs font-medium">Workers</text>
 
         {/* Edges */}
         {graph.edges.map((edge, i) => {

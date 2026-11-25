@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { Plus, UserCheck, Download, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { UserCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Select,
   SelectContent,
@@ -11,51 +13,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
-import { useCreateHuman, useDeleteHuman, useUpdateHuman } from '@/hooks/use-agentteams-mutations';
+import { useCreateHuman, useDeleteHuman } from '@/hooks/use-agentteams-mutations';
 import { useSearch } from '@/lib/search-context';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
-import { useViewMode } from '@/lib/use-view-mode';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { ListPagination, useListPagination } from '@/components/dashboard/list-pagination';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
+import { formatErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
-import type {
-  CreateHumanRequest,
-  HumanResponse,
-  UpdateHumanRequest,
-} from '@/lib/agentteams-api';
+import type { CreateHumanRequest, HumanResponse } from '@/lib/agentteams-api';
 import { SORT_OPTIONS, type SortKey } from './humans/human-types';
 import {
-  computePhaseStats,
   filterHumans,
+  isManagedHuman,
   sortHumans,
 } from './humans/human-selectors';
-import { HumanCard } from './humans/human-card';
 import { HumanTable } from './humans/human-table';
 import { HumanCreateDialog } from './humans/human-create-dialog';
 import { HumanDetailDialog } from './humans/human-detail-dialog';
-import { HumanEditDialog } from './humans/human-edit-dialog';
-import { PhaseDistribution } from './humans/human-phase-distribution';
+import { HumanDrawer } from './humans/human-drawer';
+import { HumanPasswordResetDialog } from './humans/human-password-reset-dialog';
+import { currentHashParams } from '@/lib/nav-hash';
+import { PhaseBadge } from '@/components/dashboard/phase-badge';
+import { PERMISSION_LABELS } from './humans/human-types';
 
-function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
-  if (viewMode === 'card') {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i} className="glass-card">
-            <CardContent className="p-4 space-y-3">
-              <div className="h-5 w-32 rounded shimmer" />
-              <div className="h-4 w-24 rounded shimmer" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
+function HumansSkeleton() {
   return (
     <Card className="glass-card">
       <CardContent className="p-4 space-y-3">
@@ -70,36 +56,54 @@ function HumansSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <UserCheck className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的 Human' : '暂无 Human'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个 Human
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={UserCheck}
+          title={hasQuery ? '没有匹配的用户' : '暂无用户'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个用户', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );
 }
 
 export function HumansSection() {
-  const { data: humans, isLoading, isError, refetch, isRefetching } = useHumans();
-  const { data: teams } = useTeams();
+  const { data: allHumans, isLoading, isError, refetch, isRefetching } = useHumans();
+  const humans = useMemo(() => allHumans?.filter(isManagedHuman), [allHumans]);
+  const {
+    data: teams,
+    isLoading: teamsLoading,
+    isError: teamsError,
+    error: teamsErrorObject,
+    refetch: refetchTeams,
+  } = useTeams();
+  const teamsErrorMessage = teamsError
+    ? formatErrorMessage(teamsErrorObject, '团队列表加载失败')
+    : undefined;
   const { data: workers } = useWorkers();
   const { searchQuery } = useSearch();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const createHuman = useCreateHuman();
   const deleteHuman = useDeleteHuman();
-  const updateHuman = useUpdateHuman();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<HumanResponse | null>(null);
+  // 详情 = 只读弹窗；编辑 = 右侧抽屉（四卡）。
   const [detailHuman, setDetailHuman] = useState<HumanResponse | null>(null);
-  const [editingHuman, setEditingHuman] = useState<HumanResponse | null>(null);
+  const [drawerHuman, setDrawerHuman] = useState<HumanResponse | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const profileHuman = allHumans?.find((human) => human.name === profileName);
+
+  useEffect(() => {
+    const openProfile = () => {
+      setProfileName(currentHashParams()?.get('human') ?? null);
+    };
+    openProfile();
+    window.addEventListener('hashchange', openProfile);
+    return () => window.removeEventListener('hashchange', openProfile);
+  }, []);
 
   const [newHuman, setNewHuman] = useState<CreateHumanRequest>({
     name: '',
@@ -108,7 +112,6 @@ export function HumansSection() {
   });
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
-  const { viewMode, handleViewModeChange } = useViewMode('card');
 
   const filteredHumans = useMemo(
     () => filterHumans(humans, searchQuery),
@@ -118,7 +121,7 @@ export function HumansSection() {
     () => sortHumans(filteredHumans, sortKey),
     [filteredHumans, sortKey],
   );
-  const phaseStats = useMemo(() => computePhaseStats(humans), [humans]);
+  const pagination = useListPagination(sortedHumans, 20, `${searchQuery}:${sortKey}`);
 
   const handleExport = useCallback(() => {
     if (!humans) return;
@@ -142,17 +145,6 @@ export function HumansSection() {
     });
   }, [createHuman, newHuman]);
 
-  const handleUpdate = useCallback(
-    (payload: UpdateHumanRequest) => {
-      if (!editingHuman) return;
-      updateHuman.mutate(
-        { name: editingHuman.name, data: payload },
-        { onSuccess: () => setEditingHuman(null) },
-      );
-    },
-    [editingHuman, updateHuman],
-  );
-
   const handleDelete = useCallback(() => {
     if (deleteTarget) {
       deleteHuman.mutate(deleteTarget, {
@@ -167,95 +159,76 @@ export function HumansSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
+      {profileName ? <>
+        <SectionHeader title="用户主页" actions={<>
+          <Button size="sm" variant="outline" asChild><a href="#console/resources/humans">返回用户列表</a></Button>
+          {profileHuman && !profileHuman.systemAdmin && <Button size="sm" onClick={() => setDrawerHuman(profileHuman)}>编辑用户</Button>}
+        </>} />
+        {profileHuman ? <Card className="max-w-3xl gap-0 py-0 shadow-none"><CardContent className="space-y-5 p-5">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">{profileHuman.displayName || profileHuman.name}</h2><PhaseBadge kind="human" phase={profileHuman.phase} /></div>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-8 gap-y-4 text-sm">
+            <dt className="text-muted-foreground">账号</dt><dd>{profileHuman.name}</dd>
+            <dt className="text-muted-foreground">角色</dt><dd>{PERMISSION_LABELS[profileHuman.permissionLevel ?? 2]}</dd>
+            <dt className="text-muted-foreground">邮箱</dt><dd>{profileHuman.email || '未填写'}</dd>
+            <dt className="text-muted-foreground">可访问团队</dt><dd className="break-words">{profileHuman.accessibleTeams?.join('、') || '未配置'}</dd>
+            <dt className="text-muted-foreground">可访问 Agent</dt><dd className="break-words">{profileHuman.accessibleWorkers?.join('、') || '未配置'}</dd>
+            <dt className="text-muted-foreground">Matrix 账号</dt><dd className="break-all text-muted-foreground">{profileHuman.matrixUserID || '未配置'}</dd>
+          </dl>
+        </CardContent></Card> : <p className="py-8 text-sm text-muted-foreground">{isLoading ? '正在加载用户…' : '未找到该用户，或当前账号无权查看。'}</p>}
+      </> : <>
       <SectionHeader
-        title="Humans"
-        description="管理人类用户和权限"
+        title={`用户${humans ? ` · ${humans.length}` : ''}`}
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {sortedHumans.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+                  <SelectTrigger aria-label="用户排序" className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SORT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !humans || humans.length === 0 },
+            ]} />
             <Button
-              variant="outline"
               size="sm"
-              onClick={handleExport}
-              disabled={!humans || humans.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
-            <Button
-              size="sm"
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Human
+              创建用户
             </Button>
           </div>
         }
       />
 
-      <PhaseDistribution stats={phaseStats} />
-
-      {sortedHumans.length > 0 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
-            <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
-              <SelectTrigger className="w-[140px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-3">
-            <Tabs value={viewMode} onValueChange={handleViewModeChange}>
-              <TabsList className="h-8">
-                <TabsTrigger value="card" className="px-2 py-1 text-xs gap-1">
-                  <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
-                  卡片
-                </TabsTrigger>
-                <TabsTrigger value="table" className="px-2 py-1 text-xs gap-1">
-                  <List className="w-3.5 h-3.5" aria-hidden="true" />
-                  表格
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
-      )}
-
       {isLoading ? (
-        <HumansSkeleton viewMode={viewMode} />
+        <HumansSkeleton />
       ) : sortedHumans.length === 0 ? (
         <EmptyState hasQuery={!!searchQuery} onCreate={() => setCreateOpen(true)} />
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sortedHumans.map((human, i) => (
-            <HumanCard
-              key={human.name}
-              human={human}
-              index={i}
-              onView={setDetailHuman}
-              onDelete={setDeleteTarget}
-            />
-          ))}
-        </div>
       ) : (
         <HumanTable
-          humans={sortedHumans}
+          humans={pagination.items}
           onView={setDetailHuman}
+          onEdit={setDrawerHuman}
           onDelete={setDeleteTarget}
+          onResetPassword={userLevel >= 3 ? setPasswordTarget : undefined}
         />
       )}
+      {!isLoading && <ListPagination {...pagination} label="用户" />}
+
+      </>}
 
       <HumanCreateDialog
         open={createOpen}
@@ -263,22 +236,38 @@ export function HumansSection() {
         value={newHuman}
         onChange={setNewHuman}
         isPending={createHuman.isPending}
+        teamSource={{
+          names: (teams ?? []).map((team) => team.name),
+          isLoading: teamsLoading,
+          isError: teamsError,
+          errorMessage: teamsErrorMessage,
+          onRetry: () => void refetchTeams(),
+        }}
         onSubmit={handleCreate}
       />
 
       <HumanDetailDialog
         human={detailHuman}
-        onOpenChange={(open) => !open && setDetailHuman(null)}
-        onEdit={setEditingHuman}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDetailHuman(null);
+          if (currentHashParams()?.has('human')) window.history.replaceState(null, '', '#console/resources/humans');
+        }}
       />
 
-      <HumanEditDialog
-        human={editingHuman}
-        teams={(teams ?? []).map((t) => t.name)}
-        workers={(workers ?? []).map((w) => w.name)}
-        isPending={updateHuman.isPending}
-        onOpenChange={(open) => !open && setEditingHuman(null)}
-        onSubmit={handleUpdate}
+      <HumanDrawer
+        human={drawerHuman}
+        teams={(teams ?? []).map((team) => ({
+          name: team.name,
+          humanMembers: (team.humanMembers ?? []).map((member) => typeof member === 'string' ? member : member.name),
+        }))}
+        workers={(workers ?? []).map((worker) => ({ name: worker.name }))}
+        teamsLoading={teamsLoading}
+        teamsError={teamsError}
+        teamsErrorMessage={teamsErrorMessage}
+        onRetryTeams={() => void refetchTeams()}
+        userLevel={userLevel}
+        onOpenChange={(open) => !open && setDrawerHuman(null)}
       />
 
       <ConfirmDeleteDialog
@@ -289,6 +278,11 @@ export function HumansSection() {
         onConfirm={handleDelete}
         isLoading={deleteHuman.isPending}
       />
+      {passwordTarget && userLevel >= 3 && <HumanPasswordResetDialog
+        key={passwordTarget.name}
+        human={passwordTarget}
+        onClose={() => setPasswordTarget(null)}
+      />}
     </div>
   );
 }

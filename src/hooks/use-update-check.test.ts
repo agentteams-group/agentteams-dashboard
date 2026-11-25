@@ -193,7 +193,7 @@ describe('useUpdateCheck', () => {
     let buildPolls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/dashboard-build')) {
+      if (url.endsWith('/api/dashboard-build/')) {
         buildPolls += 1;
         // First call is the check itself (running version unchanged); the
         // update polls then observe the container coming back on the new
@@ -204,7 +204,7 @@ describe('useUpdateCheck', () => {
       if (url.includes('releases/latest')) {
         return jsonResponse({ tag_name: 'v1.2.5' });
       }
-      if (url.endsWith('/api/self-update')) {
+      if (url.endsWith('/api/self-update/')) {
         return jsonResponse({ ok: true });
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -226,7 +226,7 @@ describe('useUpdateCheck', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/self-update',
+      '/api/self-update/',
       expect.objectContaining({ method: 'POST' })
     );
     expect(buildPolls).toBeGreaterThanOrEqual(2);
@@ -242,13 +242,13 @@ describe('useUpdateCheck', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/dashboard-build')) {
+      if (url.endsWith('/api/dashboard-build/')) {
         return jsonResponse({ buildId: "page-build", version: "1.2.4" });
       }
       if (url.includes('releases/latest')) {
         return jsonResponse({ tag_name: 'v2.0.0' });
       }
-      if (url.endsWith('/api/self-update')) {
+      if (url.endsWith('/api/self-update/')) {
         return new Response(JSON.stringify({ error: '更新器未配置' }), { status: 503 });
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -280,13 +280,13 @@ describe('useUpdateCheck', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/dashboard-build')) {
+      if (url.endsWith('/api/dashboard-build/')) {
         return jsonResponse({ buildId: "page-build", version: "1.2.4" });
       }
       if (url.includes('releases/latest')) {
         return jsonResponse({ tag_name: 'v2.0.0' });
       }
-      if (url.endsWith('/api/self-update')) {
+      if (url.endsWith('/api/self-update/')) {
         return jsonResponse({ ok: true });
       }
       throw new Error(`unexpected fetch: ${url}`);

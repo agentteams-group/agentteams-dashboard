@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { FolderKanban, CircleAlert, Code2, Download, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -14,6 +14,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 // ── 产物预览（9/17 验收第六轮：任务看板产物点按=预览，行为对齐产物 tab）────
 // 此前 ArtifactLink 点按=直接下载；装验反馈「加上预览」→ 点按开预览对话框
@@ -31,7 +33,7 @@ function artifactExt(name: string): string {
   return m ? m[1] : '';
 }
 interface ArtifactPreviewState {
-  status: 'loading' | 'ready' | 'binary' | 'error';
+  status: 'loading' | 'ready' | 'binary' | 'error' | 'document';
   text?: string;
   error?: string;
   isImage?: boolean;
@@ -48,7 +50,7 @@ function SourceView({
   onAnchor: (_line: number | null) => void;
 }) {
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
       {text.split('\n').map((lineText, i) => {
         const lineNo = i + 1;
         const anchored = anchorLine === lineNo;
@@ -86,10 +88,17 @@ export function ArtifactLink({
   const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<ArtifactPreviewState | null>(null);
   const [anchorLine, setAnchorLine] = useState<number | null>(null);
+  const [anchorCoordinate, setAnchorCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [showSource, setShowSource] = useState(false);
   const openPreview = () => {
+    if (isSlideDocument(label)) {
+      setPreview({ status: 'document' });
+      return;
+    }
     setPreview({ status: 'loading' });
     setShowSource(false);
+    setAnchorLine(null);
+    setAnchorCoordinate(null);
     void (async () => {
       try {
         const res = await fetch(href, { cache: 'no-store' });
@@ -128,6 +137,22 @@ export function ArtifactLink({
         setPreview({ status: 'error', error: err instanceof Error ? err.message : '预览失败' });
       }
     })();
+  };
+  const handleImageAnchor = (event: ReactMouseEvent<HTMLImageElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+    // 再点同一处（±1%）视为取消，避免只能靠关窗口清锚点。
+    setAnchorCoordinate((prev) =>
+      prev && Math.abs(prev.x - x) < 0.01 && Math.abs(prev.y - y) < 0.01 ? null : { x, y },
+    );
+    setAnchorLine(null);
+  };
+  const closePreview = () => {
+    setPreview(null);
+    setAnchorLine(null);
+    setAnchorCoordinate(null);
   };
   const handleDownload = async () => {
     setDownloading(true);
@@ -172,7 +197,7 @@ export function ArtifactLink({
         <button
           type="button"
           onClick={openPreview}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] hover:bg-amber-500/15"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs hover:bg-amber-500/15"
           title={`预览：${href}`}
         >
           <FolderKanban className="h-3 w-3" />
@@ -192,16 +217,23 @@ export function ArtifactLink({
           )}
         </button>
       </span>
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog open={!!preview} onOpenChange={(open) => !open && closePreview()}>
         {/* 9/17 装验第 7 轮：对话框 90vh 封顶 + 自身可滚——内容再高也不
             超出窗口（此前超高内容把对话框顶破视口）。 */}
-        <DialogContent className="sm:max-w-5xl max-w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className={preview?.status === 'document'
+          ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none overflow-y-auto sm:max-w-none'
+          : 'sm:max-w-5xl max-w-[95vw] max-h-[90vh] overflow-y-auto'}>
           <DialogHeader>
             <DialogTitle className="truncate">{label} — 预览</DialogTitle>
             <DialogDescription className="truncate font-mono">{href}</DialogDescription>
           </DialogHeader>
+          {preview?.status === 'document' && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+              <DocumentPreview url={href} filename={label} />
+            </div>
+          )}
           {/* 双轴滚动：宽内容（代码/表格/长 URL）横向滚而不撑破对话框 */}
-          {preview && (
+          {preview && preview.status !== 'document' && (
             <div className="max-h-[70vh] min-w-0 overflow-auto rounded-md border bg-muted/20 p-3">
               {preview.status === 'loading' && (
                 <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
@@ -223,11 +255,34 @@ export function ArtifactLink({
               )}
               {preview.status === 'ready' &&
                 (preview.isImage ? (
-                  <img
-                    src={href}
-                    alt={label}
-                    className="max-w-full max-h-[60vh] rounded-md object-contain"
-                  />
+                  <div className="space-y-1">
+                    <div className="relative inline-block max-w-full">
+                      <img
+                        src={href}
+                        alt={label}
+                        onClick={handleImageAnchor}
+                        className="max-w-full max-h-[60vh] rounded-md object-contain cursor-crosshair"
+                        title="点击图片任意位置锚定坐标评论（再点同一处取消）"
+                      />
+                      {anchorCoordinate && (
+                        <span
+                          className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-sky-500 shadow"
+                          style={{
+                            left: `${anchorCoordinate.x * 100}%`,
+                            top: `${anchorCoordinate.y * 100}%`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    {roomId && (
+                      <p className="text-xs text-muted-foreground">
+                        {anchorCoordinate
+                          ? `已锚定 (${Math.round(anchorCoordinate.x * 100)}%, ${Math.round(anchorCoordinate.y * 100)}%)，再点同一处取消`
+                          : '点击图片任意位置锚定坐标评论'}
+                      </p>
+                    )}
+                  </div>
                 ) : preview.isHtml ? (
                   <div className="space-y-2">
                     <div className="flex justify-end gap-1">
@@ -290,6 +345,7 @@ export function ArtifactLink({
               roomId={roomId}
               artifact={label}
               anchorLine={anchorLine}
+              anchorCoordinate={anchorCoordinate}
               defaultAssignee={assignee}
             />
           )}

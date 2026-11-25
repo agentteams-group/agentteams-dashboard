@@ -23,7 +23,7 @@ export function ArtifactStateBadge({ info }: { info: ArtifactStateInfo }) {
   return (
     <Badge
       variant="outline"
-      className={`text-[10px] gap-1 shrink-0 ${STATE_STYLE[info.state]}`}
+      className={`text-xs gap-1 shrink-0 ${STATE_STYLE[info.state]}`}
       title={info.note}
     >
       <Icon className="h-2.5 w-2.5" aria-hidden="true" />

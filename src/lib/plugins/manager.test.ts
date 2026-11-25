@@ -195,4 +195,72 @@ describe('plugin manager lifecycle', () => {
       pluginManager.installFromManifestJson({ not: 'a manifest' })
     ).rejects.toThrow();
   });
+
+  // f7-1: load 可控挂起的 bundled 插件——模拟 URL 插件跨网络加载挂起数秒。
+  function deferredBundled(id: string, extensionPoints?: PluginManifest['extensionPoints']) {
+    let resolveLoad!: (_mod: PluginModule) => void;
+    const loadPromise = new Promise<PluginModule>((resolve) => {
+      resolveLoad = resolve;
+    });
+    const activateFn = vi.fn();
+    const mod: PluginModule = {
+      activate: (api: DashboardPluginApi) => {
+        activateFn();
+        api.registerWidget({
+          id: `${id}-widget`,
+          title: `${id} widget`,
+          component: (() => null) as never,
+        });
+        api.registerMenuItem({
+          id: `${id}-menu`,
+          label: id,
+          target: { type: 'section', sectionId: 'overview' },
+        });
+      },
+      deactivate: () => {},
+    };
+    return {
+      activateFn,
+      load: () => loadPromise,
+      resolveLoad: () => resolveLoad(mod),
+      record: makePluginRecord(manifest(id, extensionPoints), {
+        kind: 'bundled' as const,
+        load: () => loadPromise,
+      }),
+    };
+  }
+
+  it('f7-1: 激活挂起期间 disable → 恢复后放弃注入贡献且状态保持 disabled', async () => {
+    const deferred = deferredBundled('alpha', ['dashboard-widget', 'sidebar-menu']);
+    register(deferred.record);
+
+    const activation = pluginManager.activate('alpha');
+    // load 挂起中用户停用（disable 自身无挂起点，先行完成）。
+    await pluginManager.disable('alpha');
+    deferred.resolveLoad();
+    await activation;
+
+    // 恢复执行时复查 disabledIds：activate() 未被调用，无注入贡献。
+    expect(deferred.activateFn).not.toHaveBeenCalled();
+    expect(statusOf('alpha')).toBe('disabled');
+    expect(usePluginRegistry.getState().disabledIds).toContain('alpha');
+    expect(useExtensionStore.getState().widgets).toHaveLength(0);
+    expect(useExtensionStore.getState().menuItems).toHaveLength(0);
+  });
+
+  it('f7-1: 并发 activate 被在途守卫挡住，activator 只执行一次', async () => {
+    const deferred = deferredBundled('alpha', ['dashboard-widget', 'sidebar-menu']);
+    register(deferred.record);
+
+    const first = pluginManager.activate('alpha');
+    const second = pluginManager.activate('alpha');
+    deferred.resolveLoad();
+    await Promise.all([first, second]);
+
+    // mitt 事件总线依赖单次注册：第二次 activate 被 activating 集合挡住。
+    expect(deferred.activateFn).toHaveBeenCalledTimes(1);
+    expect(statusOf('alpha')).toBe('active');
+    expect(useExtensionStore.getState().widgets).toHaveLength(1);
+    expect(useExtensionStore.getState().menuItems).toHaveLength(1);
+  });
 });

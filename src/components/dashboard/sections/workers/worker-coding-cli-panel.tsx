@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +35,8 @@ import {
   type SettingsObject,
   type SettingsValue,
 } from '@/lib/coding-cli-presets';
+import type { WorkerRuntime } from '@/lib/agentteams-api';
+import { WorkerQwenCodeBridgeCard } from './worker-qwen-code-bridge-card';
 
 type LoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 
@@ -116,6 +119,12 @@ function getModelName(settings: SettingsObject): string {
   return '';
 }
 
+/** QwenCode 顶层 voiceModel（语音/转写模型）；非字符串一律视为未设置。 */
+function getVoiceModel(settings: SettingsObject): string {
+  const value = settings.voiceModel;
+  return typeof value === 'string' ? value : '';
+}
+
 function collectRedacted(
   obj: SettingsObject,
   path: string[] = [],
@@ -185,7 +194,20 @@ function previewJson(settings: SettingsObject): string {
   );
 }
 
-export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
+export function WorkerCodingCliPanel({
+  workerName,
+  runtime,
+  modelAliases = [],
+  onChanged,
+}: {
+  workerName: string;
+  /** Worker 运行时：QwenCode 卡的「QwenPaw × QwenCode 桥」仅 qwenpaw 渲染。 */
+  runtime?: WorkerRuntime;
+  /** 模型别名候选（与 Worker 模型编辑同源；空 = 纯自由输入）。 */
+  modelAliases?: readonly string[];
+  /** 桥模块安装/更新成功后通知父级（抽屉刷新详情）。 */
+  onChanged?: () => void;
+}) {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<CodingCliProbeItem[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -194,6 +216,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
   const [settings, setSettings] = useState<SettingsObject | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelName, setModelName] = useState('');
+  const [voiceModel, setVoiceModel] = useState('');
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [versionTag, setVersionTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -258,6 +281,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       setSettingsOpen(true);
       setSettings(null);
       setModelName('');
+      setVoiceModel('');
       setSecrets({});
       setJsonPatch('');
       try {
@@ -289,6 +313,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
             : {};
         setSettings(config);
         setModelName(getModelName(config));
+        setVoiceModel(getVoiceModel(config));
         setSecrets({});
       } catch (err) {
         if (cancelledRef.current || reqId !== settingsReqRef.current) return;
@@ -304,6 +329,17 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     const diff: SettingsObject = {};
     if (modelName !== getModelName(settings)) {
       assignPath(diff, ['model', 'name'], modelName);
+    }
+    // QwenCode 语音模型（顶层 voiceModel）：留空且从未设置过 → 不写盘（文件里
+    // 不出现该键）；已有值清空 → 空串=清除覆盖（controller settings PUT 只做
+    // 深合并、没有删键语义，与插件 16.142 同口径）。
+    if (selected === 'qwen-code') {
+      const currentVoice = getVoiceModel(settings);
+      if (voiceModel.trim() === '') {
+        if (currentVoice) assignPath(diff, ['voiceModel'], '');
+      } else if (voiceModel !== currentVoice) {
+        assignPath(diff, ['voiceModel'], voiceModel);
+      }
     }
     for (const field of collectRedacted(settings)) {
       const key = field.path.join('.');
@@ -355,7 +391,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
     } finally {
       setBusy(false);
     }
-  }, [base, busy, jsonPatch, loadSettings, modelName, readOnly, secrets, selected, settings]);
+  }, [base, busy, jsonPatch, loadSettings, modelName, readOnly, secrets, selected, settings, voiceModel]);
 
   const pollTask = useCallback(
     async (cli: CodingCliId, taskId: string) => {
@@ -561,7 +597,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       {readOnly && (
-        <p className="text-[11px] text-amber-700 dark:text-amber-300">当前角色仅可查看，不能修改编码 CLI。</p>
+        <p className="text-xs text-amber-700 dark:text-amber-300">当前角色仅可查看，不能修改编码 CLI。</p>
       )}
 
       <div className="space-y-1.5">
@@ -588,16 +624,16 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               >
                 {CLI_LABEL[cli.id]}
               </button>
-              <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+              <Badge variant="secondary" className="h-4 px-1 text-xs">
                 {cli.installed ? cli.version || '已安装' : '未安装'}
               </Badge>
               {cli.auth_configured && (
-                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                <Badge variant="secondary" className="h-4 px-1 text-xs">
                   鉴权已配置
                 </Badge>
               )}
               {cli.auth_configured && !cli.installed && (
-                <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                <span className="text-xs text-amber-700 dark:text-amber-300">
                   容器重建后需重新安装；已保存的鉴权可保留
                 </span>
               )}
@@ -644,7 +680,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground">安装版本（可选）</span>
+        <span className="text-xs text-muted-foreground">安装版本（可选）</span>
         <Input
           value={versionTag}
           onChange={(e) => setVersionTag(e.target.value)}
@@ -654,26 +690,60 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
         />
       </div>
 
+      {/* QwenCode 卡展开后、settings 之前：QwenPaw × QwenCode 桥安装/更新 */}
+      {selected === 'qwen-code' && (
+        <WorkerQwenCodeBridgeCard
+          workerName={workerName}
+          runtime={runtime}
+          onChanged={onChanged}
+        />
+      )}
+
       {settingsOpen && !settings && (
-        <p className="text-[11px] text-muted-foreground">加载 settings…</p>
+        <p className="text-xs text-muted-foreground">加载 settings…</p>
       )}
 
       {settingsOpen && settings && (
         <div className="space-y-1.5 rounded-md border border-border/60 p-2">
-          <p className="text-[11px] text-muted-foreground">{CLI_LABEL[selected]} settings</p>
-          <label className="block text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">{CLI_LABEL[selected]} settings</p>
+          <label className="block text-xs text-muted-foreground">
             模型名
-            <Input
+            <Combobox
               value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              className="mt-0.5 h-7 text-xs"
+              options={modelAliases}
+              onChange={setModelName}
+              placeholder="选择或输入模型别名"
+              ariaLabel="模型名"
+              className="mt-0.5"
               disabled={readOnly}
             />
           </label>
+          {/* 语音（Voice）：QwenCode 独有的顶层 voiceModel（对齐插件 16.142）。
+           * 独立分组卡，不与模型/密钥混排；触控目标 h-11（44px），窄屏
+           * min-w-0 + w-full 不横溢，深浅色走主题 token。 */}
+          {selected === 'qwen-code' && (
+            <div className="min-w-0 space-y-1 rounded-md border border-border/60 bg-muted/20 p-2">
+              <p className="text-xs font-medium">语音（Voice）</p>
+              <p className="text-xs text-muted-foreground">
+                QwenCode 语音/转写模型（写入顶层 voiceModel）；留空=使用 CLI 默认，从未设置过则不写盘。
+              </p>
+              <label className="block min-w-0 text-xs text-muted-foreground">
+                语音模型 / Voice model
+                <Input
+                  value={voiceModel}
+                  onChange={(e) => setVoiceModel(e.target.value)}
+                  className="mt-0.5 h-11 w-full min-w-0 text-sm"
+                  placeholder="留空使用 CLI 默认"
+                  aria-label="语音模型"
+                  disabled={readOnly}
+                />
+              </label>
+            </div>
+          )}
           {redacted.map((field) => {
             const key = field.path.join('.');
             return (
-              <label key={key} className="block text-[11px] text-muted-foreground">
+              <label key={key} className="block text-xs text-muted-foreground">
                 {key}
                 {field.has_value ? '（已保存，留空保留）' : ''}
                 <Input
@@ -687,14 +757,14 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
               </label>
             );
           })}
-          <p className="text-[11px] text-muted-foreground">当前配置（只读）</p>
+          <p className="text-xs text-muted-foreground">当前配置（只读）</p>
           <pre
-            className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px]"
+            className="max-h-40 overflow-auto rounded bg-muted/40 p-2 font-mono text-xs"
             aria-label="当前配置只读预览"
           >
             {previewJson(settings)}
           </pre>
-          <label className="block text-[11px] text-muted-foreground">
+          <label className="block text-xs text-muted-foreground">
             可选 JSON 补丁（同键以补丁为准）
             <Textarea
               value={jsonPatch}
@@ -716,11 +786,11 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       )}
 
       <div className="space-y-1">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           场景模板（只写模型名，工具链/MCP 需确认）· 当前 CLI：{CLI_LABEL[selected]}
         </p>
         {!selectedInstalled && (
-          <p className="text-[11px] text-muted-foreground">先安装当前 CLI，再套用场景模板</p>
+          <p className="text-xs text-muted-foreground">先安装当前 CLI，再套用场景模板</p>
         )}
         <div className="flex flex-wrap gap-1">
           {CODING_CLI_PRESETS.map((preset) => (
@@ -739,7 +809,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
       </div>
 
       {suggestion && (
-        <div className="space-y-1 rounded-md border border-border/60 p-2 text-[11px]">
+        <div className="space-y-1 rounded-md border border-border/60 p-2 text-xs">
           <p className="text-muted-foreground">建议清单（需人工确认，未写入 Worker CR）</p>
           {suggestion.toolchain.shared_volume && (
             <p>共享卷：{suggestion.toolchain.shared_volume}</p>
@@ -765,7 +835,7 @@ export function WorkerCodingCliPanel({ workerName }: { workerName: string }) {
 
       {msg && (
         <span
-          className={`flex items-center gap-1 text-[11px] ${
+          className={`flex items-center gap-1 text-xs ${
             msg.kind === 'ok'
               ? 'text-emerald-600 dark:text-emerald-400'
               : 'text-red-600 dark:text-red-400'

@@ -22,15 +22,34 @@ export type RuntimeMap = Record<string, RuntimeMapEntry>;
 const RuntimeMapContext = React.createContext<RuntimeMap | null>(null);
 
 const EMPTY_MAP: RuntimeMap = {};
+const EMPTY_HUMANS: string[] = [];
+const HumanMatrixIdsContext = React.createContext<string[]>(EMPTY_HUMANS);
+const HumanNamesContext = React.createContext<Record<string, string>>({});
+
+export function useHumanMatrixIds(): string[] {
+  return useContext(HumanMatrixIdsContext);
+}
+
+export function useHumanNames(): Record<string, string> {
+  return useContext(HumanNamesContext);
+}
 
 export function RuntimeMapProvider({
   map,
+  humanUserIds = EMPTY_HUMANS,
+  humanNames,
   children,
 }: {
   map: RuntimeMap;
+  humanUserIds?: string[];
+  humanNames?: Record<string, string>;
   children: React.ReactNode;
 }) {
-  return <RuntimeMapContext.Provider value={map}>{children}</RuntimeMapContext.Provider>;
+  return <RuntimeMapContext.Provider value={map}>
+    <HumanMatrixIdsContext.Provider value={humanUserIds}>
+      <HumanNamesContext.Provider value={humanNames ?? {}}>{children}</HumanNamesContext.Provider>
+    </HumanMatrixIdsContext.Provider>
+  </RuntimeMapContext.Provider>;
 }
 
 /** Returns the MXID → worker map, or an empty object outside a provider. */

@@ -1,10 +1,11 @@
 // Shared proxy helper for AgentTeams API routes
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/dashboard-session';
-import { markWorking, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
+import { backendAuthHeader, markWorking, orderedCandidates, pickBackendUrl } from '@/lib/backend-config';
 import { appendAuditEvent } from '@/lib/audit-log';
 import { readServerIdentity } from '@/lib/server-auth';
 import { isStatelessAuthMode } from '@/lib/static-mode';
+import { createHash } from 'node:crypto';
 
 const TIMEOUT_MS = 10000;
 // Request-layer failover (plugin catch-all parity): a transport error retries
@@ -186,9 +187,23 @@ export async function proxyToAgentTeams(
      * 'content-disposition' for binary download routes). Only these are
      * forwarded; everything else is filtered. */
     passthroughHeaders?: string[];
+    /** Version read by a caller editing a conditional-write endpoint. */
+    ifMatch?: string | null;
+    /** Extra request headers to forward upstream (file read/write protocol:
+     * Range / If-Range / If-None-Match / If-Match). */
+    forwardRequestHeaders?: string[];
+    /** Let an upstream 304 through unchanged (file content revalidation). */
+    allowUpstream304?: boolean;
+    /** Forward the request body as raw bytes (file uploads) instead of
+     * decoding it as JSON text. */
+    rawBody?: boolean;
+    /** Per-request upstream timeout (ms). Defaults to TIMEOUT_MS; long-running
+     * compile/inject/import endpoints pass a wider bound. */
+    timeoutMs?: number;
   } = {}
 ): Promise<NextResponse> {
   const { method = request.method, forwardBody = true, contentType } = options;
+  const requestTimeout = options.timeoutMs ?? TIMEOUT_MS;
   // F1c: walk the candidate set instead of a single URL — a dead first
   // candidate must never 502 the data plane (plugin catch-all parity).
   const targets = proxyTargets(request, controllerUrl);
@@ -197,6 +212,13 @@ export async function proxyToAgentTeams(
     method,
     headers: {},
   };
+  if (options.ifMatch) {
+    (fetchOptions.headers as Record<string, string>)['If-Match'] = options.ifMatch;
+  }
+  for (const name of options.forwardRequestHeaders ?? []) {
+    const value = request.headers.get(name);
+    if (value) (fetchOptions.headers as Record<string, string>)[name.toLowerCase()] = value;
+  }
 
   // Per-session Controller credential (M19 dual-track):
   // - L2 session → the user's own Matrix access token, held in the
@@ -243,7 +265,12 @@ export async function proxyToAgentTeams(
 
   try {
     if (forwardBody && ['POST', 'PUT', 'PATCH'].includes(method)) {
-      if (contentType === 'multipart/form-data') {
+      if (options.rawBody) {
+        fetchOptions.body = await request.arrayBuffer();
+        const origCT = request.headers.get('content-type');
+        (fetchOptions.headers as Record<string, string>)['content-type'] =
+          origCT || contentType || 'application/octet-stream';
+      } else if (contentType === 'multipart/form-data') {
         // Forward multipart as-is (don't set Content-Type, let fetch handle boundary)
         const body = await request.arrayBuffer();
         fetchOptions.body = body;
@@ -276,14 +303,65 @@ export async function proxyToAgentTeams(
     }
     for (let attempt = 0; attempt <= SAME_ADDRESS_RETRIES; attempt++) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), requestTimeout);
       try {
-        const res = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
+        const parsed = new URL(targetUrl);
+        const conditionalRead = method === 'GET' && !options.stream && (
+          ['/api/v1/version', '/api/v1/skills', '/api/v1/mcp-servers', '/api/v1/gateway/ai-routes'].includes(parsed.pathname)
+          || (parsed.pathname === '/api/v1/workers' && parsed.searchParams.get('fields') === 'spec')
+        );
+        // Scope validators to the effective server credential, identity and target.
+        // A browser cannot replay an admin body's validator after switching account.
+        const identity = readServerIdentity(request);
+        const validatorScope = createHash('sha256').update(JSON.stringify([
+          targetUrl, fetchOptions.headers, identity?.name, identity?.level,
+        ])).digest('hex').slice(0, 32);
+        const upstreamHeaders = new Headers(fetchOptions.headers);
+        // Saved backend credentials apply only to legacy requests without a
+        // user-bound credential. Human and operational-token sessions retain
+        // the caller's Authorization header through the Controller boundary.
+        const perAddressAuth = backendAuthHeader('controller', target).Authorization;
+        const sessionCredential = getSessionFromRequest(request)?.credential.kind;
+        const userBound = isStatelessAuthMode() || sessionCredential === 'matrix' || sessionCredential === 'controller-token';
+        // A saved backend credential must never replace an authenticated user's
+        // token: Controller must authorize the actual caller on every request.
+        if (perAddressAuth && !userBound) upstreamHeaders.set('authorization', perAddressAuth);
+        const incoming = /^W\/"([a-f0-9]{32})\.([A-Za-z0-9_-]+)"$/.exec(request.headers.get('If-None-Match') ?? '');
+        if (conditionalRead && incoming?.[1] === validatorScope) {
+          upstreamHeaders.set('If-None-Match', Buffer.from(incoming[2], 'base64url').toString());
+        }
+        const res = await fetch(targetUrl, { ...fetchOptions, headers: upstreamHeaders, signal: controller.signal });
         clearTimeout(timeout);
         if (res.status < 400) markWorking('controller', target);
         // Governance audit: record proxied mutations (success=info, upstream
         // 4xx/5xx=warning) with the server-resolved identity.
         auditProxiedMutation(request, path, method, res.status);
+
+        const upstreamETag = conditionalRead ? res.headers.get('ETag') : null;
+        const responseETag = upstreamETag
+          ? `W/"${validatorScope}.${Buffer.from(upstreamETag).toString('base64url')}"` : null;
+        if (res.status === 304) {
+          if (options.allowUpstream304) {
+            const headers = new Headers();
+            for (const name of options.passthroughHeaders ?? []) {
+              const value = res.headers.get(name);
+              if (value) headers.set(name, value);
+            }
+            headers.set('cache-control', 'no-store');
+            return new NextResponse(null, { status: 304, headers });
+          }
+          if (!conditionalRead || !upstreamHeaders.has('If-None-Match')) {
+            return NextResponse.json({ error: 'Controller returned 304 without a matching validator' }, { status: 502 });
+          }
+          return new NextResponse(null, {
+            status: 304,
+            headers: {
+              ...(responseETag ? { ETag: responseETag } : {}),
+              'Cache-Control': 'private, no-store',
+              Vary: 'Authorization, Cookie',
+            },
+          });
+        }
 
         // For 204 No Content
         if (res.status === 204) {
@@ -335,6 +413,10 @@ export async function proxyToAgentTeams(
         const responseHeaders = new Headers();
         const resCT = res.headers.get('content-type');
         if (resCT) responseHeaders.set('content-type', resCT);
+        if (responseETag && res.ok) {
+          responseHeaders.set('ETag', responseETag);
+          responseHeaders.set('Vary', 'Authorization, Cookie');
+        }
         // Pass through any explicitly requested headers (e.g. content-disposition
         // for artifact downloads so RFC 5987 filenames survive the proxy).
         for (const name of options.passthroughHeaders ?? []) {
@@ -363,7 +445,7 @@ export async function proxyToAgentTeams(
           url: target,
           error:
             err instanceof Error && err.name === 'AbortError'
-              ? `timeout after ${TIMEOUT_MS}ms`
+              ? `timeout after ${requestTimeout}ms`
               : err instanceof Error
                 ? err.message
                 : 'unknown error',

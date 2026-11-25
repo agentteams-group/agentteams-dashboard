@@ -60,14 +60,164 @@ loadFs().catch(() => {
   /* jsdom etc.: readConfigSync returns null, async writers throw at call time */
 });
 
+/** 每地址覆盖凭据（对齐工作台插件 config_entries.AuthEntry）：
+ * - basic → 公网网关 Basic 门（Caddy 等）
+ * - bearer → 网关 API key 门（Higress 等），即 Bearer token
+ * 无 auth 的条目 = 用服务自身认证（controller token / matrix token /
+ * SGLang 无鉴权）。MinIO 例外：S3 请求用 Access Key/Secret Key 签名
+ * （AGENTTEAMS_FS_ACCESS_KEY / AGENTTEAMS_FS_SECRET_KEY），不是
+ * Authorization 的 Basic/Bearer，因此不在本表语义内。 */
+export type BackendAuth =
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'bearer'; token: string };
+
+/** 地址条目：字符串（服务自身认证，内网默认形态）或 {url, auth?}（显式
+ * 覆盖凭据）。与插件同构，语义不得简化成「只是一个 URL」。 */
+export type AddressEntry = string | { url: string; auth?: BackendAuth };
+
+/** 脱敏占位符（与插件 "***" 同源）：回传浏览器的秘密字段、以及用户留空
+ * 提交时的「保持不变」信号。 */
+export const REDACTED_SECRET = '***';
+
 export interface BackendAddrs {
-  internal?: string;
-  external?: string;
+  internal?: AddressEntry;
+  external?: AddressEntry;
 }
+
+const ADDRESS_SLOTS = ['internal', 'external'] as const;
+
+/** 地址条目 → URL 字符串（str 原样；对象取 .url；其他 → ''）。所有按
+ * 后端名解析 URL 的调用点都经这里，不各自读 .internal/.external。 */
+export function addressUrl(entry: AddressEntry | undefined | null): string {
+  if (typeof entry === 'string') return entry.trim();
+  if (entry && typeof entry === 'object' && typeof entry.url === 'string') return entry.url.trim();
+  return '';
+}
+
+/** 凭据归一（插件 _normalize_auth 语义）：basic 需 username+password，
+ * bearer 需 token；空串与脱敏占位 '***' 视为未填（不写盘、不回填）。 */
+function normalizeAuth(raw: unknown): BackendAuth | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const a = raw as Record<string, unknown>;
+  const type = typeof a.type === 'string' ? a.type.trim().toLowerCase() : '';
+  if (type === 'basic') {
+    const username = typeof a.username === 'string' ? a.username.trim() : '';
+    const password = typeof a.password === 'string' ? a.password.trim() : '';
+    if (!username || !password || password === REDACTED_SECRET) return null;
+    return { type: 'basic', username, password };
+  }
+  if (type === 'bearer') {
+    const token = typeof a.token === 'string' ? a.token.trim() : '';
+    if (!token || token === REDACTED_SECRET) return null;
+    return { type: 'bearer', token };
+  }
+  return null;
+}
+
+/** 地址条目归一：string → 归一化 URL；对象要求 url 通过 normalizeHttpUrl +
+ * isHttpUrl，凭据不完整则塌回纯 URL 条目（诚实：不落半个凭据，且配置文件
+ * 的规范形态 = 服务自身认证就是字符串）。
+ * 落盘值必须带协议：无协议的 `host:port` 在保存前已由
+ * backend-url-resolve 解析成确定的 http(s) URL（https 优先），读盘时不再
+ * 猜测协议——这里丢掉无协议条目，免得候选表里出现不可拨号的地址。 */
+function normalizeEntry(raw: unknown): AddressEntry | undefined {
+  if (typeof raw === 'string') {
+    const url = normalizeHttpUrl(raw);
+    return isHttpUrl(url) ? url : undefined;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const obj = raw as { url?: unknown; auth?: unknown };
+  const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
+  if (!isHttpUrl(url)) return undefined;
+  const auth = normalizeAuth(obj.auth);
+  return auth ? { url, auth } : url;
+}
+
+/** 保存合并（插件 merge_address_entries 语义，按槽位位置配对）：
+ * - 新条目 = 字符串 → 原样（显式降级为服务自身认证，丢弃旧凭据）；
+ * - 对象无 auth / type 非 basic|bearer → 同样丢弃旧凭据，存纯 URL；
+ * - 秘密字段为空或 '***' → 继承旧条目同类型同名字段（脱敏回传 = 保持不变）；
+ * - 继承后凭据仍不完整 → 降级为纯 URL 条目（插件同语义）。 */
+export function mergeAddressEntry(
+  oldEntry: AddressEntry | undefined,
+  newEntry: unknown,
+): AddressEntry | undefined {
+  if (newEntry === undefined || newEntry === null) return undefined;
+  if (typeof newEntry === 'string') {
+    const url = normalizeHttpUrl(newEntry);
+    return isHttpUrl(url) ? url : undefined;
+  }
+  if (typeof newEntry !== 'object' || Array.isArray(newEntry)) return undefined;
+  const obj = newEntry as { url?: unknown; auth?: unknown };
+  const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
+  if (!isHttpUrl(url)) return undefined;
+  const rawAuth = obj.auth;
+  const type =
+    rawAuth && typeof rawAuth === 'object' && !Array.isArray(rawAuth)
+      ? String((rawAuth as { type?: unknown }).type ?? '').trim().toLowerCase()
+      : '';
+  if (type !== 'basic' && type !== 'bearer') return url;
+  const oldAuth = typeof oldEntry === 'object' && oldEntry ? oldEntry.auth : undefined;
+  if (type === 'basic') {
+    const a = rawAuth as { username?: unknown; password?: unknown };
+    const username =
+      (typeof a.username === 'string' ? a.username.trim() : '') ||
+      (oldAuth?.type === 'basic' ? oldAuth.username : '');
+    let password = typeof a.password === 'string' ? a.password.trim() : '';
+    if ((!password || password === REDACTED_SECRET) && oldAuth?.type === 'basic') {
+      password = oldAuth.password;
+    }
+    return username && password && password !== REDACTED_SECRET
+      ? { url, auth: { type: 'basic', username, password } }
+      : url;
+  }
+  const a = rawAuth as { token?: unknown };
+  let token = typeof a.token === 'string' ? a.token.trim() : '';
+  if ((!token || token === REDACTED_SECRET) && oldAuth?.type === 'bearer') token = oldAuth.token;
+  return token && token !== REDACTED_SECRET ? { url, auth: { type: 'bearer', token } } : url;
+}
+
+/** 读取脱敏（插件 redact）：秘密字段一律 '***'，username 保留（非机密，
+ * 前端回显）；无凭据条目回传字符串或 {url}——明文凭据永不出服务端。 */
+export function redactAddressEntry(entry: AddressEntry | undefined): AddressEntry | undefined {
+  if (entry === undefined) return undefined;
+  if (typeof entry === 'string') return entry;
+  if (!entry.auth) return { url: entry.url };
+  if (entry.auth.type === 'basic') {
+    return {
+      url: entry.url,
+      auth: { type: 'basic', username: entry.auth.username, password: REDACTED_SECRET },
+    };
+  }
+  return { url: entry.url, auth: { type: 'bearer', token: REDACTED_SECRET } };
+}
+
+export function redactBackends(
+  backends: Partial<Record<BackendName, BackendAddrs>>,
+): Partial<Record<BackendName, BackendAddrs>> {
+  const out: Partial<Record<BackendName, BackendAddrs>> = {};
+  for (const name of BACKEND_NAMES) {
+    const addrs = backends[name];
+    if (!addrs) continue;
+    const redacted: BackendAddrs = {};
+    for (const slot of ADDRESS_SLOTS) {
+      const entry = redactAddressEntry(addrs[slot]);
+      if (entry) redacted[slot] = entry;
+    }
+    if (redacted.internal || redacted.external) out[name] = redacted;
+  }
+  return out;
+}
+
+/** 地址模式（对齐工作台插件）：auto=内网优先并自动回退外网；lan=只用内网；
+ * wan=只用外网。固定档失败不静默切换（与插件 _pinned_note 同语义）。 */
+export type AddressMode = 'auto' | 'lan' | 'wan';
+export const ADDRESS_MODES: AddressMode[] = ['auto', 'lan', 'wan'];
 
 export interface DashboardConfig {
   version: number;
   backends: Partial<Record<BackendName, BackendAddrs>>;
+  addressMode?: AddressMode;
 }
 
 export function configFilePath(): string {
@@ -82,6 +232,41 @@ async function tokenFilePath(): Promise<string> {
 // ---------------------------------------------------------------------------
 // URL validation
 // ---------------------------------------------------------------------------
+
+/** 无 `//` 的 scheme（ws:/javascript: 等）：规范形态就是原样，交由
+ * isHttpUrl 拒绝；它们与 `host:port` 的区分只靠已知前缀表（`localhost:8090`
+ * 里的 `localhost:` 是主机名，不是协议）。 */
+const NON_HTTP_SCHEME = /^(ws|wss|ftp|ftps|file|data|mailto|javascript|blob):/i;
+
+/** 是否带 scheme（`http://`、`ftp://`、`javascript:` …）。无协议的用户输入
+ * （异地部署常用的 `host:port`）返回 false —— 协议由 backend-url-resolve 的
+ * 探测决定（https 优先），这里不再擅自补 `http://`。 */
+export function hasScheme(value: string | undefined | null): boolean {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return false;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) || NON_HTTP_SCHEME.test(raw);
+}
+
+/** 地址规范化：
+ * - 空串原样；
+ * - 已带 http/https → 保留协议、去尾斜杠；
+ * - 无协议 → 原样返回 `host:port[/path]`（去尾斜杠），**不补 http://**：
+ *   TLS 端口存成 http 会被 nginx 以 400 拒绝（plain HTTP request was sent to
+ *   HTTPS port），协议由 backend-url-resolve 探测决定；
+ * - 其它 scheme（ws:/javascript: 等）原样返回，交由 isHttpUrl 拒绝。 */
+export function normalizeHttpUrl(value: string | undefined | null): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(raw);
+  if (m) {
+    const scheme = m[1].toLowerCase();
+    if (scheme !== 'http' && scheme !== 'https') return raw;
+    const rest = raw.slice(m[0].length).replace(/\/+$/, '');
+    return rest ? `${scheme}://${rest}` : `${scheme}://`;
+  }
+  if (NON_HTTP_SCHEME.test(raw)) return raw;
+  return raw.replace(/\/+$/, '');
+}
 
 export function isHttpUrl(value: string | undefined | null): value is string {
   if (!value) return false;
@@ -177,7 +362,7 @@ export function isTestTargetAllowed(url: string): boolean {
 // Config file access (sync read — see header; async writes)
 // ---------------------------------------------------------------------------
 
-function normalizeConfig(parsed: unknown): DashboardConfig | null {
+export function normalizeConfig(parsed: unknown): DashboardConfig | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const candidate = parsed as Partial<DashboardConfig>;
   if (!candidate.backends || typeof candidate.backends !== 'object') return null;
@@ -188,11 +373,17 @@ function normalizeConfig(parsed: unknown): DashboardConfig | null {
     const entry = candidate.backends[name];
     if (!entry || typeof entry !== 'object') continue;
     const out: BackendAddrs = {};
-    if (isHttpUrl(entry.internal)) out.internal = entry.internal.trim();
-    if (isHttpUrl(entry.external)) out.external = entry.external.trim();
+    // 槽位条目：string（服务自身认证）或 {url, auth?}——两种形态同一归一。
+    const internal = normalizeEntry(entry.internal);
+    const external = normalizeEntry(entry.external);
+    if (internal) out.internal = internal;
+    if (external) out.external = external;
     if (out.internal || out.external) backends[name] = out;
   }
-  return { version: 1, backends };
+  const mode = candidate.addressMode;
+  const addressMode: AddressMode =
+    mode === 'lan' || mode === 'wan' || mode === 'auto' ? mode : 'auto';
+  return { version: 1, backends, addressMode };
 }
 
 export function readConfigSync(): DashboardConfig | null {
@@ -233,9 +424,22 @@ async function writeConfigAtomic(config: DashboardConfig): Promise<void> {
  * a meaningful state. */
 export async function saveConfigOneShot(
   backends: DashboardConfig['backends'],
+  addressMode?: AddressMode,
 ): Promise<{ ok: boolean; error?: string }> {
   if (await configExists()) return { ok: false, error: 'already-configured' };
-  const config = normalizeConfig({ version: 1, backends });
+  // First launch: no old entry to inherit from — mergeAddressEntry normalizes
+  // the shape and degrades any credential carrying the '***' placeholder to a
+  // plain (service-native) URL entry.
+  const normalized: DashboardConfig['backends'] = {};
+  for (const [name, addrs] of Object.entries(backends) as Array<[BackendName, BackendAddrs]>) {
+    const entry: BackendAddrs = {};
+    for (const slot of ADDRESS_SLOTS) {
+      const mergedEntry = mergeAddressEntry(undefined, addrs?.[slot]);
+      if (mergedEntry) entry[slot] = mergedEntry;
+    }
+    if (entry.internal || entry.external) normalized[name] = entry;
+  }
+  const config = normalizeConfig({ version: 1, backends: normalized, addressMode });
   if (!config) return { ok: false, error: 'invalid-config' };
   if (Object.keys(config.backends).length === 0) return { ok: false, error: 'invalid-config' };
   await writeConfigAtomic(config);
@@ -245,6 +449,7 @@ export async function saveConfigOneShot(
 /** Level-3 (L1 admin) update: creates or overwrites the config file. */
 export async function updateConfig(
   backends: DashboardConfig['backends'],
+  addressMode?: AddressMode,
 ): Promise<{ ok: boolean; error?: string }> {
   // F1f-E: per-backend MERGE, not full replacement. Sent backends replace
   // their entry; unsent backends are preserved. A partial save (e.g. the
@@ -253,9 +458,29 @@ export async function updateConfig(
   // one save made the whole instance unusable until re-configured.
   // Explicit removal of a backend = `docker volume rm` factory reset
   // (the UI form always sends all six, so merge === replace from the UI).
-  const existing = readConfigSync()?.backends ?? {};
-  const merged: DashboardConfig['backends'] = { ...existing, ...backends };
-  const config = normalizeConfig({ version: 1, backends: merged });
+  //
+  // Per-address credentials (plugin merge_address_entries parity): the pair
+  // is matched by SLOT position — a basic/bearer secret that is empty or the
+  // '***' redaction placeholder inherits the saved secret of the same slot
+  // and type, and an explicit 服务自身认证 entry (plain string) drops it.
+  const existingCfg = readConfigSync();
+  const existing = existingCfg?.backends ?? {};
+  const merged: DashboardConfig['backends'] = { ...existing };
+  for (const [name, addrs] of Object.entries(backends) as Array<[BackendName, BackendAddrs]>) {
+    const old = existing[name];
+    const entry: BackendAddrs = {};
+    for (const slot of ADDRESS_SLOTS) {
+      const mergedEntry = mergeAddressEntry(old?.[slot], addrs?.[slot]);
+      if (mergedEntry) entry[slot] = mergedEntry;
+    }
+    if (entry.internal || entry.external) merged[name] = entry;
+    else delete merged[name];
+  }
+  const config = normalizeConfig({
+    version: 1,
+    backends: merged,
+    addressMode: addressMode ?? existingCfg?.addressMode ?? 'auto',
+  });
   if (!config) return { ok: false, error: 'invalid-config' };
   await writeConfigAtomic(config);
   return { ok: true };
@@ -290,9 +515,12 @@ export function backendCandidates(name: BackendName, config: DashboardConfig | n
   const add = (value: string | undefined) => {
     if (value && isHttpUrl(value) && !out.includes(value.trim())) out.push(value.trim());
   };
-  add(config?.backends[name]?.internal);
-  add(config?.backends[name]?.external);
-  add(envAddr(name));
+  const mode = config?.addressMode ?? 'auto';
+  if (mode !== 'wan') add(addressUrl(config?.backends[name]?.internal));
+  if (mode !== 'lan') add(addressUrl(config?.backends[name]?.external));
+  // 固定档下没有匹配槽位 → 仍给 env 兜底（env 是部署级默认，不是“另一条链路”）。
+  if (out.length === 0) add(envAddr(name));
+  else if (mode === 'auto') add(envAddr(name));
   return out;
 }
 
@@ -365,6 +593,56 @@ export function orderedCandidates(name: BackendName): string[] {
   if (working && candidates.includes(working)) add(working);
   for (const c of candidates) add(c);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Per-address credentials → request headers (plugin parity:
+// auth_for_url / headers_with_auth / build_auth_map)
+// ---------------------------------------------------------------------------
+
+/** 凭据反查归一：去 http(s):// 前缀 + 去尾斜杠（两侧同口径）。scheme 无关
+ * → 同一个地址条目的 http/https 候选变体命中同一份凭据（插件 X1c）。 */
+function authMatchKey(value: string): string {
+  return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+function toBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/** 权威凭据表：全仓唯一出处；拨号点只调 backendAuthHeader，不各写各的。 */
+export function authForUrl(name: BackendName, url: string): BackendAuth | null {
+  const addrs = readConfigSync()?.backends[name];
+  if (!addrs) return null;
+  const target = authMatchKey(url);
+  if (!target) return null;
+  for (const slot of ADDRESS_SLOTS) {
+    const entry = addrs[slot];
+    if (!entry || typeof entry !== 'object' || !entry.auth) continue;
+    if (authMatchKey(addressUrl(entry)) !== target) continue;
+    const auth = normalizeAuth(entry.auth);
+    if (auth) return auth;
+  }
+  return null;
+}
+
+/** 凭据 → Authorization 头（无凭据 → {}）。只动 Authorization 一个头。 */
+export function authHeaderFor(auth: BackendAuth | null | undefined): Record<string, string> {
+  if (!auth) return {};
+  if (auth.type === 'basic') {
+    return { Authorization: `Basic ${toBase64(`${auth.username}:${auth.password}`)}` };
+  }
+  return { Authorization: `Bearer ${auth.token}` };
+}
+
+/** 请求层：该后端地址的覆盖凭据头（无 → {}）。
+ * 命中时整体替换 Authorization（网关 Basic/API key 门 = 服务前的门，与
+ * 插件 headers_with_auth 同语义）。凭据只进请求头：不写日志、不回传浏览器。 */
+export function backendAuthHeader(name: BackendName, url: string): Record<string, string> {
+  return authHeaderFor(authForUrl(name, url));
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +795,9 @@ export interface ProbeRow {
   httpOk: boolean;
   ms: number | null;
   detail: string;
+  /** 用户填写的原始地址（仅当省略协议、由 backend-url-resolve 解析后才带；
+   * UI 用它把输入框回填成解析结果）。 */
+  resolvedFrom?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +912,24 @@ async function probeFetchWithVettedRedirects(url: string, init: RequestInit, max
   }
 }
 
-async function probeOnce(name: BackendName, url: string, timeoutMs: number): Promise<ProbeResult> {
+/** 探测用凭据头：草稿凭据（未保存的表单值）优先——设置页「测试」必须能
+ * 量到门后地址的真实可达性，否则填了 Basic 账号密码也永远停在 401。
+ * 草稿凭据不完整或带 '***'（已存秘密的回显占位）时不算凭据：回落到该地址
+ * 已存的凭据，绝不把占位符当密码发出去。 */
+function probeAuthHeaders(
+  name: BackendName,
+  url: string,
+  draftAuth?: BackendAuth | null,
+): Record<string, string> {
+  return authHeaderFor(normalizeAuth(draftAuth) ?? authForUrl(name, url));
+}
+
+async function probeOnce(
+  name: BackendName,
+  url: string,
+  timeoutMs: number,
+  draftAuth?: BackendAuth | null,
+): Promise<ProbeResult> {
   const spec = PROBE_PATHS[name];
   const target = new URL(spec.path, url.replace(/\/+$/, '')).toString();
   const controller = new AbortController();
@@ -641,7 +939,14 @@ async function probeOnce(name: BackendName, url: string, timeoutMs: number): Pro
     const res = await probeFetchWithVettedRedirects(target, {
       method: spec.method ?? 'GET',
       signal: controller.signal,
-      headers: spec.body ? { 'content-type': 'application/json' } : undefined,
+      headers: {
+        ...(spec.body ? { 'content-type': 'application/json' } : {}),
+        // 逐地址覆盖凭据：门后（公网 Basic 门 / API key 门）的后端不带凭据探测
+        // 会停在 401/403（httpOk=false），永远进不了 effective 选举，设置页的
+        // 「当前生效」就永远空着。MinIO 用 Access Key/Secret Key（S3 签名），
+        // 不在这套 Authorization 语义里 —— 显式跳过。
+        ...(name === 'minio' ? {} : probeAuthHeaders(name, url, draftAuth)),
+      },
       body: spec.body,
     });
     const latencyMs = Date.now() - startedAt;
@@ -665,17 +970,20 @@ export async function probeBackend(
   name: BackendName,
   url: string,
   timeoutMs = 5000,
+  draftAuth?: BackendAuth | null,
 ): Promise<ProbeResult> {
-  const first = await probeOnce(name, url, timeoutMs);
+  const first = await probeOnce(name, url, timeoutMs, draftAuth);
   if (first.ok) return first;
   // v0.4.92 port: a one-off network-layer blip should not fail a row — retry
   // once after 500ms. Connected results (including 401/403) are never retried.
   await new Promise((resolve) => setTimeout(resolve, 500));
-  return probeOnce(name, url, timeoutMs);
+  return probeOnce(name, url, timeoutMs, draftAuth);
 }
 
-/** Convert a probe result into a UI row (plugin config_test row semantics). */
-export function toProbeRow(url: string, r: ProbeResult): ProbeRow {
+/** Convert a probe result into a UI row (plugin config_test row semantics).
+ * `resolvedFrom` 只在地址是「无协议输入 → 解析结果」时传入（不同的原值）。 */
+export function toProbeRow(url: string, r: ProbeResult, resolvedFrom?: string): ProbeRow {
+  const resolved = resolvedFrom && resolvedFrom !== url ? { resolvedFrom } : {};
   if (r.ok) {
     const detail =
       r.error ??
@@ -684,9 +992,9 @@ export function toProbeRow(url: string, r: ProbeResult): ProbeRow {
         : r.status === 401 || r.status === 403
           ? `已连通，HTTP ${r.status}（需鉴权）`
           : `已连通，HTTP ${r.status}（状态异常）`);
-    return { url, ok: true, httpOk: r.httpOk, ms: r.latencyMs, detail };
+    return { url, ok: true, httpOk: r.httpOk, ms: r.latencyMs, detail, ...resolved };
   }
-  return { url, ok: false, httpOk: false, ms: null, detail: r.error ?? '不可达' };
+  return { url, ok: false, httpOk: false, ms: null, detail: r.error ?? '不可达', ...resolved };
 }
 
 // ---------------------------------------------------------------------------
@@ -724,7 +1032,7 @@ export function selectAndMark(name: BackendName, rows: ProbeRow[]): string | nul
 export function listMatchesSaved(name: BackendName, tested: string[]): boolean {
   const cfg = readConfigSync()?.backends[name];
   if (!cfg) return false;
-  const saved = [cfg.internal, cfg.external]
+  const saved = [addressUrl(cfg.internal), addressUrl(cfg.external)]
     .filter((v): v is string => !!v && v.trim() !== '')
     .map((v) => v.trim());
   if (saved.length === 0) return false;

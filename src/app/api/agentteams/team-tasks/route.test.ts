@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { Readable } from 'node:stream';
-import { __test__, type TaskBoardTask } from './route';
+import { __test__, type TaskBoardTask } from './handlers';
 
 const {
   normalizeTask,

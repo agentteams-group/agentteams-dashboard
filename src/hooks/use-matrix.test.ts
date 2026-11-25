@@ -23,6 +23,18 @@ function message(
   };
 }
 
+it('keeps assistant background control out of the conversation while retaining real reminders', () => {
+  const wake = message('wake', 'Background Teams instructions', 200, {
+    'org.agentteams.coordination': { channel_meta: { sender_id: '@manager:example.test',
+      agent_matrix_user_id: '@manager:example.test', teamharness_coordination: { kind: 'assistant_digest' } } },
+  });
+  wake.content.msgtype = 'm.notice';
+  const reminder = message('reminder', 'Verified new information', 300, {
+    'org.agentteams.assistant_reminder': { recipient: '@human:example.test' },
+  });
+  expect(formatMatrixEvents([wake, reminder], '@human:example.test').map(item => item.eventId)).toEqual(['reminder']);
+});
+
 describe('formatMatrixEvents', () => {
   it('sorts an agent revision at the edit time so the final answer follows later messages', () => {
     const events = [
@@ -105,6 +117,33 @@ describe('formatMatrixEvents', () => {
     expect(messages[0]).toMatchObject({ id: 'missing-root', eventId: 'missing-root', content: '更新内容', isStreaming: true, isEdited: true });
   });
 
+  it('keeps the final edited answer when its placeholder is missing but process thread replies arrived', () => {
+    const events = [
+      message('thinking', '正在检查连接', 200, { 'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' } }),
+      message('final', '* BROWSER_OK', 300, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'missing-root' },
+        'm.new_content': { msgtype: 'm.text', body: 'BROWSER_OK' },
+      }),
+    ];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: 'thinking', isThreadReply: true, threadId: 'missing-root' });
+    expect(messages[1]).toMatchObject({ id: 'missing-root', content: 'BROWSER_OK', latestEventId: 'final', isEdited: true });
+    expect(messages[1].detached).toBeFalsy();
+    expect(messages[1].replyCount).toBeFalsy();
+  });
+
+  it('keeps other-user replies in their thread after recovering the edited root', () => {
+    const events = [
+      { ...message('reply', '我补充一条', 200, { 'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' } }), sender: '@other:example.test' },
+      message('final', '* 最终汇报', 300, { 'm.relates_to': { rel_type: 'm.replace', event_id: 'missing-root' }, 'm.new_content': { msgtype: 'm.text', body: '最终汇报' } }),
+    ];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'missing-root', content: '最终汇报', replyCount: 1 });
+    expect(messages[0].detached).toBeFalsy();
+  });
+
   it('extracts text from structured message body parts', () => {
     const events = [
       message('structured', [
@@ -181,6 +220,36 @@ describe('formatMatrixEvents', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ id: 'root', replyCount: 2, isThreadReply: false });
     expect(messages[1]).toMatchObject({ id: 'other' });
+  });
+
+  it('keeps thread replies whose root is outside the loaded window as a detached turn', () => {
+    // Pagination can cut off the root of a thread. Dropping the replies made
+    // the turn's only answer disappear; it must stay visible, anchored on the
+    // missing root id so the thread panel can still try to load it.
+    const events = [
+      message('other', '无关消息', 50),
+      message('reply-1', '第一段答案', 100, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' },
+      }),
+      message('reply-2', '第二段答案', 200, {
+        'm.relates_to': { rel_type: 'm.thread', event_id: 'missing-root' },
+      }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      id: 'missing-root',
+      canonicalEventId: 'missing-root',
+      latestEventId: 'reply-2',
+      detached: true,
+      replyCount: 2,
+      content: '第一段答案\n\n第二段答案',
+    });
+    expect(messages[1].sourceEventIds).toEqual(
+      expect.arrayContaining(['missing-root', 'reply-1', 'reply-2']),
+    );
   });
 
   it('keeps self-thread-replies in the main timeline (agent continuing its own response)', () => {
@@ -313,6 +382,18 @@ describe('formatMatrixEvents', () => {
     expect(messages[0].isStreaming).toBe(true);
   });
 
+  it('treats the MSC4357 live marker as streaming until the final revision drops it', () => {
+    const events = [
+      message('live', '正在生成', 100, { 'org.matrix.msc4357.live': {} }),
+      message('final', '已生成', 200, { 'org.matrix.msc4357.live': undefined }),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages[0]).toMatchObject({ id: 'live', isStreaming: true });
+    expect(messages[1]).toMatchObject({ id: 'final', isStreaming: false });
+  });
+
   it('leaves agentStatus undefined when no status is present', () => {
     const events = [message('plain', '普通消息', 100)];
 
@@ -333,6 +414,89 @@ describe('formatMatrixEvents', () => {
     ], '@human:example.test');
 
     expect(messages[0].workflow).toEqual(workflow);
+  });
+
+  it('keeps a body-less m.room.message that only carries m.relates_to (#1436)', () => {
+    const events: MatrixEvent[] = [{
+      event_id: 'rel',
+      sender: '@human:example.test',
+      type: 'm.room.message',
+      origin_server_ts: 100,
+      content: {
+        'm.relates_to': { 'm.in_reply_to': { event_id: 'root' } },
+      } as MatrixEvent['content'],
+    }];
+    const messages = formatMatrixEvents(events, '@human:example.test');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('');
+  });
+
+  it('folds an openclaw block-streamed tail into the edited answer', () => {
+    // openclaw streams the first block into the placeholder, then finalises
+    // the answer by editing it with only that block and sending the rest as a
+    // fresh message. Rendering both as-is breaks the answer in two bubbles.
+    const events = [
+      { ...message('user', '@openclaw 按第一个来', 100), sender: '@human:example.test' },
+      message('root', '好', 200, { 'org.matrix.msc4357.live': true }),
+      message('revision', '* 第一段', 300, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail-1', '第二段', 340),
+      message('tail-2', '第三段', 400),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['user', 'root']);
+    expect(messages[1]).toMatchObject({
+      id: 'root',
+      content: '第一段\n\n第二段\n\n第三段',
+      timestamp: 400,
+      isEdited: true,
+    });
+  });
+
+  it('does not fold a fresh agent message after an unedited answer', () => {
+    const events = [
+      message('first', '第一段', 100),
+      message('second', '第二段', 140),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['first', 'second']);
+  });
+
+  it('does not fold a fragment that arrives long after the answer was edited', () => {
+    const events = [
+      message('root', '处理中...', 100),
+      message('revision', '* 第一段', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail', '第二段', 10_201),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages.map((m) => m.id)).toEqual(['root', 'tail']);
+  });
+
+  it('drops a tail that repeats the answer verbatim', () => {
+    const events = [
+      message('root', '处理中...', 100),
+      message('revision', '* 第一段', 200, {
+        'm.relates_to': { rel_type: 'm.replace', event_id: 'root' },
+        'm.new_content': { msgtype: 'm.text', body: '第一段' },
+      }),
+      message('tail', '第一段', 240),
+    ];
+
+    const messages = formatMatrixEvents(events, '@human:example.test');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: 'root', content: '第一段', timestamp: 240 });
   });
 });
 

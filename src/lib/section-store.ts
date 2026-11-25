@@ -12,10 +12,23 @@ import { create } from 'zustand';
 
 interface SectionState {
   activeSection: string;
+  taskCollaboration: { taskId: string; roomId: string } | null;
+  mentionRoomId: string | null;
+  notificationsOpen: boolean;
+  setNotificationsOpen: (_open: boolean) => void;
   setActiveSection: (_sectionId: string) => void;
 }
 
 export const useSectionStore = create<SectionState>()((set) => ({
   activeSection: 'overview',
-  setActiveSection: (sectionId: string) => set({ activeSection: sectionId }),
+  taskCollaboration: null,
+  mentionRoomId: null,
+  notificationsOpen: false,
+  setNotificationsOpen: (notificationsOpen) => set({ notificationsOpen }),
+  setActiveSection: (sectionId: string) => set((state) => ({
+    activeSection: sectionId === 'my-workbench' ? 'tasks' : sectionId,
+    notificationsOpen: sectionId === 'my-workbench' ? true : state.notificationsOpen,
+    taskCollaboration: sectionId === 'chat' ? state.taskCollaboration : null,
+    mentionRoomId: sectionId === 'chat' || sectionId === 'my-teams' ? state.mentionRoomId : null,
+  })),
 }));

@@ -21,16 +21,16 @@ export function MatrixStatusBanner({
     >
       <Lock className="w-4 h-4 text-amber-500 shrink-0" />
       <p className="text-xs text-amber-600 dark:text-amber-400 flex-1">
-        未登录 Matrix - 可以查看房间列表，但无法查看消息和发送消息
+        对话连接已断开，重新连接后即可继续与 Agent 协作。
       </p>
       <Button
         variant="outline"
         size="sm"
-        className="h-6 text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400"
+        className="h-6 text-xs border-amber-500/30 text-amber-600 dark:text-amber-400"
         onClick={onLoginClick}
       >
         <LogIn className="w-3 h-3 mr-1" />
-        登录
+        重新连接
       </Button>
     </motion.div>
   );

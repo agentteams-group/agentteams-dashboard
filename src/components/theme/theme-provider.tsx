@@ -18,13 +18,13 @@ import { SYSTEM_THEME_ID } from '@/lib/theme/types';
 import { normalizeThemeDefinition, ThemeConfigError } from '@/lib/theme/config';
 
 export interface UseThemeResult {
-  /** The id the user picked ('system' when following the OS). */
+  /** Selected id, or 'system' to follow the OS preference. */
   theme: string;
   /** The theme definition actually applied right now. */
   resolvedTheme: ThemeDefinition;
   /** All pickable themes (built-in + custom + enterprise). */
   themes: ThemeDefinition[];
-  /** Switch theme by id; pass 'system' to follow the OS preference. */
+  /** Select a theme, or 'system' to follow the OS preference. */
   setTheme: (_id: string) => void;
   /** True when an enterprise config prevents switching. */
   locked: boolean;

@@ -48,7 +48,7 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
           </span>
           {toolName}
           {status && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
               status === 'success' ? 'bg-green-500/20 text-green-600' :
               isError ? 'bg-red-500/20 text-red-600' :
               'bg-blue-500/20 text-blue-600'
@@ -64,7 +64,7 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
         )}
       </Button>
       {isError && errorSummary && !open && (
-        <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 px-3 py-1.5 text-[11px] text-red-600">
+        <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-t border-red-500/10 bg-red-500/5 px-3 py-1.5 text-xs text-red-600">
           {errorSummary}
         </p>
       )}
@@ -72,8 +72,8 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
         <div className="px-3 pb-3 space-y-2">
           {args !== undefined && (
             <div>
-              <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground mb-1">
-                <span className="rounded px-1.5 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">IN</span>
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1">
+                <span className="rounded px-1.5 text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">IN</span>
                 参数
               </p>
               <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 overflow-x-auto">
@@ -83,8 +83,8 @@ function ToolCallCard({ payload }: { payload: Record<string, unknown> }) {
           )}
           {result !== undefined && (
             <div>
-              <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground mb-1">
-                <span className={`rounded px-1.5 text-[11px] font-semibold border ${isError ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-sky-500/10 text-sky-600 border-sky-500/20'}`}>OUT</span>
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1">
+                <span className={`rounded px-1.5 text-xs font-semibold border ${isError ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-sky-500/10 text-sky-600 border-sky-500/20'}`}>OUT</span>
                 结果
               </p>
               <pre className={`text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 overflow-x-auto ${isError ? 'text-red-600' : ''}`}>

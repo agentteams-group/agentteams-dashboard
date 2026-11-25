@@ -34,6 +34,8 @@ export class PluginManager {
   private deactivateFns = new Map<string, () => void | Promise<void>>();
   private reloadTokens = new Map<string, number>();
   private entryHashes = new Map<string, string>();
+  /** f7-1: 在途激活守卫——同一插件并发 activate 只放行第一次。 */
+  private activating = new Set<string>();
   private initPromise: Promise<void> | null = null;
   private devWatcher: ReturnType<typeof setInterval> | null = null;
 
@@ -207,12 +209,25 @@ export class PluginManager {
     if (!record) throw new Error(`插件未安装: ${id}`);
     if (record.status === 'active') return;
     if (registry.disabledIds.includes(id)) return;
+    // f7-1: 并发 activate（挂起中 enable/disable→enable）的第二次调用在此挡住：
+    // activator.activate 只跑一次，mitt 事件总线（api.ts）不双注册，unregisters
+    // 不被第二次 activate 的初始化清掉。
+    if (this.activating.has(id)) return;
 
     registry.updateStatus(id, 'enabled');
     this.unregisters.set(id, []);
+    this.activating.add(id);
 
     try {
       const mod = await this.loadModule(record);
+      // f7-1: URL 插件跨网络加载可挂起数秒——挂起期间用户停用了插件的话，
+      // 恢复执行时放弃注入贡献，状态与 disabledIds 保持一致（不再出现开关
+      // 已关但徽标仍是『运行中』的矛盾直到刷新）。
+      if (usePluginRegistry.getState().disabledIds.includes(id)) {
+        this.unregisters.delete(id);
+        usePluginRegistry.getState().updateStatus(id, 'disabled');
+        return;
+      }
       const activator = mod.default ?? mod;
       if (typeof activator.activate !== 'function') {
         throw new Error(`插件 ${id}: 入口模块缺少 activate() 导出`);
@@ -240,6 +255,8 @@ export class PluginManager {
       pluginEventBus.emit(HOST_EVENTS.pluginError, { pluginId: id, error: message });
       console.error(`[plugins] 插件 ${id} 激活失败:`, err);
       throw err;
+    } finally {
+      this.activating.delete(id);
     }
   }
 
@@ -401,6 +418,7 @@ export class PluginManager {
     this.deactivateFns.clear();
     this.reloadTokens.clear();
     this.entryHashes.clear();
+    this.activating.clear();
     this.initPromise = null;
   }
 }

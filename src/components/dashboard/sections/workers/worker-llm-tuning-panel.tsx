@@ -86,7 +86,7 @@ export function WorkerLlmTuningPanel({ workerName }: { workerName: string }) {
     return (
       <div className="space-y-1 pt-2">
         <p className="text-muted-foreground">LLM 调优参数</p>
-        <p className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+        <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
           {loadError || '该 Worker 未读到 LLM 调优参数（Controller 升级后自动开放）'}
         </p>
@@ -117,12 +117,12 @@ export function WorkerLlmTuningPanel({ workerName }: { workerName: string }) {
         idPrefix={`llm-${workerName}`}
       />
 
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         留空表示不设置：先继承团队默认，再回退 QwenPaw 默认。「重试与限流」改动需重建容器生效；「流式超时」即时生效。
       </p>
 
       {error && (
-        <p className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400">
+        <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
           {error.label}：{error.message}
         </p>
@@ -155,7 +155,7 @@ export function WorkerLlmTuningPanel({ workerName }: { workerName: string }) {
         </Button>
         {saveMsg && (
           <span
-            className={`flex items-center gap-1 text-[11px] ${
+            className={`flex items-center gap-1 text-xs ${
               saveMsg.kind === 'ok'
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-red-600 dark:text-red-400'

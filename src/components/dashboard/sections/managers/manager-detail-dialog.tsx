@@ -1,5 +1,9 @@
 'use client';
 
+// 已被 ManagerDrawer（右侧 Sheet，配置全套）取代，列表页不再挂载本组件。
+// 保留文件是为后续把「协调团队 / Workers / 任务」只读面板接回抽屉时复用其中
+// 的选择器与任务聚合逻辑——请勿再把它当详情入口。
+
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { Crown, ListTodo, Loader2, CircleCheck, CircleX } from 'lucide-react';
@@ -63,13 +67,13 @@ function renderTaskRow(
       )}
       <Accent className="h-3 w-3 text-violet-500 shrink-0" />
       <span className="flex-1 truncate">{task.title}</span>
-      <span className="font-mono text-[10px] text-muted-foreground">
+      <span className="font-mono text-xs text-muted-foreground">
         {task.runId.slice(0, 8)}
       </span>
-      <span className="text-muted-foreground text-[10px]">
+      <span className="text-muted-foreground text-xs">
         {new Date(task.updatedAt).toLocaleTimeString()}
       </span>
-      {running && <Badge variant="outline" className="text-[11px] px-1 py-0">进行中</Badge>}
+      {running && <Badge variant="outline" className="text-xs px-1 py-0">进行中</Badge>}
     </div>
   );
 }
@@ -150,7 +154,7 @@ export function ManagerDetailDialog({
               <p className="text-muted-foreground mb-2">技能</p>
               <div className="flex flex-wrap gap-1">
                 {skills.map((skill) => (
-                  <Badge key={skill} variant="outline" className="text-[10px]">
+                  <Badge key={skill} variant="outline" className="text-xs">
                     {skill}
                   </Badge>
                 ))}
@@ -163,7 +167,7 @@ export function ManagerDetailDialog({
                   managedTeams.map((t) => (
                     <Badge key={t.name} variant="secondary" className="text-xs gap-1">
                       {t.name}
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-3.5">
+                      <Badge variant="outline" className="text-xs px-1 py-0">
                         {t.readyWorkers}/{t.totalWorkers}
                       </Badge>
                     </Badge>
@@ -197,7 +201,7 @@ export function ManagerDetailDialog({
                   <Crown className="h-3.5 w-3.5" />
                   Manager 全局任务
                 </p>
-                <div className="flex items-center gap-2 text-[10px]">
+                <div className="flex items-center gap-2 text-xs">
                   {globalCounts.running > 0 && (
                     <span className="flex items-center gap-0.5 text-violet-600 dark:text-violet-400">
                       <Loader2 className="h-3 w-3" />
@@ -231,11 +235,11 @@ export function ManagerDetailDialog({
                 <p className="text-muted-foreground flex items-center gap-1.5">
                   <ListTodo className="h-3.5 w-3.5" />
                   Leader 团队任务
-                  <span className="text-[10px] text-muted-foreground/70">
+                  <span className="text-xs text-muted-foreground/70">
                     ({managedTeams.length} 个团队)
                   </span>
                 </p>
-                <div className="flex items-center gap-2 text-[10px]">
+                <div className="flex items-center gap-2 text-xs">
                   {leaderCounts.running > 0 && (
                     <span className="flex items-center gap-0.5 text-violet-600 dark:text-violet-400">
                       <Loader2 className="h-3 w-3" />

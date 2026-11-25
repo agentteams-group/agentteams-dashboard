@@ -9,8 +9,11 @@ import {
   hashForSection,
   needsHashNormalization,
   resolveHash,
+  taskCollaborationHash,
 } from '@/lib/nav-hash';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+
+const DEFAULT_SECTION = 'overview';
 
 /**
  * Active section resolution for the Workbench IA.
@@ -25,19 +28,22 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
  */
 
 function isKnownSection(hash: string): boolean {
+  if (hash === 'my-workbench') return true; // Old bookmarks open the notification drawer.
   if (navItems.some((n) => n.id === hash)) return true;
   return isPluginSectionId(hash);
 }
 
 /** Apply a resolved hash's deep-link payload (room id) to the target store. */
 function applyDeepLinks(resolved: ReturnType<typeof resolveHash>): void {
-  if (resolved?.section === 'chat' && resolved.roomId) {
+  useSectionStore.setState({ taskCollaboration: resolved?.taskId && resolved.roomId
+    ? { taskId: resolved.taskId, roomId: resolved.roomId } : null });
+  if ((resolved?.section === 'chat' || resolved?.section === 'my-teams') && resolved.roomId) {
     useHitlInboxStore.getState().setPendingChatRoomId(resolved.roomId);
   }
 }
 
 function resolveInitialSection(): string {
-  if (typeof window === 'undefined') return 'chat';
+  if (typeof window === 'undefined') return DEFAULT_SECTION;
 
   const hash = window.location.hash.slice(1);
   if (hash) {
@@ -49,24 +55,18 @@ function resolveInitialSection(): string {
       // Layered hashes stay untouched: they may carry deep-link segments
       // (room id, query params) that must survive in the URL.
       if (needsHashNormalization(hash)) {
-        window.history.replaceState(null, '', `#${hashForSection(resolved.section)}`);
+        const query = resolved.params?.toString();
+        window.history.replaceState(
+          null,
+          '',
+          `#${hashForSection(resolved.section)}${query ? `?${query}` : ''}`,
+        );
       }
       return resolved.section;
     }
   }
 
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && isKnownSection(stored)) return stored;
-    // Pre-Workbench stored ids remain valid section ids — they were flat.
-  } catch {
-    /* localStorage unavailable */
-  }
-
-  // Default landing section: the collaboration space (conversation-first
-  // shell). Operators can pin another surface via a layered deep link or
-  // localStorage.
-  return 'chat';
+  return DEFAULT_SECTION;
 }
 
 // Initial resolution must run once per app lifetime. TasksSection (and any
@@ -85,8 +85,9 @@ export function resetInitialResolutionForTests(): void {
 
 export function useActiveSection() {
   const activeSection = useSectionStore((s) => s.activeSection);
+  const taskCollaboration = useSectionStore((s) => s.taskCollaboration);
 
-  // Resolve the initial section once on mount (hash / localStorage / default).
+  // Resolve the initial section once on mount from the URL or the default.
   // Subsequent mounts (TasksSection etc.) keep the live store value.
   useEffect(() => {
     if (initialResolutionDone) return;
@@ -95,6 +96,7 @@ export function useActiveSection() {
   }, []);
 
   const setActiveSection = useCallback((section: string) => {
+    useSectionStore.setState({ taskCollaboration: null });
     useSectionStore.getState().setActiveSection(section);
   }, []);
 
@@ -103,18 +105,21 @@ export function useActiveSection() {
     // Read the live store value instead of the captured `activeSection`:
     // on mount the initial-resolution effect above has already written the
     // resolved section into the store, while this effect's closure still
-    // holds the pre-resolution default ('chat'). Writing that stale
+    // holds the pre-resolution default. Writing that stale
     // value would momentarily clobber the URL hash, and the resulting
     // hashchange event races the re-render — when the event wins, the
     // handler reads the stale hash and bounces the user back to overview.
     const section = useSectionStore.getState().activeSection;
     // Preserve a valid resource-tab deep link (`#console/resources/<tab>`)
     // instead of collapsing it to `#console/resources` on mount.
-    const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
+    const context = useSectionStore.getState().taskCollaboration;
+    const canonical = context && section === 'chat'
+      ? taskCollaborationHash(context.taskId, context.roomId)
+      : `#${hashForActiveSection(section, window.location.hash)}`;
     if (window.location.hash !== canonical) {
       window.location.hash = canonical;
     }
-  }, [activeSection]);
+  }, [activeSection, taskCollaboration]);
 
   // --- Listen for external hash changes (browser back/forward) ---
   useEffect(() => {
@@ -124,7 +129,10 @@ export function useActiveSection() {
       // Echo of our own programmatic write — nothing to sync. Use the same
       // canonical form as the write effect so a preserved resource-tab deep
       // link (`#console/resources/<tab>`) still counts as an echo.
-      const canonical = `#${hashForActiveSection(section, window.location.hash)}`;
+      const context = useSectionStore.getState().taskCollaboration;
+      const canonical = context && section === 'chat'
+        ? taskCollaborationHash(context.taskId, context.roomId)
+        : `#${hashForActiveSection(section, window.location.hash)}`;
 
       // Pure echo of our own programmatic write — nothing to sync.
       if (window.location.hash === canonical) return;
@@ -136,8 +144,8 @@ export function useActiveSection() {
         return;
       }
 
-      useSectionStore.getState().setActiveSection('chat');
-      window.location.hash = '#workbench/space';
+      useSectionStore.getState().setActiveSection(DEFAULT_SECTION);
+      window.location.hash = `#${hashForSection(DEFAULT_SECTION)}`;
     };
 
     window.addEventListener('hashchange', handleHashChange);

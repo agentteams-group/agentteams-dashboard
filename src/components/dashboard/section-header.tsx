@@ -11,29 +11,27 @@ interface SectionHeaderProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   actions?: React.ReactNode;
+  meta?: React.ReactNode;
 }
 
-export function SectionHeader({ title, description, isLive, onRefresh, isRefreshing, actions }: SectionHeaderProps) {
+export function SectionHeader({ title, description, isLive, onRefresh, isRefreshing, actions, meta }: SectionHeaderProps) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          {description && <p className="text-muted-foreground text-sm">{description}</p>}
-        </div>
+    <div data-slot="section-header" className="flex flex-wrap items-center gap-3">
+      <h1 className="sr-only">{title}</h1>
+      {description && <p className="w-full text-xs leading-5 text-muted-foreground">{description}</p>}
         {isLive && (
           <Badge variant="outline" className="text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400 gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             实时
           </Badge>
         )}
-      </div>
-      <div className="flex items-center gap-2">
+      {meta}
+      <div className="flex flex-wrap items-center gap-2">
         {onRefresh && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-xs"
+            className="h-8 text-sm"
             onClick={onRefresh}
             disabled={isRefreshing}
           >

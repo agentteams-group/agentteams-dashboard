@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   LOOP_TEMPLATES,
   canPublish,
+  canRollback,
   isValidLoopDefinition,
+  simulateLoopDryRun,
   templateToDraft,
 } from './loop-definition';
 
@@ -31,6 +33,32 @@ describe('loop-definition（F5.2/F5.3/F5.5 模型）', () => {
     expect(isValidLoopDefinition(null)).toBe(false);
   });
 
+  it('f3-2：status=rolled_back 的定义（回滚产物）通过结构校验，不再被 readDrafts/导入静默过滤', () => {
+    const base = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    expect(isValidLoopDefinition({ ...base, status: 'rolled_back' })).toBe(true);
+  });
+
+  it('f5-2：节点缺 type / type 大小写错 / type 拼错一律拒绝（渲染期 TypeError 前置拦截）', () => {
+    const base = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    const missingType = {
+      ...base,
+      nodes: base.nodes.map((n, i) => (i === 1 ? { id: n.id, label: n.label } : n)),
+    };
+    expect(isValidLoopDefinition(missingType)).toBe(false);
+    expect(
+      isValidLoopDefinition({
+        ...base,
+        nodes: base.nodes.map((n) => (n.id === 'arch' ? { ...n, type: 'Agent' } : n)),
+      }),
+    ).toBe(false);
+    expect(
+      isValidLoopDefinition({
+        ...base,
+        nodes: base.nodes.map((n) => (n.id === 'arch' ? { ...n, type: 'typo-type' } : n)),
+      }),
+    ).toBe(false);
+  });
+
   it('canPublish：published 不可再发布；不可达图拒绝并给出原因', () => {
     const draft = templateToDraft(LOOP_TEMPLATES[0], 'a');
     expect(canPublish({ ...draft, status: 'published' })).toMatchObject({ ok: false });
@@ -44,5 +72,26 @@ describe('loop-definition（F5.2/F5.3/F5.5 模型）', () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('end');
     expect(canPublish(broken).ok).toBe(true); // 原 start→…→review→end 主链保留
+  });
+
+  it('canRollback：仅已发布的 v2+ 循环允许执行回滚', () => {
+    const draft = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    expect(canRollback(draft).ok).toBe(false); // 草稿不可回滚
+
+    const publishedV1 = { ...draft, status: 'published' as const, version: 1 };
+    expect(canRollback(publishedV1).ok).toBe(false); // v1 无更早版本
+
+    const publishedV2 = { ...draft, status: 'published' as const, version: 2 };
+    expect(canRollback(publishedV2).ok).toBe(true);
+  });
+
+  it('simulateLoopDryRun：推演主干步骤序列并标出分支警告', () => {
+    const draft = templateToDraft(LOOP_TEMPLATES[0], 'a');
+    const result = simulateLoopDryRun(draft);
+
+    expect(result.reachable).toBe(true);
+    expect(result.steps.length).toBeGreaterThan(2);
+    expect(result.steps[0].nodeId).toBe('start');
+    expect(result.steps[result.steps.length - 1].nodeType).toBe('end');
   });
 });

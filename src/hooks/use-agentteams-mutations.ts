@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type {
@@ -15,13 +16,22 @@ import type {
   TeamResponse,
 } from '@/lib/agentteams-api';
 import { toast } from 'sonner';
-import { useNotificationStore } from '@/lib/notification-store';
+import { useNotificationStore, type NewNotification } from '@/lib/notification-store';
+import { resourceHash } from '@/lib/nav-hash';
 import { formatErrorMessage, describeWorkerDeleteError } from '@/lib/api-error';
 import { auditMutation } from '@/lib/audit-store';
 
-function useNotify() {
+/**
+ * 通知写入器 + 可选的落地深链。增删改这类动作通知都应能一键跳到对应资源 tab，
+ * 所以 actionUrl 上收到 hook 层、由实体类型决定，调用点不必每条重复写。
+ */
+function useNotify(actionUrl?: string) {
   const addNotification = useNotificationStore((s) => s.addNotification);
-  return addNotification;
+  return useCallback(
+    (notification: NewNotification) =>
+      addNotification(actionUrl ? { ...notification, actionUrl } : notification),
+    [addNotification, actionUrl],
+  );
 }
 
 // Persisted notifications are stored in localStorage, so only a masked
@@ -35,7 +45,7 @@ export function maskApiKey(apiKey: string): string {
 // Worker Mutations
 export function useCreateWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: (data: CreateWorkerRequest) => agentteamsApi.createWorker(data),
@@ -56,7 +66,7 @@ export function useCreateWorker() {
 
 export function useDeleteWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteWorker(name),
@@ -74,7 +84,7 @@ export function useDeleteWorker() {
 
 export function useUpdateWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: ({ name, data }: { name: string; data: UpdateWorkerRequest }) =>
@@ -95,7 +105,7 @@ export function useUpdateWorker() {
 
 export function useWakeWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.wakeWorker(name),
@@ -124,7 +134,7 @@ export function useWakeWorker() {
 
 export function useSleepWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.sleepWorker(name),
@@ -153,7 +163,7 @@ export function useSleepWorker() {
 
 export function useEnsureReadyWorker() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('workers'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.ensureReadyWorker(name),
@@ -173,7 +183,7 @@ export function useEnsureReadyWorker() {
 // Team Mutations
 export function useCreateTeam() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('teams'));
 
   return useMutation({
     mutationFn: (data: CreateTeamRequest) => agentteamsApi.createTeam(data),
@@ -194,7 +204,7 @@ export function useCreateTeam() {
 
 export function useDeleteTeam() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('teams'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteTeam(name),
@@ -220,7 +230,7 @@ export function useDeleteTeam() {
 
 export function useUpdateTeam() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('teams'));
 
   return useMutation({
     mutationFn: ({ name, data }: { name: string; data: UpdateTeamRequest }) =>
@@ -240,7 +250,7 @@ export function useUpdateTeam() {
 // Human Mutations
 export function useCreateHuman() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('humans'));
 
   return useMutation({
     mutationFn: (data: CreateHumanRequest) => agentteamsApi.createHuman(data),
@@ -259,7 +269,7 @@ export function useCreateHuman() {
 
 export function useUpdateHuman() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('humans'));
 
   return useMutation({
     mutationFn: ({ name, data }: { name: string; data: UpdateHumanRequest }) =>
@@ -278,7 +288,7 @@ export function useUpdateHuman() {
 
 export function useDeleteHuman() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('humans'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteHuman(name),
@@ -298,7 +308,7 @@ export function useDeleteHuman() {
 // Manager Mutations
 export function useCreateManager() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('managers'));
 
   return useMutation({
     mutationFn: (data: CreateManagerRequest) => agentteamsApi.createManager(data),
@@ -319,7 +329,7 @@ export function useCreateManager() {
 
 export function useDeleteManager() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('managers'));
 
   return useMutation({
     mutationFn: (name: string) => agentteamsApi.deleteManager(name),
@@ -340,7 +350,7 @@ export function useDeleteManager() {
 
 export function useUpdateManager() {
   const queryClient = useQueryClient();
-  const addNotification = useNotify();
+  const addNotification = useNotify(resourceHash('managers'));
 
   return useMutation({
     mutationFn: ({ name, data }: { name: string; data: UpdateManagerRequest }) =>

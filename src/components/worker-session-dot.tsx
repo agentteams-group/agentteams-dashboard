@@ -12,6 +12,7 @@ import type { WorkerSessionState } from '@/lib/worker-session-state';
 
 const STATE_STYLE: Record<WorkerSessionState, { color: string; label: string; pulse: boolean }> = {
   running: { color: '#3b82f6', label: '运行中', pulse: true },
+  waiting_user: { color: '#d97706', label: '等待人工', pulse: false },
   done: { color: '#52c41a', label: '运行完成', pulse: false },
   // Theme token: the old fixed #c0c4cc is ~1.6:1 on light backgrounds (UI-02).
   idle: { color: 'var(--muted-foreground)', label: '无任务', pulse: false },
@@ -47,6 +48,7 @@ export function WorkerSessionRunningDot({ running }: { running: boolean }) {
 // surface color. Same three states / colors as the message-bubble dots.
 // The parent element must be `relative`.
 const CORNER_STYLE: Record<WorkerSessionState, { className: string; label: string }> = {
+  waiting_user: { className: 'bg-amber-500', label: '等待人工' },
   running: {
     className: 'worker-status-breathe bg-sky-500',
     label: '运行中',

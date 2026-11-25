@@ -167,3 +167,46 @@ describe('cookie plumbing', () => {
     expect(parseCookies(' a = b%40c ; d=e ')).toEqual({ a: 'b@c', d: 'e' });
   });
 });
+
+describe('cookie Secure flag follows the request scheme (localhost data-401 fix)', () => {
+  function schemeRequest(scheme: 'http' | 'https', headers: Record<string, string> = {}) {
+    return { headers: new Headers(headers), nextUrl: { protocol: `${scheme}:` } };
+  }
+
+  it('omits Secure for an HTTP request even with DASHBOARD_COOKIE_SECURE=1', () => {
+    process.env.DASHBOARD_COOKIE_SECURE = '1';
+    const header = sessionCookieHeader('abc.def', schemeRequest('http'));
+    expect(header).toContain('HttpOnly');
+    expect(header).toContain('SameSite=Lax');
+    expect(header).toContain('Path=/');
+    expect(header).not.toContain('Secure');
+  });
+
+  it('adds Secure for an HTTPS request when DASHBOARD_COOKIE_SECURE=1', () => {
+    process.env.DASHBOARD_COOKIE_SECURE = '1';
+    expect(sessionCookieHeader('abc.def', schemeRequest('https'))).toContain('Secure');
+  });
+
+  it('adds Secure for an HTTPS request when DASHBOARD_COOKIE_SECURE is unset', () => {
+    expect(sessionCookieHeader('abc.def', schemeRequest('https'))).toContain('Secure');
+  });
+
+  it('never adds Secure when DASHBOARD_COOKIE_SECURE=0, even on HTTPS', () => {
+    process.env.DASHBOARD_COOKIE_SECURE = '0';
+    expect(sessionCookieHeader('abc.def', schemeRequest('https'))).not.toContain('Secure');
+    expect(sessionCookieHeader('abc.def', schemeRequest('http'))).not.toContain('Secure');
+  });
+
+  it('trusts x-forwarded-proto: https over an HTTP nextUrl (TLS-terminating proxy)', () => {
+    process.env.DASHBOARD_COOKIE_SECURE = '1';
+    const header = sessionCookieHeader('abc.def', schemeRequest('http', { 'x-forwarded-proto': 'https' }));
+    expect(header).toContain('Secure');
+  });
+
+  it('keeps the old env-based behavior when no request is passed (backward compat)', () => {
+    process.env.DASHBOARD_COOKIE_SECURE = '1';
+    expect(sessionCookieHeader('abc.def')).toContain('Secure');
+    delete process.env.DASHBOARD_COOKIE_SECURE;
+    expect(sessionCookieHeader('abc.def')).not.toContain('Secure');
+  });
+});

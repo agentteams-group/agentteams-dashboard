@@ -1,99 +1,75 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { MessagesSquare, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage, RoomMember } from '@/hooks/use-matrix';
-import type { TeamResponse } from '@/lib/agentteams-api';
+import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
-import type { RoomInfo } from '../room-info';
-import { RoomTopology } from '../room-topology';
-import { HumanPanel } from '../human-panel';
 import { ThreadPanel } from '../structures/ThreadPanel';
-import { FilesPanel, type WorkerFileOption } from './WorkersFilesSidebar';
+import { FilesBrowserPanel } from '../views/worker-files-panel';
 import { MembersPanel } from './MembersSidebar';
-import { RoomTasksPanel } from './RoomTasksPanel';
+import { RoomTasksPanel, type RoomTaskData } from './RoomTasksPanel';
+import { RoomContextTabs } from './RoomContextTabs';
 
-export type RoomContextTab = 'overview' | 'tasks' | 'members' | 'files' | 'thread';
-
-const TABS: Array<{ id: RoomContextTab; label: string }> = [
-  { id: 'tasks', label: '任务' },
-  { id: 'members', label: '成员' },
-  { id: 'files', label: '文件' },
-  { id: 'thread', label: '话题' },
-  { id: 'overview', label: '概览' },
-];
+export type RoomContextTab = 'tasks' | 'members' | 'files' | 'thread';
 
 interface RoomContextPanelProps {
+  showCloseButton?: boolean;
+  canSend?: boolean;
+  showMembers?: boolean;
+  showTasks?: boolean;
   roomId: string;
-  team?: TeamResponse;
-  rooms: RoomInfo[];
+  roomTaskData?: RoomTaskData;
+  fileScope?: CollaborationFileScope;
+  roomAttachments: ReactNode;
   activeTab: RoomContextTab;
   onTabChange: (_tab: RoomContextTab) => void;
   onClose: () => void;
   roomMembers: RoomMember[];
   senderStatusMap: Record<string, WorkerSessionState>;
-  workerOptions: WorkerFileOption[];
-  effectiveSelectedWorker: string | null;
-  selectedIsTeamShared: boolean;
-  onSelectWorker: (_worker: string | null) => void;
   activeThread: DisplayMessage | null;
+  threadMention?: DisplayMessage | null;
   threadRoots: DisplayMessage[];
+  quotedReplies?: DisplayMessage[];
+  onBackToThreads: () => void;
   onOpenThread: (_message: DisplayMessage) => void;
   memberMap?: Record<string, string>;
   workerMatrixUserIds?: string[];
 }
 
 /**
- * 房间右侧唯一的上下文面板（320px）：任务/成员/文件/话题/概览共用一条
+ * 房间右侧悬浮的上下文面板（320px）：任务/成员/文件/话题共用一条
  * tab 头与关闭按钮，数据全部来自 AgentTeams 底座（Matrix + Controller），
  * <lg 统一收成右侧抽屉 —— 不再出现宽度 208/320/256~600 三套侧栏。
  */
 export function RoomContextPanel({
+  canSend = true,
   roomId,
-  team,
-  rooms,
+  roomTaskData,
+  fileScope,
+  roomAttachments,
   activeTab,
   onTabChange,
   onClose,
   roomMembers,
   senderStatusMap,
-  workerOptions,
-  effectiveSelectedWorker,
-  selectedIsTeamShared,
-  onSelectWorker,
   activeThread,
+  threadMention,
   threadRoots,
+  quotedReplies,
+  onBackToThreads,
   onOpenThread,
   memberMap,
   workerMatrixUserIds,
+  showMembers = true,
+  showTasks = true,
+  showCloseButton = true,
 }: RoomContextPanelProps) {
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:w-[min(20rem,85vw)] max-lg:shadow-xl">
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1.5 custom-scrollbar">
-        {TABS.map((tab) => {
-          const active = activeTab === tab.id;
-          const count =
-            tab.id === 'members' ? roomMembers.length :
-            tab.id === 'thread' ? threadRoots.length :
-            0;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onTabChange(tab.id)}
-              className={`shrink-0 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                active
-                  ? 'border border-border bg-background font-medium text-foreground shadow-sm'
-                  : 'border border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-              {count > 0 && <span className="ml-0.5 font-mono text-[10px]">{count}</span>}
-            </button>
-          );
-        })}
-        <Button
+    <aside aria-label="会话上下文面板" className="pointer-events-auto absolute inset-y-0 right-0 z-40 flex w-80 max-w-[85%] flex-col overflow-hidden border-l border-border bg-card shadow-xl max-lg:fixed max-lg:max-w-[85vw]">
+      <RoomContextTabs activeTab={activeTab} showMembers={showMembers} showTasks={showTasks} onTabChange={tab => { if (tab) onTabChange(tab); }} memberCount={roomMembers.length} threadCount={threadRoots.length}>
+        {showCloseButton ? <Button
           variant="ghost"
           size="sm"
           className="ml-auto h-6 w-6 shrink-0 p-0"
@@ -102,31 +78,31 @@ export function RoomContextPanel({
           aria-label="关闭上下文面板"
         >
           <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+        </Button> : <span className="ml-auto w-6 shrink-0" />}
+      </RoomContextTabs>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === 'tasks' && <RoomTasksPanel roomId={roomId} />}
+        {activeTab === 'tasks' && <RoomTasksPanel roomId={roomId} data={roomTaskData} />}
 
         {activeTab === 'members' && (
           <MembersPanel roomMembers={roomMembers} senderStatusMap={senderStatusMap} />
         )}
 
         {activeTab === 'files' && (
-          <FilesPanel
-            team={team}
-            workerOptions={workerOptions}
-            effectiveSelectedWorker={effectiveSelectedWorker}
-            selectedIsTeamShared={selectedIsTeamShared}
-            onSelectWorker={onSelectWorker}
-          />
+          fileScope ? <FilesBrowserPanel key={'team' in fileScope ? fileScope.team : fileScope.room} scope={fileScope} />
+            : roomAttachments
         )}
 
         {activeTab === 'thread' && (
           activeThread ? (
             <ThreadPanel
+              key={activeThread.id}
+              canSend={canSend}
               roomId={roomId}
               rootMessage={activeThread}
+              focusedMessage={threadMention}
+              quotedReplies={quotedReplies}
+              onBack={onBackToThreads}
               memberMap={memberMap}
               workerMatrixUserIds={workerMatrixUserIds}
             />
@@ -135,12 +111,7 @@ export function RoomContextPanel({
           )
         )}
 
-        {activeTab === 'overview' && (
-          <div className="h-full space-y-3 overflow-y-auto custom-scrollbar p-2">
-            <RoomTopology rooms={rooms} selectedRoomId={roomId} members={roomMembers} />
-            <HumanPanel />
-          </div>
-        )}
+
       </div>
     </aside>
   );
@@ -160,8 +131,8 @@ function ThreadList({
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <MessagesSquare className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
         <p className="text-xs font-medium">本空间暂无回复话题</p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          在任意消息上使用「回复」开启话题，回复数来自 Matrix m.thread 关系。
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          在任意消息上使用「回复」开启话题，集中讨论同一项工作。
         </p>
       </div>
     );
@@ -177,14 +148,14 @@ function ThreadList({
           className="w-full rounded-lg border border-border/60 px-2.5 py-2 text-left transition-colors hover:bg-accent/50"
         >
           <span className="flex items-center justify-between gap-2">
-            <span className="truncate text-[11px] font-medium">
+            <span className="truncate text-xs font-medium">
               {memberMap?.[root.sender] ?? root.senderShort}
             </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
               {root.replyCount} 条回复
             </span>
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {root.content.slice(0, 80)}
           </span>
         </button>

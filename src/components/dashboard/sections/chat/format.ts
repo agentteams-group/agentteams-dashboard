@@ -23,6 +23,16 @@ export function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+export function formatMessageTime(ts: number): string {
+  const now = new Date();
+  const time = formatTime(ts);
+  if (!isDifferentDay(ts, now.getTime())) return time;
+  now.setDate(now.getDate() - 1);
+  if (!isDifferentDay(ts, now.getTime())) return `昨天 ${time}`;
+  const date = new Date(ts);
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${time}`;
+}
+
 export function formatDate(ts: number): string {
   const d = new Date(ts);
   const today = new Date();

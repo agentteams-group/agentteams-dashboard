@@ -7,8 +7,10 @@
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 系统整体架构与数据流
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - 开发者入门指南
 - [INTERFACES.md](INTERFACES.md) - API 接口与契约
+- [A2UI_CATALOG.md](A2UI_CATALOG.md) - 8 类 A2UI 与运行时块目录、降级行为与新增块流程（F-1）
 - [AI_GATEWAY_GUIDE.md](AI_GATEWAY_GUIDE.md) - AI 网关多服务商路由配置
 - [runtime-capabilities.md](runtime-capabilities.md) - Worker 运行时能力对照表（流式协议 / 模型接入 / 知识库数据面）
+- [trust-boundary.md](trust-boundary.md) - 信任边界与端到端加密决断：哪几跳是明文、凭据在谁手里、加密房间为什么在本控制台读不出来、运营者要确认什么
 - [external-runtime-integration-assessment.md](external-runtime-integration-assessment.md) - 外部 coding agent runtime 接入评估（B6）
 
 ## 主题文档
@@ -18,10 +20,25 @@
 ## 功能文档
 
 - [debug-log-collection.md](debug-log-collection.md) - 一键调试日志收集功能
+- [voice-input.md](voice-input.md) - 聊天语音输入（本地 Whisper 免费识别 / 百炼付费识别）配置与边界
+- [chat-message-queue.md](chat-message-queue.md) - 直聊消息排队：发送/排队语义、回复中按 Enter 偏好、排队摘要悬停预览
+- [runtime-approval.md](runtime-approval.md) - Runtime 工具审批协议（`org.agentteams.approval`，QwenPaw 与 Codex Harness）
+- [worker-list-compatibility.md](worker-list-compatibility.md) - Worker 列表投影与条件读：Controller 各代能力组合下的 Dashboard 行为
+- [superagent-workspace.md](superagent-workspace.md) - 工作区信息架构（助手 / 我的团队 / 工作台 / 资产中心 / 成员与团队 / 观测与治理）
 - [plugin-development.md](plugin-development.md) / [plugin-development.zh-CN.md](plugin-development.zh-CN.md) - 插件开发指南
 - [plugin-system-design.md](plugin-system-design.md) - 插件系统设计
 - [项目.md](项目.md) - 项目（Projects）功能使用指南（用户视角）
 - [项目开发.md](项目开发.md) - 项目（Projects）开发指南（组件结构、API 客户端、缓存策略）
+- [RELEASE.md](RELEASE.md) - 发版规范：版本三方一致、常规发版序列、热补丁通道、坑清单
+
+## 设计与评估文档
+
+- [design/mcp-onboarding.md](design/mcp-onboarding.md) - MCP 受管接入设计
+- [external-runtime-integration-assessment.md](external-runtime-integration-assessment.md) - 外部 coding agent runtime 接入评估
+- [at-bot-feasibility-assessment.md](at-bot-feasibility-assessment.md) - AT Bot（三端 bot）可行性评估
+- [code-review-issues.md](code-review-issues.md) - 代码审查问题跟踪
+- [release-notes-mission-control-draft.md](release-notes-mission-control-draft.md) - Mission Control 定位语发布稿草稿（待随下一次对外发布使用）
+- [images/README.md](images/README.md) - README 配图录制清单
 
 ## 概念文档
 

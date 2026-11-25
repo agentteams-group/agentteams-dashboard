@@ -1,52 +1,46 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Check, Loader2, Rocket } from 'lucide-react';
+import { Loader2, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DEVELOPMENT_ROLES, developmentSquadNameError, deployDevelopmentSquad, type SquadDeploymentResult, type SquadDeploymentStep } from '@/lib/development-squad';
+import { DEVELOPMENT_ROLES, developmentSquadNameError, developmentSquadRepositoryError, deployDevelopmentSquad, type SquadDeploymentResult } from '@/lib/development-squad';
 
-const STEPS: { id: SquadDeploymentStep; label: string }[] = [
-  { id: 'assets', label: '同步资产' }, { id: 'agents', label: '关联 Agent' },
-  { id: 'team', label: '建立小队' }, { id: 'starting', label: '启动 Agent' },
-];
-
-export function DevelopmentSquadDialog({ open, onOpenChange, onDeployed }: {
+export function DevelopmentSquadDialog({ open, onOpenChange, onRequested }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
-  onDeployed: (_result: SquadDeploymentResult) => void;
+  onRequested: (_result: SquadDeploymentResult) => void;
 }) {
   const busy = useRef(false);
+  const requestId = useRef<string | null>(null);
   const [name, setName] = useState('dev-team');
+  const [repository, setRepository] = useState('');
+  const [model, setModel] = useState('');
   const [pending, setPending] = useState(false);
-  const [step, setStep] = useState<SquadDeploymentStep | null>(null);
-  const [message, setMessage] = useState('四个角色均使用集群默认模型，无需逐个配置。');
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SquadDeploymentResult | null>(null);
   const nameError = developmentSquadNameError(name.trim());
-  const stepIndex = STEPS.findIndex(item => item.id === step);
+  const repositoryError = developmentSquadRepositoryError(repository.trim());
 
   const changeOpen = (next: boolean) => {
     if (busy.current) return;
     if (!next) {
-      setName('dev-team'); setStep(null); setError(null); setResult(null);
-      setMessage('四个角色均使用集群默认模型，无需逐个配置。');
+      setError(null);
+      requestId.current = null;
     }
     onOpenChange(next);
   };
 
   const deploy = async () => {
-    if (busy.current || nameError) return;
+    if (busy.current || nameError || repositoryError) return;
     busy.current = true; setPending(true); setError(null);
+    requestId.current ??= crypto.randomUUID();
     try {
-      const deployed = await deployDevelopmentSquad(name.trim(), (next, text) => { setStep(next); setMessage(text); });
-      setResult(deployed);
-      setMessage('Skill 已同步至资产库并关联 Agent；启动进度见小队列表。');
-      onDeployed(deployed);
+      const receipt = await deployDevelopmentSquad({ name: name.trim(), repository: repository.trim(), model: model.trim() || undefined, requestId: requestId.current });
+      onRequested(receipt);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '部署未完成');
+      setError(cause instanceof Error ? cause.message : '部署请求未确认');
     } finally {
       busy.current = false; setPending(false);
     }
@@ -57,17 +51,23 @@ export function DevelopmentSquadDialog({ open, onOpenChange, onDeployed }: {
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Rocket className="size-4 text-emerald-500" aria-hidden="true" />部署开发小队</DialogTitle>
-          <DialogDescription>创建 Leader、开发、代码评审和测试四个 Agent。Leader 确认指定 Issue 是 Bug 且没有对应 PR 后，再启动研发流程。</DialogDescription>
+          <DialogDescription>交给 Manager 创建四个 Codex Agent、同步 Skill 资产并组建团队。收到请求后自动打开 Manager 会话查看办理进度。</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label htmlFor="development-squad-name">小队标识</Label>
-            <Input id="development-squad-name" value={name} maxLength={10} disabled={pending || !!result}
+            <Input id="development-squad-name" value={name} maxLength={10} disabled={pending}
               onChange={event => setName(event.target.value)} aria-invalid={!!nameError} aria-describedby="development-squad-name-hint" />
             <p id="development-squad-name-hint" className="text-xs text-muted-foreground">{nameError ?? 'Agent 名称会使用这个标识作为前缀。'}</p>
           </div>
-          <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-            <span className="font-medium">模型：</span>跟随集群默认模型
+          <div className="space-y-2">
+            <Label htmlFor="development-squad-repository">负责仓库</Label>
+            <Input id="development-squad-repository" value={repository} placeholder="owner/repository" disabled={pending} onChange={event => setRepository(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="development-squad-model">统一模型（选填）</Label>
+            <Input id="development-squad-model" value={model} placeholder="留空使用当前集群默认模型" disabled={pending} onChange={event => setModel(event.target.value)} />
+            <p className="text-xs text-muted-foreground">四个角色统一使用 Codex。指定模型时，Manager 先验证可用性；无法访问时会报告阻塞。</p>
           </div>
           <ul className="grid gap-2 sm:grid-cols-2">
             {DEVELOPMENT_ROLES.map(role => (
@@ -79,28 +79,16 @@ export function DevelopmentSquadDialog({ open, onOpenChange, onDeployed }: {
               </li>
             ))}
           </ul>
-          <p className="text-xs text-muted-foreground">首次部署从官网同步角色 Skill；资产库已有同名 Skill 时直接复用，保留已有编辑。</p>
-          {step && (
-            <ol className="grid grid-cols-4 gap-2 text-xs" aria-label="部署进度">
-              {STEPS.map((item, index) => (
-                <li key={item.id} className={`flex items-center gap-1 ${index <= stepIndex ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                  {result || index < stepIndex ? <Check className="size-3.5" aria-hidden="true" /> : pending && index === stepIndex ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <span>{index + 1}.</span>}
-                  {item.label}
-                </li>
-              ))}
-            </ol>
-          )}
-          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">{message}</p>
-          {error && <div role="alert" className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><p>{error}</p><p className="text-xs">已创建的资源会保留，使用同一小队标识重试可继续部署。</p></div>}
+          <p className="text-xs text-muted-foreground">Leader 每 30 分钟检查新 Issue 并发送待确认提示。你确认后才创建 Task；同一 Issue 复用 Task 和团队。已有同名 Skill 资产保留编辑。</p>
+          {pending && <p role="status" aria-live="polite" className="text-sm text-muted-foreground">正在发送给 Manager，资源创建结果以 Manager 的实际回执为准。</p>}
+          {error && <div role="alert" className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><p>{error}</p><p className="text-xs">发送结果不明确时，请先查看 Manager 会话，再决定是否重试。</p></div>}
         </div>
         <DialogFooter>
-          {result ? <Button onClick={() => changeOpen(false)}>完成</Button> : <>
-            <Button variant="outline" disabled={pending} onClick={() => changeOpen(false)}>取消</Button>
-            <Button disabled={pending || !!nameError} onClick={() => void deploy()}>
-              {pending && <Loader2 className="mr-1 size-4 animate-spin" aria-hidden="true" />}
-              {pending ? '正在部署' : error ? '重试部署' : '一键部署'}
-            </Button>
-          </>}
+          <Button variant="outline" disabled={pending} onClick={() => changeOpen(false)}>取消</Button>
+          <Button disabled={pending || !!nameError || !!repositoryError} onClick={() => void deploy()}>
+            {pending && <Loader2 className="mr-1 size-4 animate-spin" aria-hidden="true" />}
+            {pending ? '正在发送' : '一键部署'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

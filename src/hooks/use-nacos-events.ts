@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+
 import { useEffect, useState, useRef } from 'react';
 import { SyncEvent } from '@/lib/nacos-sync-engine';
 
@@ -18,7 +20,7 @@ export function useNacosEvents() {
 
     function connect() {
       if (disposed) return;
-      const es = new EventSource('/api/agentteams/skills/nacos/events');
+      const es = new EventSource(apiUrl('/api/agentteams/skills/nacos/events'));
       esRef.current = es;
 
       es.onopen = () => {

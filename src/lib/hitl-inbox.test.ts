@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import {
   extractConfirmationFromEvent,
+  hitlResolutionKind,
   ingestHitlTimelineEvents,
   isHitlResolutionReply,
   selectConfirmationList,
   useHitlInboxStore,
+  type HitlConfirmation,
 } from '@/lib/hitl-inbox';
 
 const TOOL_GUARD_BODY = `⏳ Waiting for approval / 等待审批
@@ -17,6 +19,27 @@ Parameters / 参数:
 
 💡 Triggered by tool guardrails
 Type /approve to approve, or send any message to deny.`;
+
+// #235：QwenPaw 工具护栏通道审批模板（format_channel_approval_body）。
+const RUNTIME_APPROVAL_BODY = `\u{1F6E1}\u{FE0F} **Approval Required**
+
+\u2022 **Tool**: \`execute_shell_command\`
+\u2022 **Severity**: \u{1F534} CRITICAL
+\u2022 **Findings**: 2
+
+**Risk Details:**
+- [CRITICAL] 递归删除高危命令
+
+**Parameters:**
+\`\`\`json
+{ "command": "rm -rf /tmp/build" }
+\`\`\`
+
+\u{1F4A1} **Actions**
+- Approve: \`/approval approve\`
+- Deny: \`/approval deny\`
+- Cancel: \`/approval cancel\`
+- List: \`/approval list\``;
 
 function msg(
   eventId: string,
@@ -58,6 +81,28 @@ function interventionMsg(
 }
 
 describe('isHitlResolutionReply', () => {
+  it('uses the original message relation for id-less feedback without resolving another request', () => {
+    const store = useHitlInboxStore.getState();
+    store.clearConfirmations();
+    ingestHitlTimelineEvents('!feedback', [msg('$first', '@worker:test', 1, { body: RUNTIME_APPROVAL_BODY }), msg('$second', '@worker:test', 2, { body: RUNTIME_APPROVAL_BODY })], '@me:test');
+    const body = '【审批意见】\n审批意见：同意本次操作';
+    store.resolveRoomReply('!feedback', '@me:test', body, '@me:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(2);
+    store.resolveRoomReply('!feedback', '@me:test', body, '@me:test', '$second');
+    expect(Object.values(useHitlInboxStore.getState().confirmations).map(item => item.eventId)).toEqual(['$first']);
+    expect(useHitlInboxStore.getState().resolutions['$second'].answer).toBe(body);
+    store.clearConfirmations();
+  });
+
+  it('does not turn feedback into an authoritative result for a native request id', () => {
+    const store = useHitlInboxStore.getState();
+    store.clearConfirmations();
+    ingestHitlTimelineEvents('!feedback', [msg('$bound', '@worker:test', 1, { body: RUNTIME_APPROVAL_BODY + '\nRequest ID: req-bound' })], '@me:test');
+    store.resolveRoomReply('!feedback', '@me:test', '【审批意见】\n审批意见：同意本次操作', '@me:test', '$bound');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(1);
+    expect(useHitlInboxStore.getState().resolutions['$bound']).toBeUndefined();
+    store.clearConfirmations();
+  });
   it('recognises /approve and 拒绝', () => {
     expect(isHitlResolutionReply('/approve')).toBe(true);
     expect(isHitlResolutionReply('  拒绝  ')).toBe(true);
@@ -89,6 +134,18 @@ describe('isHitlResolutionReply', () => {
     expect(isHitlResolutionReply('@worker /approve')).toBe(true);
     expect(isHitlResolutionReply('@质检员:test 拒绝')).toBe(true);
     expect(isHitlResolutionReply('@worker 请批准这个方案')).toBe(false);
+  });
+
+  it('recognises the /approval command family as a verdict (#235)', () => {
+    expect(hitlResolutionKind('/approval approve')).toBe('verdict');
+    expect(hitlResolutionKind('/approval deny 证据不足')).toBe('verdict');
+    expect(hitlResolutionKind('/approval cancel req-1')).toBe('verdict');
+    expect(isHitlResolutionReply('/approval approve req-abc-123')).toBe(true);
+    expect(isHitlResolutionReply('@worker /approval deny req-abc-123')).toBe(true);
+    expect(isHitlResolutionReply('/APPROVAL Approve')).toBe(true);
+    // 查询类命令不是裁决：list 不得收掉待办。
+    expect(hitlResolutionKind('/approval list')).toBeNull();
+    expect(isHitlResolutionReply('/approval list')).toBe(false);
   });
 });
 
@@ -150,6 +207,63 @@ describe('extractConfirmationFromEvent', () => {
     const event = msg('$n', '@agent:test', 1000, { body: 'hello' });
     expect(extractConfirmationFromEvent(event, '!room:test')).toBeNull();
   });
+
+  it('extracts the QwenPaw runtime approval template with severity and risk details (#235)', () => {
+    const event = msg('$a1', '@agent:test', 4000, { body: RUNTIME_APPROVAL_BODY });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item).toEqual(
+      expect.objectContaining({
+        // 模板不带请求 ID：id 回落 room:event，requestId 为空。
+        id: '!room:test:$a1',
+        toolName: 'execute_shell_command',
+        severity: 'CRITICAL',
+        riskDetails: '[CRITICAL] 递归删除高危命令',
+        approveReply: '/approval approve',
+        rejectReply: '/approval deny',
+      }),
+    );
+    expect(item?.requestId).toBeUndefined();
+    expect(item?.parameters).toContain('rm -rf /tmp/build');
+  });
+
+  it('keeps the request id of a runtime approval variant for precise binding (#235)', () => {
+    const event = msg('$a2', '@agent:test', 4100, {
+      body: RUNTIME_APPROVAL_BODY
+        .replace('\u2022 **Findings**: 2', '\u2022 **Findings**: 2\n\u2022 **Request ID**: `req-abc-123`'),
+    });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item?.requestId).toBe('req-abc-123');
+    expect(item?.id).toBe('$a2');
+    expect(item?.approveReply).toBe('/approval approve req-abc-123');
+    expect(item?.rejectReply).toBe('/approval deny req-abc-123');
+  });
+
+  it('passes v1 severity / risk_details through to the inbox item (#235)', () => {
+    const event = msg('$a3', '@agent:test', 4200, {
+      body: 'irrelevant',
+      'org.agentteams.run': {
+        version: '1',
+        blocks: [
+          {
+            type: 'confirmation',
+            tool_name: 'bash',
+            confirmation_id: 'conf-sev',
+            severity: 'HIGH',
+            risk_details: '- [HIGH] 写系统路径',
+          },
+        ],
+      },
+    });
+    const item = extractConfirmationFromEvent(event, '!room:test');
+    expect(item).toEqual(
+      expect.objectContaining({
+        id: 'conf-sev',
+        requestId: 'conf-sev',
+        severity: 'HIGH',
+        riskDetails: '- [HIGH] 写系统路径',
+      }),
+    );
+  });
 });
 
 describe('useHitlInboxStore', () => {
@@ -203,6 +317,31 @@ describe('useHitlInboxStore', () => {
     const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].eventId).toBe('$c2');
+  });
+
+  it('does not guess which request an ID-less QwenPaw command resolves', () => {
+    ingestHitlTimelineEvents(
+      '!r1',
+      [
+        msg('$c1', '@agent:test', 1000, { body: TOOL_GUARD_BODY }),
+        msg('$a1', '@agent:test', 2000, { body: RUNTIME_APPROVAL_BODY }),
+      ],
+      '@user:test',
+    );
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(2);
+    ingestHitlTimelineEvents(
+      '!r1',
+      [msg('$reply', '@user:test', 3000, { body: '@agent:test /approval approve' })],
+      '@user:test',
+    );
+    const remaining = selectConfirmationList(useHitlInboxStore.getState().confirmations);
+    expect(remaining).toHaveLength(2);
+  });
+
+  it('does not let /approval list consume a pending approval', () => {
+    ingestHitlTimelineEvents('!r1', [msg('$a1', '@agent:test', 1000, { body: RUNTIME_APPROVAL_BODY })], '@user:test');
+    ingestHitlTimelineEvents('!r1', [msg('$q', '@user:test', 2000, { body: '/approval list' })], '@user:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toHaveLength(1);
   });
 
   it('resolves a pending confirmation from a cross-client intervention reply', () => {
@@ -365,6 +504,18 @@ describe('useHitlInboxStore', () => {
     expect(useHitlInboxStore.getState().confirmations).toEqual({});
   });
 
+  it('removes a persisted false choice when the original report is reingested', () => {
+    ingestHitlTimelineEvents('!r1', [msg('$other', '@agent:test', 1000, { body: TOOL_GUARD_BODY })], '@user:test');
+    useHitlInboxStore.getState().upsertConfirmation({
+      id: 'heuristic:$report:0', roomId: '!r1', eventId: '$report', sender: '@agent:test',
+      toolName: 'ask_human', approveReply: '', rejectReply: '', timestamp: 2000,
+    });
+    ingestHitlTimelineEvents('!r1', [msg('$report', '@agent:test', 2000, {
+      body: '收到，确认任务 -02 验收闭环，我转入待命：\n1. 任务已完结。\n2. 交付物已冻结。',
+    })], '@user:test');
+    expect(Object.keys(useHitlInboxStore.getState().confirmations)).toEqual(['!r1:$other']);
+  });
+
   it('ingests historical chunks newest-first without missing a later /approve', () => {
     ingestHitlTimelineEvents(
       '!r1',
@@ -375,5 +526,63 @@ describe('useHitlInboxStore', () => {
       '@user:test',
     );
     expect(useHitlInboxStore.getState().confirmations).toEqual({});
+  });
+});
+
+/**
+ * 方案 v3 C-4：待办既不能在刷新后丢，也不能被列表上限静默吃掉 ——
+ * 一条被删掉的干预等于任务永远卡在 blocked 且没人知道。
+ */
+describe('待办不截断与持久化（C-4）', () => {
+  beforeEach(() => {
+    useHitlInboxStore.setState({
+      confirmations: {},
+      resolutions: {},
+      pendingChatRoomId: null,
+      pendingProjectKey: null,
+    });
+  });
+
+  function pendingAt(index: number): HitlConfirmation {
+    return {
+      id: `$card${index}`,
+      roomId: '!r1',
+      eventId: `$e${index}`,
+      sender: '@agent:test',
+      toolName: 'execute_shell_command',
+      approveReply: '/approve',
+      rejectReply: '拒绝',
+      timestamp: 1000 + index * 1000,
+    };
+  }
+
+  it('超出旧上限的待办全部保留，最旧的那条不再被静默丢弃', () => {
+    for (let i = 0; i < 60; i += 1) {
+      useHitlInboxStore.getState().upsertConfirmation(pendingAt(i));
+    }
+    const list = selectConfirmationList(useHitlInboxStore.getState().confirmations);
+    expect(list).toHaveLength(60);
+    expect(list.map((c) => c.id)).toContain('$card0');
+  });
+
+  it('已裁决记录仍按上限收敛（它只用于去重，掉出去不丢待办）', () => {
+    for (let i = 0; i < 60; i += 1) {
+      useHitlInboxStore.getState().upsertConfirmation(pendingAt(i));
+      useHitlInboxStore.getState().resolveConfirmation(`$card${i}`, '@user:test');
+    }
+    expect(Object.keys(useHitlInboxStore.getState().resolutions)).toHaveLength(50);
+    expect(useHitlInboxStore.getState().confirmations).toEqual({});
+  });
+
+  it('持久化只存待办与已裁决，一次性深链指针不落盘', () => {
+    useHitlInboxStore.getState().setPendingChatRoomId('!r1');
+    useHitlInboxStore.getState().setPendingProjectKey({ id: 'p1', team: 't1' });
+    useHitlInboxStore.getState().upsertConfirmation(pendingAt(0));
+
+    const options = useHitlInboxStore.persist.getOptions();
+    expect(options.name).toBe('agentteams-hitl-inbox');
+    const partial = options.partialize?.(useHitlInboxStore.getState()) as Record<string, unknown>;
+    expect(Object.keys(partial).sort()).toEqual(['confirmations', 'resolutions']);
+    expect(Object.keys(partial.confirmations as Record<string, unknown>)).toEqual(['$card0']);
   });
 });

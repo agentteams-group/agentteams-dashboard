@@ -102,6 +102,62 @@ describe('normalizeToBlocks rule 4: Tool Guard confirmation', () => {
   });
 });
 
+describe('normalizeToBlocks rule 4.5: QwenPaw runtime approval (#235)', () => {
+  const RUNTIME_APPROVAL = [
+    '\u{1F6E1}\u{FE0F} **Approval Required**',
+    '',
+    '\u2022 **Tool**: `execute_shell_command`',
+    '\u2022 **Severity**: \u{1F534} CRITICAL',
+    '\u2022 **Findings**: 2',
+    '',
+    '**Risk Details:**',
+    '- [CRITICAL] 递归删除高危命令',
+    '',
+    '**Parameters:**',
+    '```json',
+    '{ "command": "rm -rf /tmp/build" }',
+    '```',
+    '',
+    '\u{1F4A1} **Actions**',
+    '- Approve: `/approval approve`',
+    '- Deny: `/approval deny`',
+    '- Cancel: `/approval cancel`',
+  ].join('\n');
+
+  it('produces a confirmation block with severity and risk details', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: RUNTIME_APPROVAL }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('confirmation');
+    const payload = blocks[0].payload as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      toolName: 'execute_shell_command',
+      severity: 'CRITICAL',
+      findings: 2,
+      riskDetails: '[CRITICAL] 递归删除高危命令',
+      approveReply: '/approval approve',
+      rejectReply: '/approval deny',
+      cancelReply: '/approval cancel',
+    });
+    expect(String(payload.parameters)).toContain('rm -rf /tmp/build');
+  });
+
+  it('keeps the user quoted example as plain text', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: RUNTIME_APPROVAL, isMine: true }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('text');
+  });
+
+  it('runs before the legacy Tool Guard heuristic without disturbing it', () => {
+    const legacy = normalizeToBlocks(makeInput({
+      body: '\u23F3 Waiting for approval / 等待审批\n\n**Agent** wants to run a command.\n\nType /approve to approve, or send any message to deny.',
+    }));
+    expect(legacy[0].type).toBe('confirmation');
+    const legacyPayload = legacy[0].payload as Record<string, unknown>;
+    // 旧模板路径保持原状：不注入 severity 等新字段。
+    expect(legacyPayload.severity).toBeUndefined();
+  });
+});
+
 describe('normalizeToBlocks rule 6: agentscope repr dump', () => {
   const REASONING_REPR =
     "sequence_number=12 object='message' status='completed' error=None id='msg_aaa' " +
@@ -152,25 +208,75 @@ describe('normalizeToBlocks rule 7: Thinking: prefix (qwenpaw)', () => {
 });
 
 describe('normalizeToBlocks rule 8: com.agentteams.long_message', () => {
-  it('maps long-message metadata to an attachment block', () => {
+  const LONG_MESSAGE = {
+    version: 1,
+    url: 'mxc://example.com/abc123',
+    filename: 'full-reply.txt',
+    mimetype: 'text/plain',
+  };
+
+  it('keeps the narration as text and appends the full-text attachment', () => {
     const input = makeInput({
       body: '正文被截断…',
-      content: {
-        'com.agentteams.long_message': {
-          version: 1,
-          url: 'mxc://example.com/abc123',
-          filename: 'full-reply.txt',
-          mimetype: 'text/plain',
-        },
-      },
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '正文被截断…' });
+    const payload = (blocks[1] as unknown as { payload: { url: string; filename: string } }).payload;
+    expect(payload.url).toBe('mxc://example.com/abc123');
+    expect(payload.filename).toBe('full-reply.txt');
+  });
+
+  it('strips the upstream truncation footer from the narration', () => {
+    const input = makeInput({
+      body: [
+        '第一段叙述',
+        '',
+        '<单条 Matrix 消息已按安全长度截断，完整内容已缓存为 Matrix 附件：full-reply.txt，附件地址：mxc://example.com/abc123。>',
+      ].join('\n'),
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '第一段叙述' });
+  });
+
+  it('renders tool syntax inside a long message as tool cards', () => {
+    const input = makeInput({
+      body: '调用工具：\n\n🔧 **web_search**\n```json\n{"query":"发布状态"}\n```',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'tool_call', 'attachment']);
+  });
+
+  it('keeps A2UI surfaces inside a long message', () => {
+    const input = makeInput({
+      body: '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s1"}}\n```\n\n补充说明',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
+    });
+
+    const blocks = normalizeToBlocks(input);
+    expect(blocks.map((block) => block.type)).toEqual(['a2ui', 'text', 'attachment']);
+    expect(blocks[2]).toMatchObject({
+      type: 'attachment',
+      payload: { url: 'mxc://example.com/abc123' },
+    });
+  });
+
+  it('falls back to the attachment alone when the body is empty', () => {
+    const input = makeInput({
+      body: '',
+      content: { 'com.agentteams.long_message': LONG_MESSAGE },
     });
 
     const blocks = normalizeToBlocks(input);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('attachment');
-    const payload = (blocks[0] as unknown as { payload: { url: string; filename: string } }).payload;
-    expect(payload.url).toBe('mxc://example.com/abc123');
-    expect(payload.filename).toBe('full-reply.txt');
   });
 
   it('ignores incomplete long-message metadata', () => {
@@ -308,6 +414,10 @@ describe('normalizeToBlocks rule 12: legacy card/details', () => {
 });
 
 describe('normalizeToBlocks rule 13: text fallback', () => {
+  it('uses the readable Markdown body for an acceptance report with formatted HTML', () => {
+    const body = '收到，确认任务 -02 验收闭环，我转入待命：\n1. **任务已完结**：交付物冻结。\n2. 衔接记录与报告一致。';
+    expect(normalizeToBlocks(makeInput({ body, formattedBody: '<p>收到，确认任务 -02 验收闭环，我转入待命：</p><ol><li><strong>任务已完结</strong>：交付物冻结。</li><li>衔接记录与报告一致。</li></ol>' }))).toEqual([{ type: 'text', text: body }]);
+  });
   it('renders plain body as a single text block', () => {
     const input = makeInput({ body: '**加粗** 普通消息' });
 
@@ -471,4 +581,51 @@ describe('normalizeToBlocks file references (com.agentteams.file_refs)', () => {
     const blocks = normalizeToBlocks(input);
     expect(blocks.map((b) => b.type)).toEqual(['text']);
   });
+});
+
+describe('normalizeToBlocks missing body (#1436)', () => {
+  it('does not throw when body is undefined', () => {
+    const blocks = normalizeToBlocks(makeInput({ body: undefined as unknown as string }));
+    expect(blocks).toEqual([{ type: 'text', text: '' }]);
+  });
+
+  it('still renders v1 confirmation blocks when body is missing', () => {
+    const blocks = normalizeToBlocks(makeInput({
+      body: undefined as unknown as string,
+      content: {
+        'org.agentteams.run': {
+          version: '1',
+          blocks: [{ type: 'confirmation', tool_name: 'bash', confirmation_id: 'cfm-1' }],
+        },
+      },
+    }));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('confirmation');
+  });
+});
+
+
+describe('readable reference transport display', () => {
+  it('shows user text and a file block without exposing the transport instructions', async () => {
+    const { withFileReferences } = await import('../file-refs');
+    const refs = [{ name: '报告.pptx', key: 'default/docs/报告.pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+    const body = withFileReferences('看下这个', refs);
+    const blocks = normalizeToBlocks({ body, content: { 'com.agentteams.file_refs': { refs } }, isMine: true, isStreaming: false });
+    expect(blocks.filter(block => block.type === 'text').map(block => block.text).join('')).toBe('看下这个');
+    expect(blocks.filter(block => block.type === 'file_refs')).toHaveLength(1);
+    expect(body).toContain('default/docs/报告.pptx');
+  });
+  it('preserves arbitrary message text without matching structured references', () => {
+    const body = '引用的工作空间文件：这段是用户自己输入的';
+    const blocks = normalizeToBlocks({ body, content: {}, isMine: true, isStreaming: false });
+    expect(blocks[0].text).toBe(body);
+  });
+});
+
+it('recovers the file card for already-sent messages that lost structured fields', async () => {
+  const { withFileReferences } = await import('../file-refs');
+  const refs = [{ name: 'COScon26_light+logo开源年会ppt模板(1).pptx', key: 'default/COScon26_light+logo开源年会ppt模板(1).pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+  const blocks = normalizeToBlocks({ body: withFileReferences('分析下这个文档', refs), content: { msgtype: 'm.text' }, isMine: true, isStreaming: false });
+  expect(blocks.find(block => block.type === 'text')?.text).toBe('分析下这个文档');
+  expect(blocks.find(block => block.type === 'file_refs')?.refs).toEqual(refs);
 });

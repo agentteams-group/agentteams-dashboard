@@ -62,12 +62,12 @@ export function Graph3DToolbar({
       />
       <label
         htmlFor="graph3d-rotate"
-        className="cursor-pointer select-none text-[11.5px] text-muted-foreground"
+        className="cursor-pointer select-none text-xs text-muted-foreground"
       >
         自动旋转
       </label>
       <span className="flex-1" />
-      <span title={ENGINE_CREDIT} className="text-[11px] text-muted-foreground">
+      <span title={ENGINE_CREDIT} className="text-xs text-muted-foreground">
         引擎：{ENGINE_CREDIT}
       </span>
       <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={onExit3D}>

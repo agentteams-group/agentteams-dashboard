@@ -53,12 +53,27 @@ export function ManagerTable({
         </TableHeader>
         <TableBody>
           {managers.map((manager) => (
-            <TableRow key={manager.name}>
+            // 整行点击打开 Manager 详情抽屉（右侧 Sheet）；操作列自行阻断冒泡。
+            <TableRow
+              key={manager.name}
+              className="cursor-pointer"
+              data-testid={`manager-row-${manager.name}`}
+              onClick={() => onView(manager)}
+            >
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={manager.phase} />
                   <Crown className="w-4 h-4 text-violet-500 shrink-0" aria-hidden="true" />
-                  <span className="font-medium truncate max-w-[180px]">{manager.name}</span>
+                  <button
+                    type="button"
+                    className="font-medium truncate max-w-[180px] text-left hover:underline"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onView(manager);
+                    }}
+                  >
+                    {manager.name}
+                  </button>
                 </div>
               </TableCell>
               <TableCell>
@@ -100,7 +115,10 @@ export function ManagerTable({
                 )}
               </TableCell>
               <TableCell>
-                <div className="flex items-center justify-end gap-1">
+                <div
+                  className="flex items-center justify-end gap-1"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <Button
                     variant="ghost"
                     size="sm"

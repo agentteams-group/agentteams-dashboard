@@ -240,11 +240,11 @@ export function PluginsTab() {
                 </span>
                 <Badge
                   variant={record.status === 'error' ? 'destructive' : 'outline'}
-                  className="text-[10px]"
+                  className="text-xs"
                 >
                   {STATUS_LABELS[record.status]}
                 </Badge>
-                <Badge variant="secondary" className="text-[10px]">
+                <Badge variant="secondary" className="text-xs">
                   {record.source.kind === 'bundled' ? '内置' : 'URL'}
                 </Badge>
                 <Switch
@@ -261,7 +261,7 @@ export function PluginsTab() {
 
               <div className="flex flex-wrap items-center gap-1">
                 {(manifest.extensionPoints ?? []).map((point) => (
-                  <Badge key={point} variant="outline" className="text-[11px] px-1 h-4">
+                  <Badge key={point} variant="outline" className="text-xs px-1 h-4">
                     {EXTENSION_POINT_LABELS[point as ExtensionPointId] ?? point}
                   </Badge>
                 ))}

@@ -69,7 +69,7 @@ const ThinkingBlock = createComponentImplementation(
             {title}
           </span>
           {isStreaming && (
-            <span className="text-[10px] text-amber-500 animate-pulse mr-2">
+            <span className="text-xs text-amber-500 animate-pulse mr-2">
               思考中...
             </span>
           )}
@@ -140,17 +140,17 @@ const ToolCallBlock = createComponentImplementation(
 
     const statusBadge: Record<string, React.ReactNode> = {
       success: (
-        <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+        <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 className="w-3 h-3" /> 成功
         </span>
       ),
       error: (
-        <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400">
+        <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
           <XCircle className="w-3 h-3" /> 失败
         </span>
       ),
       running: (
-        <span className="flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400">
+        <span className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
           <Loader2 className="w-3 h-3 animate-spin" /> 执行中
         </span>
       ),
@@ -181,7 +181,7 @@ const ToolCallBlock = createComponentImplementation(
           <div className="px-3 pb-3 border-t border-blue-500/10 space-y-2">
             {argsStr && (
               <div>
-                <p className="text-[10px] font-medium text-muted-foreground mt-2 mb-1 flex items-center gap-1">
+                <p className="text-xs font-medium text-muted-foreground mt-2 mb-1 flex items-center gap-1">
                   <Zap className="w-3 h-3" /> 参数
                 </p>
                 <pre className="text-xs bg-muted/50 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
@@ -192,12 +192,12 @@ const ToolCallBlock = createComponentImplementation(
             {resultStr && (
               <div>
                 <div className="flex items-center justify-between mt-2 mb-1">
-                  <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" /> 结果
                   </p>
                   <button
                     onClick={copyResult}
-                    className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                   >
                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     {copied ? '已复制' : '复制'}
@@ -325,7 +325,7 @@ const StatusBadge = createComponentImplementation(
     };
 
     return (
-      <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${colors[status] || colors.info}`}>
+      <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border ${colors[status] || colors.info}`}>
         {label}
       </span>
     );

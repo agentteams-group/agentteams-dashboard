@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useImeGuard } from '../use-ime-guard';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
 import { MarkdownMessage } from '../markdown-message';
-import { ConfirmationCard, type ConfirmationCardPayload } from '../confirmation-card';
+import { ConfirmationCard, toConfirmationCardPayload } from '../confirmation-card';
 import { InterventionCard } from '../intervention-card';
 import { ReviewReportCard } from '../review-report-card';
 import { isInterventionConfirmation, type RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
@@ -22,6 +23,7 @@ import { A2uiMessage } from '../a2ui-message';
 import { RunEndingNote, type RunEndingPayload } from '../run-ending-note';
 import { WorkflowCard } from './workflow-card';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
+import { RunProcessDisclosure, isProcessBlock } from './run-process-disclosure';
 import { normalizeToBlocks } from '@/lib/a2ui/normalize';
 import {
   heuristicToInterventionPayload,
@@ -31,25 +33,34 @@ import type { ParsedA2uiBlock, AttachmentPayload } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { FileRefChips } from './file-ref-chips';
 import { recordToolCalls } from '@/lib/tool-call-counter';
-import { Check, CheckCheck, Copy, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
-import { RuntimeBadge } from '@/components/dashboard/phase-badge';
+import { Check, CircleSlash, Copy, Link2, Loader2, PauseCircle, PlayCircle, ListChecks, Paperclip, AlertTriangle } from 'lucide-react';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import { MessageReadStatus } from '../message-read-status';
+import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
+import { interactionActivity } from '../confirmation-reply';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
+import { AgentPresenceCard } from '../agent-presence-card';
+import { parseWorkflowNotice, type WorkflowNotice } from '@/lib/chat-workflow-notice';
+import { formatMessageTime } from '../format';
+import { TaskAssignmentCard } from '../task-assignment-card';
+import { useHumanNames, useRuntimeMap } from '../runtime-map-context';
 
 interface MessageBubbleProps {
   message: DisplayMessage;
   showSender: boolean;
   isContinuation: boolean;
+  replyQuote?: React.ReactNode;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string) => void;
-  /** Opens the owning worker's files panel (team rooms: multi-worker source). */
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
+  /** Opens the task or team file panel from an assignment card. */
+  onOpenRoomFiles?: () => void;
   /**
    * Opens the owning worker's read-only QwenPaw sessions (C / #1295).
    * Only worker senders get a clickable avatar; humans do not.
@@ -67,16 +78,79 @@ interface MessageBubbleProps {
   senderStatus?: WorkerSessionState | null;
 }
 
+/**
+ * ChatIR turn states that need a visible explanation: a detached thread, a
+ * run that never produced an answer, and a run that just opened.
+ */
+function TurnStateNote({
+  state,
+  hasBlocks,
+}: {
+  state: DisplayMessage['turnState'];
+  hasBlocks: boolean;
+}) {
+  if (state === 'stopped') {
+    return (
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" data-turn-state="stopped">
+        <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
+        已停止
+      </p>
+    );
+  }
+  if (state === 'detached') {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground/70" data-turn-state="detached">
+        <Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+        原消息不在当前加载范围，以下为该话题中的回复
+      </p>
+    );
+  }
+  if (state === 'interrupted') {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-status-waiting" data-turn-state="interrupted">
+        <CircleSlash className="h-3 w-3 shrink-0" aria-hidden="true" />
+        本轮未生成最终答复
+      </p>
+    );
+  }
+  if (state === 'pending' && !hasBlocks) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-turn-state="pending">
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+        等待回复…
+      </p>
+    );
+  }
+  return null;
+}
+
 function MessageTime({ timestamp }: { timestamp: number }) {
-  const time = new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
   return (
-    <span className="text-[10px] text-muted-foreground/60 select-none">
-      {time}
+    <span className="whitespace-nowrap text-xs text-muted-foreground/60 select-none">
+      {formatMessageTime(timestamp)}
     </span>
   );
+}
+
+function WorkflowNoticeRow({ notice, sender, timestamp }: { notice: WorkflowNotice; sender: string; timestamp: number }) {
+  const Icon = notice.attention ? AlertTriangle : notice.kind === 'artifact' ? Paperclip : notice.kind === 'submitted' ? Check : ListChecks;
+  return <div role="note" aria-label={notice.title} data-workflow-notice={notice.kind} className="mx-9 my-2 max-w-xl rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
+    <div className="flex items-start gap-2">
+      <Icon aria-hidden="true" className={notice.attention ? 'mt-0.5 size-3.5 shrink-0 text-status-waiting' : 'mt-0.5 size-3.5 shrink-0 text-muted-foreground'} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-xs font-medium text-foreground">{notice.title}</p>
+        {notice.subject && <p className="text-sm leading-5 text-foreground/85">{notice.subject}</p>}
+        {notice.description && <p className="text-xs leading-5 text-muted-foreground">{notice.description}</p>}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground/70">
+          <span>{sender}</span><MessageTime timestamp={timestamp} />
+          <details className="w-full">
+            <summary className="w-fit cursor-pointer text-xs text-muted-foreground/70 hover:text-foreground">原始通知</summary>
+            <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 pt-2 font-mono text-xs leading-5">{notice.body}</pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>;
 }
 
 /**
@@ -101,7 +175,7 @@ function LifecycleNoticeRow({
       <div
         role="status"
         title={notice.body}
-        className="flex max-w-[92%] items-start gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-[11px] leading-relaxed text-muted-foreground"
+        className="flex max-w-[92%] items-start gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-xs leading-relaxed text-muted-foreground"
       >
         <Icon className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
         <span className="min-w-0 break-words">
@@ -139,22 +213,6 @@ function senderPalette(sender: string) {
   return SENDER_PALETTE[senderPaletteIndex(sender)];
 }
 
-function AvatarWithInitials({ sender, label, isMe }: { sender: string; label: string; isMe: boolean }) {
-  const palette = senderPalette(sender);
-  return (
-    <Avatar className="h-[30px] w-[30px] shrink-0 rounded-[9px]">
-      <div
-        className={`flex h-full w-full items-center justify-center rounded-[9px] border border-border text-[11px] font-semibold ${
-          isMe ? 'bg-primary/15 text-primary' : palette.avatar
-        }`}
-        title={label}
-      >
-        {label.slice(0, 2).toUpperCase()}
-      </div>
-    </Avatar>
-  );
-}
-
 // A17 task status dot (9/18 convention), now shared: the visual lives in
 // `WorkerSessionCornerDot` so message avatars and the member list use the
 // exact same dot (one source of truth — 9/19 member-list addition).
@@ -168,7 +226,7 @@ function ActionIcon({ path, size = 12, label }: { path: string; size?: number; l
 }
 
   const ICON_PATHS = {
-  reply: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  reply: 'M9 10 4 15l5 5M4 15h11a5 5 0 0 0 0-10h-3',
   thread: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   edit: 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
   trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z',
@@ -182,22 +240,81 @@ function ActionButton({
   title,
   icon,
   iconNode,
+  tone,
   onClick,
 }: {
   title: string;
   icon?: string;
   iconNode?: React.ReactNode;
+  /** 追加到按钮上的色类（复制失败时标红），不传就走默认的 muted。 */
+  tone?: string;
   onClick: (_e: React.MouseEvent) => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-      title={title}
+      className={`group/action relative p-1 text-muted-foreground hover:text-foreground transition-colors ${tone ?? ''}`}
       aria-label={title}
     >
       {iconNode ?? (icon ? <ActionIcon path={icon} label={title} /> : null)}
+      <span aria-hidden="true" className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm ring-1 ring-border group-hover/action:visible group-focus-visible/action:visible">
+        {title}
+      </span>
     </button>
+  );
+}
+
+/**
+ * 消息操作行上的复制按钮（方案 v3 B-4）。
+ *
+ * 复制这种操作「点了就该有回执」：原来只调一次 onCopy，不告诉用户成没成，
+ * 而内网 http 部署下 navigator.clipboard 直接不存在，点了其实是没复制上的。
+ * 这里等调用结果：成功 1.6 秒内把图标换成对勾，失败就明说失败（写入已经过了
+ * `@/lib/use-copy-to-clipboard` 的 execCommand 兜底，两条路都不通才报失败），
+ * 让用户改用手动选中复制。
+ *
+ * 不叫 CopyButton 是因为 `@/components/dashboard/copy-button.tsx` 已有一个通用
+ * 复制按钮：那个是 Button 壳、只负责写一段文本；消息操作行要贴齐同排的
+ * ActionButton 小图标样式，还要能报失败，所以只共用它底下的写入路径。
+ */
+function MessageCopyAction({
+  message,
+  onCopy,
+}: {
+  message: DisplayMessage;
+  onCopy: NonNullable<MessageBubbleProps['onCopy']>;
+}) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const label =
+    state === 'copied' ? '已复制到剪贴板' : state === 'failed' ? '复制失败，请手动选中文字复制' : '复制';
+
+  return (
+    <ActionButton
+      title={label}
+      tone={state === 'failed' ? 'text-status-failed' : undefined}
+      iconNode={
+        state === 'copied' ? (
+          <Check className="w-3 h-3 text-status-done" aria-hidden="true" />
+        ) : (
+          <Copy className="w-3 h-3" aria-hidden="true" />
+        )
+      }
+      onClick={() => {
+        void (async () => {
+          const result = await onCopy(message);
+          // 调用方没返回值（旧的 void 型调用点）时不猜失败，按已复制处理。
+          setState(result === false ? 'failed' : 'copied');
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => setState('idle'), 1600);
+        })();
+      }}
+    />
   );
 }
 
@@ -205,6 +322,7 @@ export function MessageBubble({
   message,
   showSender,
   isContinuation,
+  replyQuote,
   onReply,
   onCopy,
   onOpenThread,
@@ -213,7 +331,7 @@ export function MessageBubble({
   onResend,
   onCancel,
   onSendConfirmation,
-  onOpenWorkerFiles,
+  onOpenRoomFiles,
   onOpenWorkerChats,
   senderShort,
   memberMap,
@@ -222,6 +340,7 @@ export function MessageBubble({
   senderStatus,
 }: MessageBubbleProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const ime = useImeGuard();
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -238,6 +357,14 @@ export function MessageBubble({
     || senderShort
     || message.senderShort;
   const senderColor = senderPalette(message.sender).name;
+  const senderOwner = useRuntimeMap()[message.sender];
+  const humanName = useHumanNames()[message.sender];
+  const ownAccount = useAgentTeamsStore(state => message.isMe ? state.sessionUser : null);
+  const avatarWorker = message.workerName ?? senderOwner?.workerName;
+  const isAgentMessage = !message.isMe && Boolean(senderOwner || message.workerName || message.runtime || message.agentStatus || message.isStreaming);
+  const workflowNotice = !message.isMe && !message.isStreaming && !message.mediaUrl
+    && (message.workerName || message.runtime || isManagerSender(message.sender, senderLabel))
+    ? parseWorkflowNotice(message.content, message.runtime) : null;
 
   // The manager bot's container lifecycle lines are rendered as a status
   // notice rather than a conversation bubble.
@@ -250,15 +377,48 @@ export function MessageBubble({
   }, [message.isMe, message.isStreaming, message.workerName, message.sender, message.content, memberMap, senderLabel]);
 
   const parsedBlocks = useMemo<ParsedA2uiBlock[]>(() => {
+    // Turn-coalesced messages carry blocks already normalized from their
+    // constituent Matrix events (placeholder + process notices + answer).
+    if (message.precomputedBlocks) return message.precomputedBlocks;
+    // Same guard as hitl-inbox: relation-only / structured-run events may
+    // arrive without a string body (#1436).
     return normalizeToBlocks({
-      body: message.content,
-      formattedBody: message.formattedContent || undefined,
-      content: message.rawContent ?? {},
+      body: typeof message.content === 'string' ? message.content : '',
+      formattedBody: typeof message.formattedContent === 'string' ? message.formattedContent : undefined,
+      content: { ...message.rawContent, ...(message.fileRefs?.length ? { 'com.agentteams.file_refs': { refs: message.fileRefs } } : {}) },
       isStreaming: !!message.isStreaming,
       isMine: message.isMe,
       runtime: message.runtime ?? null,
     });
-  }, [message.content, message.formattedContent, message.rawContent, message.isStreaming, message.isMe, message.runtime]);
+  }, [message.precomputedBlocks, message.content, message.formattedContent, message.rawContent, message.fileRefs, message.isStreaming, message.isMe, message.runtime]);
+  const firstTextIndex = parsedBlocks.findIndex(block => block.type === 'text' && block.text && !isProcessBlock(block));
+  const mentionedUserIds = (message.rawContent?.['m.mentions'] as { user_ids?: string[] } | undefined)?.user_ids;
+
+  // Worker messages fold their whole process (thinking + tool calls) into one
+  // disclosure per contiguous segment: the avatar anchors a compact summary
+  // and the result output stays visible below it. Own messages keep the raw
+  // rendering so an edited/echoed bubble never hides what the user typed.
+  const processSegments = useMemo(() => {
+    const runs = new Map<number, ParsedA2uiBlock[]>();
+    const folded = new Set<number>();
+    if (message.isMe) return { runs, folded };
+    let idx = 0;
+    while (idx < parsedBlocks.length) {
+      if (!isProcessBlock(parsedBlocks[idx])) {
+        idx += 1;
+        continue;
+      }
+      const start = idx;
+      const run: ParsedA2uiBlock[] = [];
+      while (idx < parsedBlocks.length && isProcessBlock(parsedBlocks[idx])) {
+        run.push(parsedBlocks[idx]);
+        folded.add(idx);
+        idx += 1;
+      }
+      runs.set(start, run);
+    }
+    return { runs, folded };
+  }, [parsedBlocks, message.isMe]);
 
   // Feed the Worker card vitals strip: count this message's tool_call blocks
   // once it is final (delta-guarded per event id, so revisions don't double
@@ -273,40 +433,25 @@ export function MessageBubble({
     }
   }, [message.workerName, message.eventId, toolCallBlockCount, message.isStreaming]);
 
-  const handleConfirmationApprove = useCallback((reply: string) => {
-    if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender, message.eventId);
+  // 干预卡答复：额外把结构化回写字段（confirmation_id / answer / actor）递上去，
+  // 并把「是否真的写进了房间」回传给卡片（方案 v3 C-3）。
+  const handleConfirmationApprove = useCallback((reply: string, answer?: ConfirmationAnswerField): AnswerSendResult => {
+    if (!onSendConfirmation) return false;
+    return onSendConfirmation(reply, message.sender, message.eventId, answer);
   }, [onSendConfirmation, message.sender, message.eventId]);
 
-  const handleConfirmationReject = useCallback((reply: string) => {
-    if (!onSendConfirmation) return;
-    onSendConfirmation(reply, message.sender, message.eventId);
+  const handleConfirmationReject = useCallback((reply: string, answer?: ConfirmationAnswerField): AnswerSendResult => {
+    if (!onSendConfirmation) return false;
+    return onSendConfirmation(reply, message.sender, message.eventId, answer);
   }, [onSendConfirmation, message.sender, message.eventId]);
   const actionsVisible = isHovered || showActions;
 
   // element-web style delivery state for my own messages:
-  // sending → spinner, sent → single ✓, read by another member → double ✓✓.
+  // sending → spinner, sent → gray ✓, read by another member → green ✓.
   const isReadByOthers =
-    message.isMe && !message.status && !!readReceipts
+    !message.rawContent?.[READ_AUDIENCE_KEY] && message.isMe && !message.status && !!readReceipts
       ? isMessageReadByOthers(message, currentUserId, readReceipts)
       : false;
-
-  // Agent run status badge (org.agentteams.status). Only shown on other
-  // members' messages (agent runs), not for the user's own bubbles.
-  const agentStatusBadge = (() => {
-    if (message.isMe || !message.agentStatus) return null;
-    const status = message.agentStatus;
-    if (status === 'streaming' || status === 'in_progress' || status === 'running') {
-      return { label: '运行中', className: 'bg-sky-500/15 text-sky-600' };
-    }
-    if (status === 'success' || status === 'completed' || status === 'done') {
-      return { label: '已完成', className: 'bg-emerald-500/15 text-emerald-600' };
-    }
-    if (status === 'failed' || status === 'error') {
-      return { label: '失败', className: 'bg-red-500/15 text-red-600' };
-    }
-    return { label: status, className: 'bg-muted text-muted-foreground' };
-  })();
 
   const startEdit = useCallback(() => {
     setEditValue(message.content);
@@ -332,96 +477,101 @@ export function MessageBubble({
     }
   }, [editValue, message, onEdit]);
 
-  // 文本消息使用贴合内容的对话气泡；卡片/文件消息仍占满阅读列。
-  // 配色沿用 2026-10 装验口径：自己=emerald 浅底，Agent=中性浅底，无阴影。
-  // 同组续接消息收紧间距与上圆角，避免一串气泡看起来像独立卡片。
+  // 文本保持贴合内容的阅读宽度，不加底色、边框或阴影。
   const isTextBubble = message.type === 'm.text' && !message.mediaUrl;
   const bubbleClasses = [
-    'break-words text-[13.5px] leading-relaxed text-foreground',
-    isTextBubble
-      ? 'w-fit max-w-full rounded-2xl border px-3.5 py-2'
-      : 'w-full',
-    isTextBubble && !isContinuation ? (message.isMe ? 'rounded-tr-md' : 'rounded-tl-md') : '',
-    isTextBubble
-      ? message.isMe
-        ? 'bg-emerald-500/10 text-foreground border-emerald-500/25'
-        : 'bg-muted/60 text-foreground border-border/40'
-      : '',
-    message.status === 'error' ? 'ring-1 ring-red-400/70' : '',
+    'break-words text-sm leading-relaxed text-foreground',
+    isTextBubble ? 'w-fit max-w-full' : 'w-full',
     message.status === 'sending' ? 'opacity-70' : '',
   ].join(' ');
 
   if (lifecycleNotice) {
     return <LifecycleNoticeRow notice={lifecycleNotice} timestamp={message.timestamp} />;
   }
+  if (workflowNotice && parsedBlocks.every(block => block.type === 'text')) {
+    if (workflowNotice.kind === 'assigned') return <TaskAssignmentCard notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} onOpenFiles={onOpenRoomFiles} />;
+    return <WorkflowNoticeRow notice={workflowNotice} sender={senderLabel} timestamp={message.timestamp} />;
+  }
+
+  const activity = interactionActivity(message.content, message.rawContent, message.isMe);
+  if (activity) {
+    return <div role="status" className="flex items-center gap-2 py-2 pl-11 text-xs text-muted-foreground"><Check className="size-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message.isMe ? '你' : senderLabel} · {activity}</span><MessageTime timestamp={message.timestamp} />{message.status === 'sending' && <span>发送中…</span>}{message.status === 'error' && <Button size="sm" variant="ghost" className="h-6 text-xs text-destructive" onClick={() => onResend?.(message)}>发送失败，重试</Button>}</div>;
+  }
 
   return (
     <div
+      data-chat-message={message.isMe ? 'user' : 'agent'}
       className={`group/message relative flex gap-3 py-0.5 ${!isContinuation ? 'mt-3' : ''} ${message.isMe ? 'flex-row-reverse' : ''}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
         // Mobile: tap the message to toggle the action bar (desktop uses hover).
-        setShowActions(v => !v);
+        if (window.matchMedia?.('(hover: none)').matches) setShowActions(v => !v);
       }}
     >
       {/* Avatar column: mirrors the bubble side (own messages on the right).
           C (#1295): worker senders' avatars are clickable → read-only
           QwenPaw sessions of that worker ("补头": the headless worker's
-          sessions, viewable from the room). */}
-      <div className="w-[30px] shrink-0">
+          sessions, viewable from the room).
+          C-5: AgentPresenceCard 只在这一处包一层 hover/焦点悬浮卡。它包的是
+          按钮外面（不是替按钮做 trigger），所以上面那句“可点”与 disabled
+          规则一点没动；没 workerName 的人类发送者由卡片自己原样透出 children。 */}
+      <div data-chat-avatar className="w-[30px] shrink-0">
         {showAvatar && (
-          <button
-            type="button"
-            disabled={!message.workerName || !onOpenWorkerChats}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (message.workerName && onOpenWorkerChats) onOpenWorkerChats(message.workerName);
-            }}
-            title={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
-            aria-label={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
-            className={
-              message.workerName && onOpenWorkerChats
-                ? 'relative h-[30px] w-[30px] cursor-pointer rounded-[9px] transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/50'
-                : 'relative h-[30px] w-[30px]'
-            }
+          <AgentPresenceCard
+            sender={message.sender}
+            workerName={message.workerName}
+            senderLabel={senderLabel}
+            senderStatus={senderStatus}
           >
-            <AvatarWithInitials sender={message.sender} label={senderLabel} isMe={message.isMe} />
-            {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
-          </button>
+            <button
+              type="button"
+              disabled={!message.workerName || !onOpenWorkerChats}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (message.workerName && onOpenWorkerChats) onOpenWorkerChats(message.workerName);
+              }}
+              title={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
+              aria-label={message.workerName && onOpenWorkerChats ? `查看 ${senderLabel} 的会话` : undefined}
+              className={
+                message.workerName && onOpenWorkerChats
+                  ? 'relative h-[30px] w-[30px] cursor-pointer rounded-[9px] transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/50'
+                  : 'relative h-[30px] w-[30px]'
+              }
+            >
+              <AccountAvatar kind={avatarWorker ? 'agent' : 'human'} name={avatarWorker || ownAccount || humanName || message.senderShort}
+                label={senderLabel} className="size-[30px] rounded-[9px]"
+                fallbackClassName={`rounded-[9px] text-xs font-semibold ${message.isMe ? 'bg-primary/15 text-primary' : senderPalette(message.sender).avatar}`} />
+              {senderStatus && !message.isMe && <WorkerSessionCornerDot state={senderStatus} />}
+            </button>
+          </AgentPresenceCard>
         )}
       </div>
 
-      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 flex-1 flex-col ${message.isMe ? 'items-end' : 'items-start'}`} onMouseLeave={() => setIsHovered(false)}>
         {showAvatar && (
-          <div className={`mb-1 flex w-full min-w-0 flex-wrap items-center gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
-            <span className={`text-[12.5px] font-semibold ${message.isMe ? 'text-primary' : senderColor}`}>
+          <div data-chat-message-meta className={`mb-1 flex w-full min-w-0 items-baseline gap-2 ${message.isMe ? 'justify-end' : ''}`}>
+            <span className={`min-w-0 truncate text-sm font-semibold ${message.isMe ? 'text-primary' : senderColor}`} title={senderLabel}>
               {senderLabel}
             </span>
-            {message.workerName && message.runtime && (
-              <RuntimeBadge runtime={message.runtime} size="sm" />
-            )}
-            {message.isStreaming && (
-              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                <span className="animate-pulse">streaming</span>
-              </Badge>
-            )}
-            {agentStatusBadge && !message.isStreaming && (
-              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${agentStatusBadge.className}`}>
-                {agentStatusBadge.label}
+            {message.isEdited && !isAgentMessage && (
+              <span
+                className="shrink-0 text-xs text-muted-foreground italic"
+                title={
+                  message.revisionCount
+                    ? `已编辑 ${message.revisionCount} 次`
+                    : '已编辑（服务端未回报编辑次数）'
+                }
+              >
+                已编辑
               </span>
             )}
-            {message.isEdited && (
-              <span className="text-[10px] text-muted-foreground italic">(edited)</span>
-            )}
             {message.status === 'sending' && (
-              <span className="text-[10px] text-muted-foreground italic">发送中...</span>
+              <span className="shrink-0 text-xs text-muted-foreground italic">发送中...</span>
             )}
             {message.status === 'error' && (
-              <span className="text-[10px] text-red-500 italic">发送失败</span>
+              <span className="shrink-0 text-xs text-status-failed italic">发送失败</span>
             )}
-            {/* 设计稿把时间放在名字行最右侧；发送/已读标记跟随时间一起排。 */}
-            <span className={`flex shrink-0 items-center gap-1 ${message.isMe ? 'mr-auto pr-3' : 'ml-auto pl-3'}`}>
+            {/* Keep the timestamp and receipt next to the sender on either side. */}
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <MessageTime timestamp={message.timestamp} />
               {message.isMe && message.status === 'sending' && (
                 <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" aria-label="发送中" />
@@ -431,7 +581,7 @@ export function MessageBubble({
               )}
               {message.isMe && !message.status && (
                 isReadByOthers ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+                  <Check className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
                 ) : (
                   <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
                 )
@@ -440,13 +590,14 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
+        <div data-chat-message-body onMouseEnter={() => setIsHovered(true)} className={`flex w-full items-start gap-2 ${message.isMe ? 'flex-row-reverse' : ''}`}>
           {isEditing ? (
             <div className={`w-full ${message.isMe ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
               <textarea
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={(e) => {
+                  if (ime.isImeKey(e)) return;
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     submitEdit();
@@ -454,11 +605,13 @@ export function MessageBubble({
                   if (e.key === 'Escape') cancelEdit();
                 }}
                 autoFocus
+                onCompositionStart={ime.onCompositionStart}
+                onCompositionEnd={ime.onCompositionEnd}
                 rows={2}
-                className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                className="w-full min-w-[280px] resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {editError && (
-                <span className="text-[10px] text-red-500">{editError}</span>
+                <span className="text-xs text-red-500">{editError}</span>
               )}
               <div className="flex items-center gap-1.5">
                 <Button size="sm" className="h-6 px-2 text-xs" onClick={submitEdit}>
@@ -471,13 +624,24 @@ export function MessageBubble({
             </div>
           ) : (
             <div className={`flex w-full min-w-0 flex-col gap-1.5 ${message.isMe ? 'items-end' : 'items-start'}`}>
-              {/* Optimistic local sends carry refs directly (no event content yet). */}
-              {message.fileRefs && message.fileRefs.length > 0 && (
-                <div className="w-full">
-                  <FileRefChips refs={message.fileRefs} />
-                </div>
-              )}
+              {replyQuote}
               {parsedBlocks.map((block, idx) => {
+                const processRun = processSegments.runs.get(idx);
+                if (processRun) {
+                  return (
+                    <div key={idx} className="w-full">
+                      <RunProcessDisclosure
+                        blocks={processRun}
+                        isStreaming={!!message.isStreaming}
+                        active={message.turnState ? message.turnState === 'pending' || message.turnState === 'running' : undefined}
+                        runtime={message.runtime ?? null}
+                        eventId={message.eventId}
+                        revisionCount={message.revisionCount}
+                      />
+                    </div>
+                  );
+                }
+                if (processSegments.folded.has(idx)) return null;
                 if (block.type === 'confirmation' && onSendConfirmation) {
                   // F2.1 分流：v2 结构化提问（question/options/questions）走
                   // 选项式干预卡；v1 二态工具确认保持原卡（向后兼容）。
@@ -491,12 +655,17 @@ export function MessageBubble({
                       </div>
                     );
                   }
+                  const confirmation = toConfirmationCardPayload(block.payload ?? {});
+                  const sourceEventId = message.eventId ?? message.id;
                   return (
                     <div key={idx} className="w-full">
                       <ConfirmationCard
-                        payload={block.payload as unknown as ConfirmationCardPayload}
+                        payload={{ ...confirmation, sourceEventId,
+                          ...(confirmation.runtimeApproval || !confirmation.requestId ? { resolutionKey: sourceEventId } : {}),
+                        }}
                         onApprove={handleConfirmationApprove}
                         onReject={handleConfirmationReject}
+                        onCancel={handleConfirmationReject}
                       />
                     </div>
                   );
@@ -579,7 +748,7 @@ export function MessageBubble({
                 if (block.type === 'file_refs' && block.refs && block.refs.length > 0) {
                   return (
                     <div key={idx} className="w-full">
-                      <FileRefChips refs={block.refs} />
+                      <FileRefChips refs={block.refs} className={message.isMe ? 'items-end' : 'items-start'} />
                     </div>
                   );
                 }
@@ -599,7 +768,7 @@ export function MessageBubble({
                       <div key={idx} className="w-full space-y-1.5">
                         {/* 引言（选项块之前）原样保留 */}
                         {heuristic.before && (
-                          <div className={bubbleClasses}>
+                          <div data-chat-bubble className={bubbleClasses}>
                             <MarkdownMessage
                               content={heuristic.before}
                               msgType={message.type}
@@ -618,7 +787,7 @@ export function MessageBubble({
                         />
                         {/* 同一条消息里的其它问题（选项块之后）原样保留 */}
                         {heuristic.after && (
-                          <div className={bubbleClasses}>
+                          <div data-chat-bubble className={bubbleClasses}>
                             <MarkdownMessage
                               content={heuristic.after}
                               msgType={message.type}
@@ -632,9 +801,10 @@ export function MessageBubble({
                     );
                   }
                   return (
-                    <div key={idx} className={bubbleClasses}>
+                    <div key={idx} data-chat-bubble className={bubbleClasses}>
                       <MarkdownMessage
                         content={block.text}
+                        mentionedUserIds={idx === firstTextIndex ? mentionedUserIds : undefined}
                         formattedContent={message.formattedContent ? block.text : undefined}
                         msgType={message.type}
                         mediaUrl={message.mediaUrl}
@@ -647,14 +817,16 @@ export function MessageBubble({
                 }
                 return null;
               })}
+              {message.turnState === 'stopped' && <TurnStateNote state="stopped" hasBlocks={parsedBlocks.length > 0} />}
             </div>
           )}
 
-          {/* 续接消息（同发送者分组）默认不占行：时间/回执在 hover 时显示在行尾。 */}
-          {!showAvatar && (
-          <div className={`flex items-center gap-1 text-[10px] ${
-            isContinuation && !isHovered && !showActions ? 'opacity-0 group-hover/message:opacity-100' : ''
-          }`}>
+          {message.turnState !== 'stopped' && <TurnStateNote state={message.turnState} hasBlocks={parsedBlocks.length > 0} />}
+        </div>
+
+        {/* Continuations keep metadata below the content, including on touch screens. */}
+        {!showAvatar && (
+          <div data-chat-message-footer className="mt-1 flex items-center gap-1 text-xs">
             <MessageTime timestamp={message.timestamp} />
             {/* element-web style delivery ticks for my own messages */}
             {message.isMe && message.status === 'sending' && (
@@ -665,14 +837,15 @@ export function MessageBubble({
             )}
             {message.isMe && !message.status && (
               isReadByOthers ? (
-                <CheckCheck className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
+                <Check className="w-3.5 h-3.5 text-emerald-500" aria-label="已读" />
               ) : (
                 <Check className="w-3.5 h-3.5 text-muted-foreground" aria-label="已发送" />
               )
             )}
           </div>
-          )}
-        </div>
+        )}
+
+        {message.isMe && !!message.rawContent?.[READ_AUDIENCE_KEY] && !message.status && <MessageReadStatus message={message} />}
 
         {message.replyCount && message.replyCount > 0 && onOpenThread && (
           <button
@@ -680,17 +853,19 @@ export function MessageBubble({
               e.stopPropagation();
               onOpenThread(message);
             }}
-            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-primary"
-            title="在话题中查看回复"
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-primary"
+            title="查看话题"
           >
             <span>↩</span>
             {message.replyCount} 条回复
           </button>
         )}
 
-        {actionsVisible && (
           <div
-            className={`z-10 mt-1 flex gap-0.5 rounded-lg border border-border bg-card/95 p-0.5 shadow-sm backdrop-blur max-md:static md:absolute ${message.isMe ? 'justify-end md:left-1' : 'justify-start md:right-1'} ${showAvatar ? 'md:top-7' : 'md:top-1'}`}
+            role="group"
+            aria-label="消息操作"
+            className={`mt-1 flex min-h-7 items-center gap-1 text-muted-foreground ${actionsVisible ? '' : 'pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100'} ${message.isMe ? 'self-end' : 'self-start'}`}
+            onMouseEnter={() => setIsHovered(true)}
             onClick={(e) => e.stopPropagation()}
           >
             {message.status === 'sending' && onCancel && (
@@ -708,24 +883,14 @@ export function MessageBubble({
             {message.isMe && !message.status && onDelete && (
               <ActionButton title="删除" icon={ICON_PATHS.trash} onClick={() => onDelete(message)} />
             )}
-            {onReply && (
+            {onReply && !message.status && (
               <ActionButton title="回复" icon={ICON_PATHS.reply} onClick={() => onReply(message)} />
             )}
             {onOpenThread && (
-              <ActionButton title="在话题中回复" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
+              <ActionButton title="查看话题" icon={ICON_PATHS.thread} onClick={() => onOpenThread(message)} />
             )}
-            {onCopy && (
-              <ActionButton
-                title="复制"
-                iconNode={<Copy className="w-3 h-3" aria-hidden="true" />}
-                onClick={() => onCopy(message)}
-              />
-            )}
-            {onOpenWorkerFiles && !message.isMe && (message.workerName || message.sender) && (
-              <ActionButton title="查看工作目录" icon={ICON_PATHS.folder} onClick={() => onOpenWorkerFiles(message)} />
-            )}
+            {onCopy && <MessageCopyAction message={message} onCopy={onCopy} />}
           </div>
-        )}
       </div>
     </div>
   );

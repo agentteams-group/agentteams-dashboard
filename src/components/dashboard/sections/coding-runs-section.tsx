@@ -40,6 +40,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SectionHeader } from '@/components/dashboard/section-header';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import {
   agentteamsApi,
   type CodingRun,
@@ -89,7 +90,6 @@ export function CodingRunsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="编码执行记录"
-        description="编码 CLI 的一次性执行记录与原始日志（只读）。与聊天区的 QwenPaw 会话上下文不是同一数据源。"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
       />
@@ -110,10 +110,7 @@ export function CodingRunsSection() {
           {error instanceof Error ? error.message : '加载失败'}
         </div>
       ) : !runs || runs.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-md border border-border/60 p-4 text-sm text-muted-foreground">
-          <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
-          暂无编码执行记录。
-        </div>
+        <SectionEmptyState icon={FileText} title="暂无编码执行记录。" />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>

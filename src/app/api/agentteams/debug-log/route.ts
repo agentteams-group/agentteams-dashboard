@@ -128,11 +128,18 @@ function parseBody(value: unknown): { body: DebugLogRequest; error?: string } {
       return { body: {}, error: `Field '${key}' must be a boolean` };
     }
   }
+  // 调试包含会话导出与容器日志，始终脱敏（SEC）：关闭脱敏的请求直接拒绝。
+  if (body.redact === false) {
+    return {
+      body: {},
+      error: 'PII redaction cannot be disabled: debug bundles are always redacted',
+    };
+  }
   return { body: body as unknown as DebugLogRequest };
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await enforceLevelOnlyRbac(request, 'view', 'debug-log', 'collect');
+  const denied = await enforceLevelOnlyRbac(request, 'manage', 'debug-log', 'collect');
   if (denied) return denied;
   let rawBody: unknown;
   try {
@@ -157,7 +164,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const redact = body.redact !== false;
+  // 输出恒走 redactPii/redactJsonStrings（parseBody 已拒绝 redact:false），
+  // 不再消费 body.redact 作为脱敏开关。
+  const redact: boolean = true;
   const containerFilter = body.container?.trim() || '';
   const roomFilter = body.room?.trim() || '';
   const sinceEpochSec = Date.now() / 1000 - rangeSeconds;

@@ -21,6 +21,7 @@ const room = (overrides: Partial<RoomInfo>): RoomInfo => ({
   name: 'Room',
   type: 'team',
   members: [],
+  access: 'joined',
   ...overrides,
 });
 
@@ -45,6 +46,44 @@ const renderSidebar = (props: Partial<Parameters<typeof ChatRoomSidebar>[0]> = {
   );
 
 describe('ChatRoomSidebar', () => {
+  it('shows joined teams as single rows and opens both admin and member groups directly', () => {
+    const onSelectRoom = vi.fn();
+    renderSidebar({ title: '我的团队', teamList: true, onSelectRoom, rooms: [
+      room({ id: '!admin:test', name: 'Team: design', parentTeam: 'design', team: { name: 'design', teamName: '设计团队' } as RoomInfo['team'], teamRole: 'admin', phase: 'Active' }),
+      room({ id: '!member:test', name: 'Team: engineering', parentTeam: '研发团队', teamRole: 'member' }),
+    ] });
+    expect(screen.getAllByText('我的团队')).toHaveLength(1);
+    expect(screen.queryByText('团队协作群聊')).toBeNull();
+    expect(screen.queryByText('Active')).toBeNull();
+    expect(screen.queryByRole('button', { name: /展开团队|收起团队/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '设计团队 管理员' }));
+    expect(onSelectRoom).toHaveBeenLastCalledWith('!admin:test');
+    fireEvent.click(screen.getByRole('button', { name: '研发团队 成员' }));
+    expect(onSelectRoom).toHaveBeenLastCalledWith('!member:test');
+    fireEvent.change(screen.getByPlaceholderText('搜索团队…'), { target: { value: '设计' } });
+    expect(screen.getByRole('button', { name: '设计团队 管理员' })).toBeInTheDocument();
+    expect(screen.queryByText('研发团队')).toBeNull();
+  });
+  it('folds each team independently and keeps other conversations available', () => {
+    const leader = room({ id: '!design:test', name: '设计助手', type: 'manager', agentRole: 'leader', parentTeam: 'design', access: 'joined' });
+    renderSidebar({ rooms: [leader, room({ id: '!group:test', name: '设计群聊', parentTeam: 'design' }), room({ id: '!worker:test', name: '普通私聊', type: 'worker' })] });
+    expect(screen.queryByText('设计助手')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开团队：design' }));
+    expect(screen.getByText('设计助手')).toBeInTheDocument();
+    expect(screen.getByText('设计群聊')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '收起团队：design' }));
+    expect(screen.queryByText('设计助手')).toBeNull();
+    expect(screen.getByText('普通私聊')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('搜索对话…'), { target: { value: '设计助手' } });
+    expect(screen.getByText('设计助手')).toBeInTheDocument();
+  });
+
+  it('shows a reason on an unjoined DM without enabling it', () => {
+    renderSidebar({ rooms: [room({ name: '无权私聊', type: 'manager', agentRole: 'leader', access: 'not-joined' })] });
+    expect(screen.getByRole('button', { name: /无权私聊/ })).toBeDisabled();
+    expect(screen.getByText(/尚未加入私聊/)).toBeInTheDocument();
+  });
+
   it('renders rooms in the supplied order with unread badges', () => {
     renderSidebar();
     const buttons = screen.getAllByRole('button');
@@ -95,19 +134,36 @@ describe('ChatRoomSidebar', () => {
 
   it('filters rooms by search text', () => {
     renderSidebar();
-    fireEvent.change(screen.getByPlaceholderText('搜索房间...'), { target: { value: 'unread' } });
+    fireEvent.change(screen.getByPlaceholderText('搜索对话…'), { target: { value: 'unread' } });
     expect(screen.getByText('Unread Room')).toBeInTheDocument();
     expect(screen.queryByText('Newest')).toBeNull();
   });
 
-  it('defaults to a flat recency list (Element/plugin-style) without group headers', () => {
+  it('defaults to workspace groups while retaining ordinary rooms', () => {
     renderSidebar();
-    // 默认「按时间」：不出现类型分组头，房间直接并列。
-    expect(screen.queryByText('团队')).toBeNull();
+    // Ordinary rooms remain reachable below the team-oriented entries.
+    expect(screen.getByText('其他对话')).toBeInTheDocument();
     expect(screen.queryByText('Agent')).toBeNull();
     expect(screen.getByText('Newest')).toBeInTheDocument();
     expect(screen.getByText('最新一条')).toBeInTheDocument();
     expect(screen.getByText('QwenPaw')).toBeInTheDocument();
+  });
+
+  it('renders a dedicated 项目群 section after 我的团队 in workspace mode', () => {
+    const leader = room({ id: '!design:test', name: '设计助手', type: 'manager', agentRole: 'leader', parentTeam: 'design' });
+    renderSidebar({
+      rooms: [
+        leader,
+        room({ id: '!group:test', name: '设计群聊', parentTeam: 'design' }),
+        room({ id: '!proj:test', name: '网站改版', type: 'project', parentTeam: 'design' }),
+      ],
+    });
+    const heading = screen.getByText('项目群');
+    expect(heading).toBeInTheDocument();
+    // Team list keeps its own heading and project rooms are not folded into it.
+    expect(screen.getByText('我的团队').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('网站改版')).toBeInTheDocument();
+    expect(screen.queryByText('其他对话')).toBeNull();
   });
 
   it('filters by kind through the category menu', async () => {
@@ -132,9 +188,10 @@ describe('ChatRoomSidebar', () => {
     expect(screen.queryByText('GroupRoom')).toBeNull();
   });
 
-  it('switches to type-grouped view via the toggle', () => {
+  it('retains type-grouped view via the arrangement menu', async () => {
     renderSidebar();
-    fireEvent.click(screen.getByLabelText('当前按时间排序，切换为按类型分组'));
+    fireEvent.pointerDown(screen.getByLabelText('会话排列'), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '按房间类型' }));
     expect(screen.getByText('团队')).toBeInTheDocument();
     expect(screen.getByText('Agent')).toBeInTheDocument();
   });
@@ -154,5 +211,16 @@ describe('ChatRoomSidebar', () => {
     const sparseButton = screen.getByText('Sparse').closest('button');
     expect(sparseButton).not.toBeNull();
     expect(sparseButton?.querySelectorAll('span').length ?? 0).toBe(0);
+  });
+
+  it('keeps the plain account line when the caller supplies no footer', () => {
+    renderSidebar();
+    expect(screen.getByText('已登录: user')).toBeInTheDocument();
+  });
+
+  it('replaces the account line with the caller session cluster', () => {
+    renderSidebar({ footer: <div data-testid="session-footer">实时</div> });
+    expect(screen.getByTestId('session-footer')).toBeInTheDocument();
+    expect(screen.queryByText('已登录: user')).toBeNull();
   });
 });

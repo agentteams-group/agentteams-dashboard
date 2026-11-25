@@ -1,14 +1,13 @@
 'use client';
 
 import { useRef, useEffect, useState, useMemo } from 'react';
+import Image from 'next/image';
 import type { RefObject } from 'react';
 import { useTheme } from '@/components/theme/theme-provider';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   Search,
-  Bot,
-  Users,
-  Crown,
+  X,
   Zap,
   RefreshCw,
   Sun,
@@ -16,13 +15,14 @@ import {
   Contrast,
   Settings,
   Menu,
-  UserCircle,
+  ImageIcon,
   LogOut,
+  ChevronRight,
 } from 'lucide-react';
+import { isComposing, isDesktopHover } from '@/lib/desktop-interactions';
 import { apiUrl } from '@/lib/api-base';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,14 +36,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { ConnectionStatus } from './connection-status';
 import { NotificationPopover } from './notification-popover';
 import { PluginToolbarButtons } from '@/components/plugins/plugin-toolbar-buttons';
 import { createActions, isCreateActionVisible, type CreateAction, type DeploymentMode } from './nav-items';
 import { CommandPalette, useGlobalSearch, type SearchResult } from './command-palette';
 import { openChatRoom } from '@/lib/open-chat-room';
+import { AccountAvatar } from './account-avatar';
+import { AvatarEditor } from './avatar-editor';
 import type { WorkerResponse, TeamResponse, ManagerResponse, HumanResponse } from '@/lib/agentteams-api';
 
 interface DashboardHeaderProps {
+  pageLabel?: string;
+  groupLabel?: string;
   isConnected: boolean;
   workerCount: number;
   teamCount: number;
@@ -66,10 +71,9 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({
+  pageLabel = '首页',
+  groupLabel,
   isConnected,
-  workerCount,
-  teamCount,
-  managerCount,
   versionString,
   isRefreshingAll,
   searchQuery,
@@ -89,11 +93,16 @@ export function DashboardHeader({
   const { resolvedTheme, setTheme, locked: themeLocked } = useTheme();
   const internalRef = useRef<HTMLInputElement>(null);
   const searchInputRef = externalRef ?? internalRef;
+  const [query, setQuery] = useState(searchQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waitingForQuery = !!query.trim() && query !== debouncedQuery;
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
 
-  const searchResults = useGlobalSearch(debouncedQuery, workers, teams, managers, humans);
+  const searchResults = useGlobalSearch(query.trim() ? debouncedQuery : '', workers, teams, managers, humans, {
+    enabled: paletteOpen && !waitingForQuery,
+    mode,
+  });
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
 
@@ -102,11 +111,11 @@ export function DashboardHeader({
     // The login UI is rendered at the ROOT path (page.tsx shows LoginPage when
     // unauthenticated) — there is no /login route (404).
     void fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' }).finally(() => {
-      window.location.replace('/');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
     });
   };
 
-  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? 'L2' : '观察者';
+  const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? '团队成员' : '观察者';
 
   const visibleActions = useMemo(
     () => actions.filter((action) => isCreateActionVisible(action, mode, undefined, userLevel)),
@@ -119,26 +128,20 @@ export function DashboardHeader({
     const index = order.indexOf(resolvedTheme.id);
     setTheme(order[(index + 1) % order.length]);
   };
-  const themeLabel =
-    resolvedTheme.id === 'high-contrast'
-      ? '高对比度主题'
-      : resolvedTheme.base === 'dark'
-        ? '暗色主题'
-        : '亮色主题';
+  const themeLabel = resolvedTheme.nameZh || resolvedTheme.name;
 
   useEffect(() => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      onSearchChange(debouncedQuery);
-    }, 300);
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [debouncedQuery, onSearchChange]);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+      onSearchChange(query);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, onSearchChange]);
 
   useEffect(() => {
-    const input = searchInputRef.current;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || isComposing()) return;
+      const input = searchInputRef.current;
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (isCmdOrCtrl && e.key === 'k') {
         e.preventDefault();
@@ -150,12 +153,13 @@ export function DashboardHeader({
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [searchInputRef]);
 
   return (
-    <header className="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center gap-3 px-4 sticky top-0 z-30">
+    <header className="workspace-header min-h-14 shrink-0 border-b border-border bg-background flex flex-wrap items-center gap-2 py-2 sticky top-0 z-30">
+      <div className="workspace-header-main flex min-w-0 flex-wrap items-center gap-3">
       <Button
         variant="ghost"
         size="icon"
@@ -166,75 +170,67 @@ export function DashboardHeader({
         <Menu className="w-5 h-5" aria-hidden="true" />
       </Button>
 
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+      <nav aria-label="面包屑" className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <span className="hidden sm:inline">AgentTeams</span><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/agentteams-logo.svg`} alt="AgentTeams" width={20} height={20} className="shrink-0 sm:hidden" /><ChevronRight className="size-3 shrink-0" aria-hidden />
+        {groupLabel && groupLabel !== pageLabel && <><span className="hidden sm:inline">{groupLabel}</span><ChevronRight className="hidden size-3 shrink-0 sm:block" aria-hidden /></>}
+        <span aria-current="page" title={pageLabel} className="truncate font-semibold text-foreground">{pageLabel}</span>
+      </nav>
+      <div className="workspace-search relative min-w-0" data-open={paletteOpen}
+        onPointerEnter={event => { if (isDesktopHover(event)) { setPaletteOpen(true); searchInputRef.current?.focus({ preventScroll: true }); } }}
+        onPointerLeave={event => {
+          if (event.pointerType !== 'mouse' || isComposing()) return;
+          setPaletteOpen(false);
+          if (document.activeElement === searchInputRef.current) searchInputRef.current?.blur();
+        }}
+        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaletteOpen(false); }}>
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
           ref={searchInputRef}
-          placeholder="搜索页面、房间、Workers、团队... (K)"
-          value={debouncedQuery}
-          onChange={(e) => setDebouncedQuery(e.target.value)}
+          placeholder={paletteOpen ? "搜索页面、任务、技能或工具…" : "搜索工作区"}
+          aria-label="搜索工作区"
+          value={query}
+          onChange={event => { setQuery(event.target.value); setPaletteOpen(true); }}
           onFocus={() => setPaletteOpen(true)}
-          onBlur={() => {
-            // Delay closing so click events on results can fire
-            setTimeout(() => setPaletteOpen(false), 200);
-          }}
-          className="pl-9 h-9 bg-background/50"
+          onClick={() => setPaletteOpen(true)}
+          className="h-9 rounded-full border-border bg-background pl-9 pr-8 shadow-none"
         />
-        {paletteOpen && searchResults.length > 0 && (
-          <CommandPalette
-            results={searchResults}
-            onSelect={(result: SearchResult) => {
-              if (result.roomId) {
-                openChatRoom(result.roomId);
-              }
-              onNavClick(result.section);
-              setDebouncedQuery('');
-              setPaletteOpen(false);
-              searchInputRef.current?.blur();
-            }}
-            onClose={() => setPaletteOpen(false)}
-          />
-        )}
+        {query && <button type="button" aria-label="清除搜索" title="清除搜索"
+          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+          onMouseDown={event => event.preventDefault()}
+          onClick={() => {
+            setQuery('');
+            setDebouncedQuery('');
+            setPaletteOpen(true);
+            searchInputRef.current?.focus({ preventScroll: true });
+          }}>
+          <X className="size-4" aria-hidden="true" />
+        </button>}
+        {paletteOpen && <CommandPalette
+          key={query.trim()}
+          inputRef={searchInputRef}
+          query={query.trim()}
+          loading={waitingForQuery}
+          results={waitingForQuery ? [] : searchResults}
+          onSelect={(result: SearchResult) => {
+            if (result.roomId) openChatRoom(result.roomId);
+            if (result.hash) window.location.hash = result.hash;
+            else onNavClick(result.section);
+            setQuery('');
+            setDebouncedQuery('');
+            setPaletteOpen(false);
+            searchInputRef.current?.blur();
+          }}
+          onClose={() => setPaletteOpen(false)}
+        />}
+      </div>
       </div>
 
-      {isConnected && (
-        <div className="hidden lg:flex items-center">
-          {/* 资源计数合并为一枚胶囊（优化反馈：三个独立徽章视觉噪音），
-              tooltip 分项说明 */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className="text-[10px] h-6 gap-2 px-2 bg-background/40 text-muted-foreground"
-              >
-                <span className="flex items-center gap-1">
-                  <Bot className="w-3 h-3" />
-                  {workerCount}
-                </span>
-                <span className="h-3 w-px bg-border" aria-hidden="true" />
-                <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {teamCount}
-                </span>
-                <span className="h-3 w-px bg-border" aria-hidden="true" />
-                <span className="flex items-center gap-1">
-                  <Crown className="w-3 h-3" />
-                  {managerCount}
-                </span>
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              Workers {workerCount} · 团队 {teamCount} · Managers {managerCount}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs">
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm" aria-label="创建">
             <Zap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">快速操作</span>
+            <span className="hidden sm:inline">创建</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
@@ -245,7 +241,11 @@ export function DashboardHeader({
             return (
               <DropdownMenuItem
                 key={action.id}
-                onClick={() => onNavClick(action.section)}
+                onClick={() => {
+                  // 精确深链（如团队与Agent 的 tab）优先；其余仍走 section 导航。
+                  if (action.hash) window.location.hash = action.hash;
+                  else onNavClick(action.section);
+                }}
                 className="cursor-pointer"
               >
                 <ActionIcon className="w-4 h-4" />
@@ -256,7 +256,6 @@ export function DashboardHeader({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -265,6 +264,7 @@ export function DashboardHeader({
               className="h-9 w-9"
               onClick={onRefreshAll}
               disabled={isRefreshingAll}
+              aria-label="刷新所有数据"
             >
               <RefreshCw className={`h-4 w-4 ${isRefreshingAll ? 'animate-spin' : ''}`} />
             </Button>
@@ -275,51 +275,16 @@ export function DashboardHeader({
         {/* Plugin-contributed toolbar buttons (extension point: toolbar) */}
         <PluginToolbarButtons />
 
-        {/* 连接状态 + 版本合并为单状态胶囊（优化反馈：减少独立徽章；
-            hover 显示版本与延迟详情） */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              className={`gap-1.5 text-xs cursor-default ${
-                isConnected
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
-              }`}
-              variant="outline"
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}
-                aria-hidden="true"
-              />
-              <span className="hidden sm:inline">{isConnected ? '在线' : '离线'}</span>
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {isConnected ? 'Controller 已连接' : 'Controller 未连接'}
-            {versionString && <div className="text-[10px] opacity-80">版本 v{versionString}</div>}
-          </TooltipContent>
-        </Tooltip>
+        <ConnectionStatus isConnected={isConnected} versionString={versionString} mode={mode} />
 
         <NotificationPopover />
 
         {sessionUser && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-xs">
-                <UserCircle className="h-4 w-4" />
-                <span className="max-w-[120px] truncate">{sessionUser}</span>
-                <Badge
-                  variant="secondary"
-                  className={`text-[10px] ${
-                    userLevel === 3
-                      ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-                      : userLevel === 2
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                        : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
-                  }`}
-                >
-                  {levelLabel}
-                </Badge>
+              <Button variant="ghost" size="sm" className="h-9 gap-2 px-2 text-sm" aria-label={sessionUser}>
+                <AccountAvatar kind="human" name={sessionUser} className="size-6" />
+                <span className="hidden sm:inline max-w-[120px] truncate">{sessionUser}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
@@ -328,6 +293,10 @@ export function DashboardHeader({
                 {sessionUser} · {levelLabel}
               </div>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setAvatarOpen(true)}>
+                <ImageIcon className="mr-2 h-4 w-4" />
+                更换我的头像
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400">
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
@@ -362,6 +331,7 @@ export function DashboardHeader({
           <Settings className="w-4 h-4" aria-hidden="true" />
         </Button>
       </div>
+      {avatarOpen && sessionUser && <AvatarEditor key={sessionUser} kind="human" name={sessionUser} onClose={() => setAvatarOpen(false)} />}
     </header>
   );
 }

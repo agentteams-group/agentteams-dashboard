@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
 import {
   __resetSessionStoreForTests,
@@ -16,6 +17,7 @@ import {
   type BackendName,
   type BackendProbeFn,
 } from '@/lib/backend-config';
+import { __resetBackendUrlResolutionForTests } from '@/lib/backend-url-resolve';
 import { listAuditEvents, resetAuditLogForTests } from '@/lib/audit-log';
 import { GET, POST } from './route';
 
@@ -74,6 +76,7 @@ beforeEach(() => {
   vi.stubEnv('AGENTTEAMS_MATRIX_URL', '');
   vi.stubEnv('NEXT_PUBLIC_MATRIX_API_URL', '');
   __resetSessionStoreForTests();
+  __resetBackendUrlResolutionForTests();
   for (const name of BACKEND_NAMES) forgetWorking(name);
 });
 
@@ -399,6 +402,85 @@ describe('POST /api/agentteams/setup/backends', () => {
   });
 });
 
+describe('无协议地址（host:port）：保存前按 https 优先解析协议', () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      // 一个只讲明文 HTTP 的后端：https 探测必须失败、http 探测命中。
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('no server address');
+    base = `http://127.0.0.1:${addr.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('https 不通 → 回退 http，落库值带协议，并回报解析结果', async () => {
+    const bare = base.replace(/^http:\/\//, '');
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: bare } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      ok: boolean;
+      resolved?: Record<string, { internal?: string }>;
+      warnings?: unknown;
+    };
+    expect(data.ok).toBe(true);
+    expect(data.resolved?.controller.internal).toBe(base);
+    expect(data.warnings).toBeUndefined();
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: base });
+  });
+
+  it('两路都探测不到 → 按 https 落地 + warnings（不静默存成 http）', async () => {
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: '127.0.0.1:1' } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      ok: boolean;
+      warnings?: Array<Record<string, string>>;
+    };
+    expect(data.ok).toBe(true);
+    expect(data.warnings).toEqual([
+      {
+        backend: 'controller',
+        slot: 'internal',
+        input: '127.0.0.1:1',
+        url: 'https://127.0.0.1:1',
+        warning: 'scheme_unresolved',
+      },
+    ]);
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'https://127.0.0.1:1' });
+  });
+
+  it('显式 http:// 不会被升级（用户明确要求明文）', async () => {
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: base } } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { resolved?: Record<string, { internal?: string }> };
+    expect(data.resolved?.controller.internal).toBe(base);
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: base });
+  });
+});
+
 describe('F1f shared mode (DASHBOARD_SHARED_MODE=1, e.g. a shared multi-user deployment)', () => {
   beforeEach(async () => {
     vi.stubEnv('DASHBOARD_SHARED_MODE', '1');
@@ -542,6 +624,45 @@ describe('F1f3: DASHBOARD_SETUP_TOKEN_ENFORCE=0 (installer opt-out)', () => {
     const res = await GET(makeRequest());
     const data = (await res.json()) as { setupTokenRequired: boolean };
     expect(data.setupTokenRequired).toBe(false);
+  });
+
+  // 实测阻塞：ENFORCE=0 保存后重开 ?setup=1，地址回显为空。token 门关闭时
+  // pre-login 写本来就开放（POST 同门），隐藏拓扑不增安全性，只坏回填。
+  it('GET without token prefills the saved topology (enforce=0)', async () => {
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: { controller: { internal: 'http://in:8090', external: 'http://out:8090' } },
+      }),
+    );
+    vi.stubEnv('DASHBOARD_SETUP_TOKEN_ENFORCE', '0');
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      backends?: Record<string, { candidates: string[] }>;
+      entries?: Record<string, { internal?: unknown }>;
+      effective?: Record<string, string>;
+    };
+    expect(data.backends?.controller?.candidates).toEqual(['http://in:8090', 'http://out:8090']);
+    expect(data.entries?.controller?.internal).toBe('http://in:8090');
+    expect(data.effective).toBeDefined();
+  });
+
+  it('GET without token stays gate-shape when the gate is enforced (enforce=1)', async () => {
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({ version: 1, backends: { controller: { internal: 'http://in:8090' } } }),
+    );
+    const res = await GET(makeRequest());
+    const data = (await res.json()) as {
+      backends?: unknown;
+      entries?: unknown;
+      effective?: unknown;
+    };
+    expect(data.backends).toBeUndefined();
+    expect(data.entries).toBeUndefined();
+    expect(data.effective).toBeUndefined();
   });
 
   it('default (env unset) keeps the gate: GET reports required', async () => {

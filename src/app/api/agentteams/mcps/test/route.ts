@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { withMcpClient } from '@/lib/server/mcp-client';
 
 interface McpTestRequestBody {
   url?: unknown;
@@ -105,7 +106,7 @@ function describeHttpFailure(status: number, transport: string): string {
  * POST /api/agentteams/mcps/test — MCP Server connectivity probe.
  *
  * Performs a real MCP `initialize` handshake (streamable HTTP: single POST;
- * legacy SSE: open the GET event stream). Auth headers registered with the
+ * legacy SSE: open the GET stream and initialize via its message endpoint). Auth headers registered with the
  * server are forwarded, so proxies that require Authorization are testable.
  */
 export async function POST(request: NextRequest) {
@@ -137,33 +138,10 @@ export async function POST(request: NextRequest) {
 
   try {
     if (transport === 'sse') {
-      // Legacy SSE transport: the server keeps a GET event stream open.
-      const streamResponse = await fetch(url, {
-        method: 'GET',
-        headers: { Accept: 'text/event-stream', ...headers },
-        signal: controller.signal,
-      });
-      if (!streamResponse.ok || !streamResponse.body) {
-        return jsonResult({
-          success: false,
-          message: describeHttpFailure(streamResponse.status, transport),
-          statusCode: streamResponse.status,
-          latencyMs: Date.now() - startedAt,
-        });
-      }
-      const reader = streamResponse.body.getReader();
-      const { value } = await reader.read();
-      reader.cancel().catch(() => undefined);
-      const chunk = value ? new TextDecoder().decode(value) : '';
-      const parsed = parseMcpResponse(chunk);
-      return jsonResult({
-        success: parsed.ok,
-        message: parsed.ok
-          ? `SSE 通道已打开${parsed.detail ? `: ${parsed.detail}` : ''}`
-          : `SSE 通道打开但握手异常: ${parsed.detail ?? '未知错误'}`,
-        statusCode: streamResponse.status,
-        latencyMs: Date.now() - startedAt,
-      });
+      // The first event advertises a POST endpoint; it is not an initialize
+      // response. Reuse the client that follows that endpoint and matches IDs.
+      await withMcpClient(url, transport, headers, timeoutMs, async () => undefined);
+      return jsonResult({ success: true, message: 'SSE 初始化成功', statusCode: 200, latencyMs: Date.now() - startedAt });
     }
 
     // Streamable HTTP: initialize is a single POST returning JSON or SSE.

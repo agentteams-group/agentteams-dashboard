@@ -1,20 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import {
+  auditHash,
+  currentHashParams,
   hashForActiveSection,
   hashForSection,
   isLayeredHash,
+  loopHash,
   needsHashNormalization,
   resolveHash,
+  tasksHash,
+  taskCollaborationHash,
+  teamAgentsHash,
 } from './nav-hash';
 
 const allSections = new Set([
-  'overview', 'chat', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
-  'resources', 'workers', 'managers', 'teams', 'humans', 'skills', 'models',
-  'knowledge', 'audit',
+  'overview', 'chat', 'my-teams', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
+  'resources', 'team-agents', 'workers', 'teams', 'platform-assistant-settings', 'humans', 'skills', 'models',
+  'knowledge', 'audit', 'tools',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
 
+it('round-trips task collaboration under the task board, including escaped IDs', () => {
+  const hash = taskCollaborationHash('任务/123', '!execution:test');
+  expect(hash).toMatch(/^#workbench\/tasks\//);
+  expect(resolveHash(hash.slice(1), isKnown)).toMatchObject({ section: 'chat', taskId: '任务/123', roomId: '!execution:test' });
+});
+
 describe('isLayeredHash', () => {
+  it('resolves the separate my-teams route and team room deep links', () => {
+    expect(hashForSection('my-teams')).toBe('workbench/teams');
+    expect(resolveHash('workbench/teams/!group:test', isKnown)).toEqual({ section: 'my-teams', roomId: '!group:test', params: undefined });
+  });
   it('accepts workbench and console prefixes', () => {
     expect(isLayeredHash('workbench/space')).toBe(true);
     expect(isLayeredHash('console/resources/workers')).toBe(true);
@@ -27,6 +43,12 @@ describe('isLayeredHash', () => {
 });
 
 describe('hashForSection', () => {
+  it('round-trips the tool page while retaining the old model, skill and knowledge routes', () => {
+    for (const section of ['tools', 'models', 'skills', 'knowledge']) {
+      expect(resolveHash(hashForSection(section), isKnown)?.section).toBe(section);
+      expect(resolveHash(section, isKnown)?.section).toBe(section);
+    }
+  });
   it('returns the canonical layered hash for each section (附录 A)', () => {
     expect(hashForSection('chat')).toBe('workbench/space');
     expect(hashForSection('tasks')).toBe('workbench/tasks');
@@ -35,10 +57,11 @@ describe('hashForSection', () => {
     expect(hashForSection('loops')).toBe('workbench/loop');
     expect(hashForSection('my-workbench')).toBe('workbench/me');
     expect(hashForSection('resources')).toBe('console/resources');
+    expect(hashForSection('team-agents')).toBe('console/resources/team-agents');
     expect(hashForSection('workers')).toBe('console/resources/workers');
-    expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('teams')).toBe('console/resources/teams');
     expect(hashForSection('humans')).toBe('console/resources/humans');
+    expect(hashForSection('managers')).toBe('console/resources/managers');
     expect(hashForSection('skills')).toBe('console/resources/skills');
     expect(hashForSection('models')).toBe('console/resources/models');
     expect(hashForSection('knowledge')).toBe('console/resources/knowledge');
@@ -52,8 +75,8 @@ describe('hashForActiveSection', () => {
     expect(hashForActiveSection('resources', '#console/resources/humans')).toBe(
       'console/resources/humans'
     );
-    expect(hashForActiveSection('resources', '#console/resources/workers')).toBe(
-      'console/resources/workers'
+    expect(hashForActiveSection('resources', '#console/resources/managers')).toBe(
+      'console/resources/managers'
     );
   });
 
@@ -68,6 +91,46 @@ describe('hashForActiveSection', () => {
   it('never preserves a third segment for non-resource sections', () => {
     expect(hashForActiveSection('chat', '#console/resources/humans')).toBe('workbench/space');
   });
+
+  it('keeps the team-agents tab when rewriting legacy workers/teams routes', () => {
+    expect(hashForActiveSection('team-agents', '#console/resources/workers')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/teams')).toBe(
+      'console/resources/team-agents?tab=teams',
+    );
+    expect(hashForActiveSection('team-agents', '#workers')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/team-agents?tab=agents')).toBe(
+      'console/resources/team-agents?tab=agents',
+    );
+    expect(hashForActiveSection('team-agents', '#console/resources/team-agents')).toBe(
+      'console/resources/team-agents',
+    );
+  });
+
+  it('keeps the deep-link query that belongs to the section we land on', () => {
+    // C-2 / B-1：面板、通知的深链都靠这几个参数选中东西，section 同步不能抹掉它。
+    expect(hashForActiveSection('tasks', '#workbench/tasks?project=run-1')).toBe(
+      'workbench/tasks?project=run-1',
+    );
+    expect(hashForActiveSection('audit', '#console/governance/audit?entity=worker')).toBe(
+      'console/governance/audit?entity=worker',
+    );
+    // 房间段照旧收敛（roomId 走 store 手渡），但词得留在地址里。
+    expect(hashForActiveSection('chat', '#workbench/space/!abc:hs.example?q=%E7%BC%93%E5%AD%98')).toBe(
+      'workbench/space?q=%E7%BC%93%E5%AD%98',
+    );
+    expect(
+      hashForActiveSection('resources', '#console/resources/humans?project=run-1'),
+    ).toBe('console/resources/humans?project=run-1');
+  });
+
+  it('drops a query that belongs to another section', () => {
+    expect(hashForActiveSection('chat', '#workbench/tasks?project=run-1')).toBe('workbench/space');
+    expect(hashForActiveSection('resources', '#workbench/space?q=x')).toBe('console/resources');
+  });
 });
 
 describe('resolveHash — layered hashes', () => {
@@ -80,6 +143,13 @@ describe('resolveHash — layered hashes', () => {
       section: 'chat',
       roomId: '!abcRoom:example.org',
     });
+  });
+
+  it('decodes room ids written by encoded conversation links', () => {
+    for (const section of ['space', 'teams']) {
+      expect(resolveHash(`workbench/${section}/${encodeURIComponent('!room:test:58280')}`, isKnown)?.roomId)
+        .toBe('!room:test:58280');
+    }
   });
 
   it('resolves task-center hashes', () => {
@@ -99,12 +169,23 @@ describe('resolveHash — layered hashes', () => {
   });
 
   it('resolves console hashes (附录 A；F7.1 资源路径进容器)', () => {
-    expect(resolveHash('console/resources', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/workers', isKnown)?.section).toBe('resources');
-    expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('resources');
+    expect(resolveHash('console/resources', isKnown)?.section).toBe('workers');
+    expect(resolveHash('console/resources/team-agents', isKnown)?.section).toBe('teams');
+    expect(resolveHash('console/resources/humans', isKnown)?.section).toBe('humans');
     expect(resolveHash('console/resources/skills', isKnown)?.section).toBe('skills');
     expect(resolveHash('console/governance/audit', isKnown)?.section).toBe('audit');
     expect(resolveHash('console/system/overview', isKnown)?.section).toBe('overview');
+  });
+
+  it('resolves separate workers/teams pages and preserves old merged-page params', () => {
+    const workers = resolveHash('console/resources/workers', isKnown);
+    expect(workers?.section).toBe('workers');
+    const teams = resolveHash('console/resources/teams', isKnown);
+    expect(teams?.section).toBe('teams');
+    // 已规范化的合并页深链原样保留 tab。
+    expect(resolveHash('console/resources/team-agents?tab=agents', isKnown)?.params?.get('tab')).toBe(
+      'agents',
+    );
   });
 
   it('returns null for unknown layered paths', () => {
@@ -117,12 +198,17 @@ describe('resolveHash — legacy flat hashes stay reachable (PRD §5.4)', () => 
   it('resolves every legacy flat hash', () => {
     const legacy = [
       'overview', 'chat', 'tasks', 'artifacts', 'coding-runs',
-      'workers', 'managers', 'teams', 'humans', 'skills', 'models',
-      'knowledge', 'audit',
+      'humans', 'skills', 'models', 'knowledge', 'audit',
     ];
     for (const hash of legacy) {
       expect(resolveHash(hash, isKnown)?.section).toBe(hash);
     }
+  });
+
+  it('resolves legacy flat member and Manager links', () => {
+    expect(resolveHash('workers', isKnown)?.section).toBe('workers');
+    expect(resolveHash('teams', isKnown)?.section).toBe('teams');
+    expect(resolveHash('managers', isKnown)?.section).toBe('platform-assistant-settings');
   });
 
   it('keeps the projects alias resolving to the task board', () => {
@@ -138,6 +224,47 @@ describe('resolveHash — legacy flat hashes stay reachable (PRD §5.4)', () => 
   it('returns null for unknown flat hashes', () => {
     expect(resolveHash('unknown-section', isKnown)).toBeNull();
     expect(resolveHash('agents/workers', isKnown)).toBeNull();
+  });
+});
+
+describe('深链构造器与参数读取（方案 v3 C-2）', () => {
+  it('不带 id 时只给规范的 section hash（不会留一个空参数）', () => {
+    expect(tasksHash()).toBe('#workbench/tasks');
+    expect(loopHash()).toBe('#workbench/loop');
+    expect(auditHash()).toBe('#console/governance/audit');
+    expect(teamAgentsHash()).toBe('#console/resources/team-agents');
+    expect(teamAgentsHash('agents')).toBe('#console/resources/team-agents?tab=agents');
+    expect(resolveHash('workbench/tasks', isKnown)?.params).toBeUndefined();
+  });
+
+  it('写出的 hash 能被反向解析回同一 section 与参数（id 带分隔符也不能碎）', () => {
+    const cases = [
+      { build: tasksHash('p/1&x'), section: 'tasks', key: 'project', value: 'p/1&x' },
+      { build: loopHash('l 1'), section: 'loops', key: 'loop', value: 'l 1' },
+      { build: auditHash('worker'), section: 'audit', key: 'entity', value: 'worker' },
+    ];
+    for (const { build, section, key, value } of cases) {
+      const resolved = resolveHash(build.replace(/^#/, ''), isKnown);
+      expect(resolved?.section).toBe(section);
+      expect(resolved?.params?.get(key)).toBe(value);
+    }
+  });
+
+  it('currentHashParams 读的是当前 hash 上的查询参数', () => {
+    window.location.hash = tasksHash('p-9');
+    expect(currentHashParams()?.get('project')).toBe('p-9');
+    window.location.hash = '#workbench/tasks';
+    // URLSearchParams.get 对不存在的 key 返回 undefined（不是 null）
+    expect(currentHashParams()?.get('project')).toBeUndefined();
+  });
+
+  it('路径型深链（房间）与查询参数互不干扰', () => {
+    window.location.hash = '#workbench/space/!abc:hs.example?project=p-1';
+    expect(currentHashParams()?.get('project')).toBe('p-1');
+    expect(resolveHash(window.location.hash.replace(/^#/, ''), isKnown)).toMatchObject({
+      section: 'chat',
+      roomId: '!abc:hs.example',
+    });
   });
 });
 

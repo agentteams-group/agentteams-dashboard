@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthToken } from '../proxy-helper';
 import {
+  backendAuthHeader,
   markWorking,
   pickBackendUrl,
   probeBackend,
+  type BackendName,
 } from '@/lib/backend-config';
 import type { InfrastructureInfo } from '@/lib/agentteams-api';
 
@@ -173,13 +175,16 @@ async function checkSglang(url: string | undefined): Promise<InfrastructureInfo[
   return { healthy: result.httpOk, endpoint: url };
 }
 
-async function checkExternalService(endpoint: string | undefined) {
+async function checkExternalService(name: BackendName, endpoint: string | undefined) {
   if (!endpoint) {
     return { configured: false, state: 'unconfigured' as const };
   }
 
   try {
-    const res = await fetchWithTimeout(new URL('/', endpoint).toString());
+    // 逐地址覆盖凭据（Basic / Bearer 网关门）：只在命中保存的该后端地址时注入。
+    const res = await fetchWithTimeout(new URL('/', endpoint).toString(), {
+      headers: backendAuthHeader(name, endpoint),
+    });
     return {
       configured: true,
       endpoint,
@@ -213,7 +218,12 @@ async function checkHigressGateway(endpoint: string | undefined) {
     const probeUrl = new URL('/v1/chat/completions', endpoint).toString();
     const res = await fetchWithTimeout(probeUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // 逐地址覆盖凭据：网关前的 Basic 门 / API key 门命中保存地址时注入；
+      // 未配置则保持原来的匿名探测语义（401/403 也算数据面可达）。
+      headers: {
+        'Content-Type': 'application/json',
+        ...backendAuthHeader('higress-gateway', endpoint),
+      },
       body: JSON.stringify({ model: 'health-probe', messages: [{ role: 'user', content: 'ok' }] }),
     });
     // 404 => path not handled by ai-proxy (misconfigured gateway/route).
@@ -243,7 +253,7 @@ async function checkHigress(
 ): Promise<NonNullable<InfrastructureInfo['higress']>> {
   const [gateway, console] = await Promise.all([
     checkHigressGateway(gatewayEndpoint),
-    checkExternalService(consoleEndpoint),
+    checkExternalService('higress-console', consoleEndpoint),
   ]);
   if (gateway.state === 'reachable' && gatewayEndpoint) markWorking('higress-gateway', gatewayEndpoint);
   if (console.state === 'reachable' && consoleEndpoint) markWorking('higress-console', consoleEndpoint);

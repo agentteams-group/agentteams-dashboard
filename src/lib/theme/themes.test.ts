@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_THEMES, DEFAULT_THEME_ID, findBuiltinTheme, isBuiltinThemeId } from './themes';
 
 describe('built-in themes', () => {
-  it('provides light, dark and high-contrast', () => {
+  it('provides the neutral pair, high contrast and optional warm white', () => {
     const ids = BUILTIN_THEMES.map((t) => t.id);
-    expect(ids).toEqual(['light', 'dark', 'high-contrast']);
+    expect(ids).toEqual(['light', 'dark', 'high-contrast', 'warm']);
   });
 
   it('all built-ins are flagged builtin and have a base', () => {

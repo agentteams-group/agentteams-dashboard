@@ -70,7 +70,10 @@ export function ModelSelector({
   const selectedRouteAuth = describeRouteAuthorization(
     selectedOption?.kind === 'configured' ? selectedOption.routeAuth : undefined,
   );
-  const customActive = customMode || Boolean(value && !known);
+  // 只有用户显式点「自定义别名」才进入输入框；未知当前值保持 Select 可见，
+  // 并在候选顶部补一个“当前值”项（否则 trigger 只显示占位符、候选也看不到）。
+  const unknownValue = Boolean(value && !known);
+  const customActive = customMode;
 
   if (customActive) {
     return (
@@ -122,10 +125,21 @@ export function ModelSelector({
         }}
         disabled={disabled}
       >
-        <SelectTrigger className="w-full min-w-0" aria-label="请求模型别名">
+        <SelectTrigger className="w-full min-w-0 overflow-hidden" aria-label="请求模型别名">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent className="max-w-[min(100vw-2rem,28rem)]">
+        <SelectContent className="max-h-[min(60vh,320px,var(--radix-select-content-available-height))] max-w-[min(100vw-2rem,28rem)]">
+          {unknownValue && value && (
+            <SelectGroup>
+              <SelectLabel>当前值（不在候选列表）</SelectLabel>
+              <SelectItem value={value} className="min-w-0">
+                <span className="block min-w-0 truncate font-mono">{value}</span>
+                <span className="block min-w-0 truncate text-xs text-muted-foreground">
+                  仍会按该别名提交；可从下方改选已有模型
+                </span>
+              </SelectItem>
+            </SelectGroup>
+          )}
           {configuredOptions.length > 0 && (
             <SelectGroup>
               <SelectLabel>Higress alias（路由可解析）</SelectLabel>
@@ -135,16 +149,16 @@ export function ModelSelector({
                     <span className="font-mono truncate">{option.alias}</span>
                   </span>
                   {option.kind === 'configured' && option.binding ? (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       {option.binding.routeName} / {option.binding.providerName} / {option.binding.targetModel}
                     </span>
                   ) : (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       网关路由可解析
                     </span>
                   )}
                   {option.kind === 'configured' && option.routeAuth ? (
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       {describeRouteAuthorization(option.routeAuth)}
                     </span>
                   ) : null}
@@ -159,12 +173,12 @@ export function ModelSelector({
                 <SelectItem key={option.alias} value={option.alias} className="min-w-0">
                   <span className="flex items-center gap-1.5 min-w-0">
                     <span className="font-mono truncate">{option.alias}</span>
-                    <Badge variant="secondary" className="text-[11px] shrink-0">
+                    <Badge variant="secondary" className="text-xs shrink-0">
                       <Sparkles className="mr-0.5 size-2.5" />
                       内置
                     </Badge>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block min-w-0 truncate text-xs text-muted-foreground">
                     内置模型，需在「模型管理」配置路由映射
                   </span>
                 </SelectItem>
@@ -178,12 +192,12 @@ export function ModelSelector({
                 <SelectItem key={option.alias} value={option.alias} className="min-w-0">
                   <span className="flex items-center gap-1.5 min-w-0">
                     <span className="font-mono truncate">{option.alias}</span>
-                    <Badge variant="secondary" className="text-[11px] shrink-0">
+                    <Badge variant="secondary" className="text-xs shrink-0">
                       <Cpu className="mr-0.5 size-2.5" />
                       SGLang
                     </Badge>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block min-w-0 truncate text-xs text-muted-foreground">
                     SGLang 推理服务在线模型，经 AI 网关路由转发
                   </span>
                 </SelectItem>
@@ -191,6 +205,11 @@ export function ModelSelector({
             </SelectGroup>
           )}
 
+          {uniqueOptions.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              暂无可选模型别名；可选择「自定义别名」手动输入。
+            </p>
+          )}
           {uniqueOptions.length > 0 && <SelectSeparator />}
           <SelectItem value={CUSTOM_ALIAS}>
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -213,6 +232,11 @@ export function ModelSelector({
       ) : selectedOption?.kind === 'builtin' ? (
         <p className="text-xs text-amber-600/80 break-words">
           内置模型别名，请求经 AI 网关 Consumer 凭证转发；需先在「模型管理」为其配置路由映射。
+        </p>
+      ) : unknownValue ? (
+        <p className="text-xs text-muted-foreground break-words">
+          当前值「{value}」不在候选列表中，仍会按该别名提交；可从下方列表改选已有模型，
+          或选择「自定义别名」手动编辑。
         </p>
       ) : (
         <p className="text-xs text-muted-foreground break-words">

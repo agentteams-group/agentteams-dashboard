@@ -1,7 +1,8 @@
 'use client';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { AccountAvatar } from '@/components/dashboard/account-avatar';
 import { WorkerSessionCornerDot } from '@/components/worker-session-dot';
+import { useHumanNames, useRuntimeMap } from '../runtime-map-context';
 import type { RoomMember } from '@/hooks/use-matrix';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 
@@ -12,9 +13,11 @@ interface MembersPanelProps {
 
 /** 房间成员 body（无面板外框）：数据 = Matrix room members + Worker 心跳。 */
 export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps) {
+  const runtimeMap = useRuntimeMap();
+  const humanNames = useHumanNames();
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <p className="shrink-0 px-3 py-2 text-[10px] font-semibold tracking-wide text-muted-foreground">
+      <p className="shrink-0 px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground">
         成员 ({roomMembers.length})
       </p>
       <div className="flex-1 space-y-0.5 overflow-y-auto custom-scrollbar p-2 pt-0">
@@ -22,6 +25,7 @@ export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps
           const color = member.userId.split(':').pop() === 'agentteams.io'
             ? 'text-emerald-600'
             : 'text-muted-foreground';
+          const workerName = runtimeMap[member.userId]?.workerName;
           return (
             <div
               key={member.userId}
@@ -32,11 +36,8 @@ export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps
               title="点击复制用户ID"
             >
               <span className="relative inline-flex shrink-0">
-                <Avatar className="h-6 w-6 shrink-0">
-                  <AvatarFallback className={`text-[10px] ${color}`}>
-                    {member.displayName.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <AccountAvatar kind={workerName ? 'agent' : 'human'} name={workerName || humanNames[member.userId] || member.userId.split(':')[0].replace(/^@/, '')}
+                  label={member.displayName} className="size-6" fallbackClassName={`text-xs ${color}`} />
                 {/* A17（9/19）：成员列表头像角落状态灯（与消息头像同款
                     WorkerSessionCornerDot；人类成员无映射不显）。 */}
                 {senderStatusMap[member.userId] && (
@@ -45,7 +46,7 @@ export function MembersPanel({ roomMembers, senderStatusMap }: MembersPanelProps
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">{member.displayName}</p>
-                <p className="truncate font-mono text-[11px] text-muted-foreground">
+                <p className="truncate font-mono text-xs text-muted-foreground">
                   {member.userId.split(':')[0].slice(1)}
                 </p>
               </div>

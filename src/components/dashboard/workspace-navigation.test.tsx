@@ -1,0 +1,174 @@
+import '@testing-library/jest-dom/vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useExtensionStore } from '@/lib/plugins/extension-store';
+import { Sidebar } from './sidebar';
+import { MobileSidebar } from './mobile-sidebar';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { useRoomMetaStore } from '@/hooks/use-matrix';
+import type { RoomInfo } from './sections/chat/room-info';
+
+const labels = ['首页', '助手', '我的团队', '工作台', '资产中心', '成员与团队', '观测与治理'];
+const props = { activeSection: 'models', countMap: { 'my-workbench': 3 }, sectionsWithNotifications: new Set<string>(), onNavClick: vi.fn(), mode: 'embedded' as const };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  useAgentTeamsStore.setState({ userLevel: 3, taskBoardVisible: true, classicNavigation: false, settingsOpen: false });
+  useExtensionStore.getState().clear();
+  useExtensionStore.getState().add('menuItems', 'monitor', { id: 'dashboard', label: '监控面板', target: { type: 'plugin-route', routeId: 'dashboard' } });
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+describe('compact workspace navigation', () => {
+  it('keeps automation out of the sidebar workbench group', () => {
+    render(<Sidebar {...props} activeSection="tasks" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '自动化' })).toBeNull();
+  });
+  it('requires activation to expand groups and navigate from the sidebar', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    render(<Sidebar {...props} activeSection="chat" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const home = screen.getByRole('button', { name: '首页' });
+    const assets = screen.getByRole('button', { name: '资产中心' });
+    fireEvent.focus(home);
+    fireEvent.pointerEnter(home, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(assets, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(assets).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(assets);
+    const models = screen.getByRole('button', { name: '模型' });
+    fireEvent.pointerEnter(models, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(200));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+
+    fireEvent.click(models);
+    fireEvent.click(home);
+    expect(props.onNavClick.mock.calls).toEqual([['models'], ['overview']]);
+    expect(screen.getByRole('button', { name: '助手' })).toHaveAttribute('title', '助手');
+  });
+  it('moves Tracing into observability even before collection is configured', () => {
+    render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const tracing = screen.getByRole('button', { name: 'Tracing' });
+    expect(tracing).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '观测与治理' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(tracing);
+    expect(props.onNavClick).toHaveBeenCalledWith('tracing');
+  });
+  it('separates assistants and my teams while keeping management groups', () => {
+    render(<TooltipProvider><Sidebar {...props} collapsed={false} onToggleCollapse={vi.fn()} /></TooltipProvider>);
+    const nav = screen.getByRole('navigation', { name: '主要功能' });
+    expect(Array.from(nav.querySelectorAll('[data-nav-group]')).map(button => button.getAttribute('aria-label'))).toEqual(labels);
+    expect(within(nav).getByRole('button', { name: '资产中心' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('button', { name: '监控面板' })).toBeNull();
+    fireEvent.click(within(nav).getByRole('button', { name: /工作台/ }));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+    expect(within(nav).queryByRole('button', { name: '待你处理' })).toBeNull();
+    fireEvent.click(within(nav).getByRole('button', { name: '任务看板' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('tasks');
+    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+    expect(useAgentTeamsStore.getState().settingsOpen).toBe(true);
+  });
+
+  it('keeps the same destinations in the mobile drawer', () => {
+    render(<MobileSidebar {...props} countMap={{ ...props.countMap, humans: 1 }} open onClose={vi.fn()} />);
+    const nav = screen.getByRole('navigation', { name: '主要功能' });
+    expect(nav.querySelectorAll('[data-nav-group]')).toHaveLength(7);
+    for (const label of labels) expect(within(nav).getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
+    fireEvent.click(within(nav).getByRole('button', { name: '成员与团队' }));
+    expect(props.onNavClick).not.toHaveBeenCalled();
+    const members = within(screen.getByRole('group', { name: '成员与团队分类' }));
+    expect(members.getAllByRole('button').map(button => button.textContent)).toEqual(['Agent', '用户1', '团队']);
+    expect(members.queryByRole('button', { name: 'Managers' })).toBeNull();
+    fireEvent.click(members.getByRole('button', { name: 'Agent' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('workers');
+  });
+
+  it('groups only active operations plugins and highlights their existing deep links', () => {
+    useExtensionStore.getState().add('menuItems', 'wen-tian', { id: 'wen-tian-diagnose', label: '问天诊断', target: { type: 'plugin-route', routeId: 'diagnose' } });
+    useExtensionStore.getState().add('menuItems', 'monitor-panel', { id: 'monitor', label: '监控面板', target: { type: 'plugin-route', routeId: 'monitor' } });
+    render(<Sidebar {...props} activeSection="plugin-route:monitor-panel/monitor" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const group = within(screen.getByRole('group', { name: '观测与治理分类' }));
+    expect(group.getByRole('button', { name: '监控面板' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '问天诊断' })).not.toBeInTheDocument();
+    fireEvent.click(group.getByRole('button', { name: '监控面板' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('plugin-route:monitor-panel/monitor');
+    act(() => useExtensionStore.getState().removePlugin('monitor-panel'));
+    expect(screen.queryByRole('button', { name: '监控面板' })).not.toBeInTheDocument();
+  });
+
+  it('hides administrator diagnostics and monitor pages from Team accounts', () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    useExtensionStore.getState().add('menuItems', 'monitor-panel', { id: 'monitor', label: '监控面板', target: { type: 'plugin-route', routeId: 'monitor' } });
+    useExtensionStore.getState().add('menuItems', 'wen-tian', { id: 'diagnose', label: '问天诊断', target: { type: 'plugin-route', routeId: 'diagnose' } });
+    render(<Sidebar {...props} activeSection="tracing" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '问天诊断' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '监控面板' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tracing' })).toBeInTheDocument();
+  });
+
+  it('marks the parent menu for deep-linked work and asset pages when collapsed', () => {
+    const view = render(<TooltipProvider><Sidebar {...props} activeSection="coding-runs" collapsed onToggleCollapse={vi.fn()} /></TooltipProvider>);
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
+    view.rerender(<TooltipProvider><Sidebar {...props} activeSection="knowledge" collapsed onToggleCollapse={vi.fn()} /></TooltipProvider>);
+    expect(screen.getByRole('button', { name: '资产中心' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('expands and collapses asset pages in the left menu without navigation', () => {
+    render(<Sidebar {...props} activeSection="chat" collapsed={false} onToggleCollapse={vi.fn()} />);
+    const assets = screen.getByRole('button', { name: '资产中心' });
+    expect(assets).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: '模型' })).toBeNull();
+    fireEvent.click(assets);
+    expect(assets).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: '模型' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '工具' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('tools');
+    fireEvent.click(assets);
+    expect(assets).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: '工具' })).toBeNull();
+  });
+
+  it('expands the icon rail before exposing a group rather than navigating to its first page', () => {
+    const expand = vi.fn();
+    render(<Sidebar {...props} collapsed onToggleCollapse={expand} />);
+    fireEvent.click(screen.getByRole('button', { name: '资产中心' }));
+    expect(expand).toHaveBeenCalledOnce();
+    expect(props.onNavClick).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: '工具' })).toBeNull();
+  });
+
+  it('hides privileged member pages from Team accounts and selects a deep-linked child', () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    render(<Sidebar {...props} activeSection="teams" collapsed={false} onToggleCollapse={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '团队' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Agent' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '用户' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Managers' })).toBeNull();
+  });
+
+  it('opens the assistant area without overwriting its remembered private conversation', () => {
+    useAgentTeamsStore.setState({ userLevel: 2 });
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    const leader: RoomInfo = { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [], access: 'joined' };
+    useRoomMetaStore.setState({ activeRoomId: leader.id });
+    render(<Sidebar {...props} agentRooms={[leader]} collapsed={false} onToggleCollapse={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '助手' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('chat');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
+  });
+
+  it('leaves the remembered selection to ChatSection instead of forcing a default DM', () => {
+    useHitlInboxStore.setState({ pendingChatRoomId: null });
+    useRoomMetaStore.setState({ activeRoomId: null });
+    render(<Sidebar {...props} agentRooms={[]} collapsed={false} onToggleCollapse={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '助手' }));
+    expect(props.onNavClick).toHaveBeenCalledWith('chat');
+    expect(useHitlInboxStore.getState().pendingChatRoomId).toBeNull();
+  });
+});

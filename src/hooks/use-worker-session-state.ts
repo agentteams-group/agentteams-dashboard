@@ -4,10 +4,12 @@ import { useSyncExternalStore } from 'react';
 
 import { useRoomMetaStore, useTypingStore } from '@/hooks/use-matrix';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import {
   TICK_MS,
   workerSessionState,
   roomWorkerState,
+  INACTIVE_PHASES,
 } from '@/lib/worker-session-state';
 import type { WorkerSessionState, WorkerAgentStatusInfo } from '@/lib/worker-session-state';
 
@@ -19,11 +21,13 @@ import type { WorkerSessionState, WorkerAgentStatusInfo } from '@/lib/worker-ses
  */
 export function useWorkerAgentStatusMap(): Record<string, WorkerAgentStatusInfo & { phase?: string }> {
   const { data: workers } = useWorkers();
+  const pending = useHitlInboxStore(s => s.confirmations);
+  const now = useSessionTick();
   const map: Record<string, WorkerAgentStatusInfo & { phase?: string }> = {};
   for (const w of workers ?? []) {
     if (!w.matrixUserID) continue;
     map[w.matrixUserID] = {
-      agentStatus: w.agentStatus,
+      agentStatus: Object.values(pending).some(item => item.sender === w.matrixUserID && (item.expiresAt === undefined || item.expiresAt > now)) ? 'waiting_user' : w.agentStatus,
       runningTaskCount: w.runningTaskCount,
       lastFinishAt: w.lastFinishAt,
       lastRunAt: w.lastRunAt,
@@ -85,6 +89,9 @@ export function useWorkerSessionState(
 ): WorkerSessionState {
   const tick = useSessionTick();
   const now = nowArg ?? tick;
+  const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(
+    item => item.sender === worker.matrixUserID && (item.expiresAt === undefined || item.expiresAt > now),
+  ));
   // (hooks below are unconditional — the worker identity may change
   // between renders while the list row stays mounted)
   const isTyping = useTypingStore((s) => {
@@ -95,6 +102,7 @@ export function useWorkerSessionState(
   const lastMessageTs = useRoomMetaStore((s) =>
     worker.roomID ? s.meta[worker.roomID]?.lastMessageTs : undefined,
   );
+  if (waiting && !INACTIVE_PHASES.has(worker.phase ?? '')) return 'waiting_user';
   return workerSessionState(worker.matrixUserID, [
     {
       typing: isTyping && worker.matrixUserID ? [worker.matrixUserID] : [],
@@ -122,7 +130,11 @@ export function useRoomSessionState(
   // keeps the snapshot reference stable when the room has no typing.
   const typing = useTypingStore((s) => (roomId ? s.typingUsers[roomId] ?? EMPTY_TYPING : EMPTY_TYPING));
   const lastMessageTs = useRoomMetaStore((s) => (roomId ? s.meta[roomId]?.lastMessageTs : undefined));
+  const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(
+    item => item.roomId === roomId && item.sender === workerMxid && (item.expiresAt === undefined || item.expiresAt > now),
+  ));
   if (!roomId || !workerMxid) return 'idle';
+  if (waiting) return 'waiting_user';
   return roomWorkerState(
     { typing: typing.map((u) => u.userId), lastMessageTs },
     new Set([workerMxid]),
@@ -161,6 +173,9 @@ export function useChatRoomSessionState(
   const runningOnly = (workerMatrixUserIds?.length ?? 0) > 1;
   const running = useRoomRunningState(roomId, workerMatrixUserIds);
   const single = useRoomSessionState(roomId, workerMatrixUserIds?.[0], now);
+  const waiting = useHitlInboxStore(s => Object.values(s.confirmations).some(item =>
+    item.roomId === roomId && workerMatrixUserIds?.includes(item.sender) && (item.expiresAt === undefined || item.expiresAt > now)));
+  if (waiting) return { state: 'waiting_user', runningOnly: false };
   if (runningOnly) {
     return { state: running ? 'running' : 'idle', runningOnly: true };
   }

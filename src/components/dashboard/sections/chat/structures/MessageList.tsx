@@ -1,14 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, forwardRef } from 'react';
-import { TimelinePanel } from './TimelinePanel';
+import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { TimelinePanel, buildTimelineItems } from './TimelinePanel';
 import type { ScrollPanelHandle } from './ScrollPanel';
 import { buildGroupedMessages, type GroupedMessage } from '../grouper/MainGrouper';
+import { ReplyQuote } from '../views/ReplyQuote';
+import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
 import { EventTile } from '../views/EventTile';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import type { FileRef } from '@/lib/file-refs';
 import { MessageSquare, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import type { MentionEntry } from '../chat-composer';
+import type { AnswerSendResult, ConfirmationAnswerField } from '../confirmation-reply';
+import type { DirectControl } from '@/lib/direct-execution';
+import { buildAnswerContent } from '../confirmation-reply';
 import type { WorkerSessionState } from '@/lib/worker-session-state';
 import { CHAT_COLUMN_CLASS } from '../layout';
 
@@ -25,15 +30,17 @@ export interface ChatSystemNotice {
   /** Rate limits: when an auto-retry is scheduled to fire. */
   retryAfterMs?: number;
   autoRetry: boolean;
-  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string };
+  retryPayload?: { content: string; mentions?: MentionEntry[]; replyTo?: DisplayMessage | null; referenceEventId?: string; answer?: ConfirmationAnswerField; control?: DirectControl };
 }
 
 function SystemNoticeItem({
   notice,
+  canRetry,
   onRetry,
   onDismiss,
 }: {
   notice: ChatSystemNotice;
+  canRetry: boolean;
   onRetry: (_notice: ChatSystemNotice) => void;
   onDismiss: (_notice: ChatSystemNotice) => void;
 }) {
@@ -41,20 +48,29 @@ function SystemNoticeItem({
     notice.autoRetry && notice.retryAfterMs ? notice.retryAfterMs : 0
   );
 
+  // f4-2: notice 对象来自 useState 数组（useOutboundMessages），身份稳定；
+  // onRetry 却随父级每次重渲染经 useMutation 对象链换新引用。倒计时 effect 若
+  // 把 onRetry 放进 deps，活动房间（流式输出 / typing 持续重渲染）里 start 会
+  // 被反复重置、倒计时永远走不完——用 ref 固定最新回调，deps 收敛到 [notice, canRetry]。
+  const onRetryRef = useRef(onRetry);
   useEffect(() => {
-    if (!notice.autoRetry || !notice.retryAfterMs) return;
+    onRetryRef.current = onRetry;
+  });
+
+  useEffect(() => {
+    if (!canRetry || !notice.autoRetry || !notice.retryAfterMs) return;
     const start = Date.now();
     const timer = setInterval(() => {
       const remaining = notice.retryAfterMs! - (Date.now() - start);
       if (remaining <= 0) {
         clearInterval(timer);
-        onRetry(notice);
+        onRetryRef.current(notice);
         return;
       }
       setLeftMs(remaining);
     }, 250);
     return () => clearInterval(timer);
-  }, [notice, onRetry]);
+  }, [notice, canRetry]);
 
   const seconds = Math.max(1, Math.ceil(leftMs / 1000));
 
@@ -69,10 +85,11 @@ function SystemNoticeItem({
       >
         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
         <span className="truncate">{notice.message}</span>
-        {notice.kind === 'rate-limited' && notice.autoRetry && (
+        {canRetry && notice.kind === 'rate-limited' && notice.autoRetry && (
           <span className="shrink-0 font-mono opacity-80">{seconds}s</span>
         )}
         <button
+          disabled={!canRetry}
           onClick={() => onRetry(notice)}
           className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-foreground/10 transition-colors"
           title="重新发送"
@@ -98,6 +115,9 @@ function SystemNoticeItem({
  * grouping of the server-backed messages.
  */
 export interface LocalOutboundMessage {
+  control?: DirectControl;
+  answer?: ConfirmationAnswerField;
+  referenceEventId?: string;
   clientId: string;
   sender: string;
   senderShort: string;
@@ -126,10 +146,14 @@ export function toLocalDisplayMessage(local: LocalOutboundMessage): DisplayMessa
     isMe: true,
     status: local.status,
     fileRefs: local.fileRefs,
+    rawContent: buildAnswerContent(local.answer),
   };
 }
 
 interface MessageListProps {
+  roomId?: string;
+  onRevealReply?: (_eventId: string) => boolean;
+  focusedMentionId?: string | null;
   messages: DisplayMessage[];
   /** Locally tracked outbound messages (sending/failed) shown above the composer. */
   localMessages?: LocalOutboundMessage[];
@@ -143,15 +167,15 @@ interface MessageListProps {
   _canSend: boolean;
   _onSend: (_content: string, _options?: { html?: boolean }, _mentions?: import('../chat-composer').MentionEntry[]) => void;
   onReply?: (_message: DisplayMessage) => void;
-  onCopy?: (_message: DisplayMessage) => void;
+  onCopy?: (_message: DisplayMessage) => boolean | void | Promise<boolean | void>;
   onOpenThread?: (_message: DisplayMessage) => void;
   onEdit?: (_message: DisplayMessage, _newContent: string) => Promise<void> | void;
   onDelete?: (_message: DisplayMessage) => void;
   onResend?: (_message: DisplayMessage) => void;
   onCancel?: (_message: DisplayMessage) => void;
-  onSendConfirmation?: (_content: string, _sender?: string) => void;
+  onSendConfirmation?: (_content: string, _sender?: string, _eventId?: string, _answer?: ConfirmationAnswerField) => AnswerSendResult;
   /** Opens the worker files panel for the message's owning worker. */
-  onOpenWorkerFiles?: (_message: DisplayMessage) => void;
+  onOpenRoomFiles?: () => void;
   memberMap?: Record<string, string>;
   /** Called whenever the scroller enters or leaves the bottom position. */
   onAtBottomChange?: (_atBottom: boolean) => void;
@@ -171,9 +195,23 @@ interface MessageListProps {
   onOpenWorkerChats?: (_workerName: string) => void;
 }
 
-export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(function MessageList(
+/**
+ * Imperative handle exposed to ChatRoom. Everything from ScrollPanelHandle is
+ * forwarded verbatim; scrollToEvent adds a jump in the TIMELINE index space
+ * (the same items the panel renders, including the unread-divider splice), so
+ * reply / search定位 land on the target message instead of one row off (f5-1).
+ */
+export interface MessageListHandle extends ScrollPanelHandle {
+  /** Jump to the first timeline item matching id/eventId/sourceEventIds. Returns false when not found. */
+  scrollToEvent: (_eventId: string, _options?: { smooth?: boolean }) => boolean;
+}
+
+export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     messages,
+    focusedMentionId,
+    roomId,
+    onRevealReply,
     localMessages = [],
     readEventId,
     hasNextPage,
@@ -189,10 +227,11 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     onResend,
     onCancel,
     onSendConfirmation,
-    onOpenWorkerFiles,
+    onOpenRoomFiles,
     memberMap,
     onAtBottomChange,
     notices = [],
+    _canSend,
     onRetryNotice,
     onDismissNotice,
     readReceipts,
@@ -202,16 +241,41 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
   },
   ref
 ) {
-  const grouped = useMemo(() => buildGroupedMessages(messages), [messages]);
+  // Workers stream one turn as many Matrix events (placeholder, per-step
+  // notices, tool calls, final answer). Coalesce them first so the timeline
+  // shows one avatar + one process disclosure per turn instead of a strip of
+  // disconnected bubbles.
+  const displayMessages = useMemo(() => coalesceWorkerTurns(messages), [messages]);
+  const grouped = useMemo(() => buildGroupedMessages(displayMessages), [displayMessages]);
+  const messagesByEventId = useMemo(() => {
+    const index = new Map<string, DisplayMessage>();
+    for (const message of displayMessages) {
+      for (const id of [message.id, message.eventId, ...(message.sourceEventIds ?? [])]) {
+        if (id) index.set(id, message);
+      }
+    }
+    return index;
+  }, [displayMessages]);
+
+  // f5-1: timeline index space used by scrollToEvent. Same pure function and
+  // same inputs as TimelinePanel's internal computation (fold on chatIr.messages
+  // is identity; the read-marker splice is the only offset), so indexes here
+  // match what the panel actually renders.
+  const timelineItems = useMemo(() => buildTimelineItems(grouped, readEventId), [grouped, readEventId]);
 
   const itemContent = useCallback((_index: number, gm: GroupedMessage) => {
     if (!gm) return null;
+    const replyToId = gm.message.replyToEventId;
+    const replyTarget = replyToId ? messagesByEventId.get(replyToId) : undefined;
+    const focused = Boolean(focusedMentionId && (gm.message.id === focusedMentionId || gm.message.eventId === focusedMentionId || gm.message.sourceEventIds?.includes(focusedMentionId)));
     return (
-      <EventTile
-        key={gm.message.id}
+      <div key={gm.message.id} className={focused ? 'rounded-lg border border-blue-500/30 bg-blue-500/5 px-2' : undefined}>
+        <EventTile
         _message={gm.message}
         showSender={gm.showSender}
         isContinuation={gm.isContinuation}
+        replyQuote={replyToId && <ReplyQuote roomId={roomId} eventId={replyToId} target={replyTarget} memberMap={memberMap}
+          onJump={replyTarget && onRevealReply ? () => onRevealReply(replyTarget.eventId || replyTarget.id) : undefined} />}
         onReply={onReply}
         onCopy={onCopy}
         onOpenThread={onOpenThread}
@@ -220,15 +284,16 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
         onResend={onResend}
         onCancel={onCancel}
         onSendConfirmation={onSendConfirmation}
-        onOpenWorkerFiles={onOpenWorkerFiles}
+        onOpenRoomFiles={onOpenRoomFiles}
         memberMap={memberMap}
         readReceipts={readReceipts}
         currentUserId={currentUserId}
         senderStatus={senderStatusMap?.[gm.message.sender] ?? null}
         onOpenWorkerChats={onOpenWorkerChats}
-      />
+        />
+      </div>
     );
-  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenWorkerFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap]);
+  }, [onReply, onCopy, onOpenThread, onEdit, onDelete, onResend, onCancel, onSendConfirmation, onOpenRoomFiles, onOpenWorkerChats, memberMap, readReceipts, currentUserId, senderStatusMap, focusedMentionId, messagesByEventId, onRevealReply, roomId]);
 
   // Top-edge pagination status: older messages are prepended at the top, so
   // the spinner/button lives at the top instead of the footer (where it would
@@ -256,18 +321,43 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
     if (grouped.length > 0) {
       return (
         <div className={`mx-auto flex w-full ${CHAT_COLUMN_CLASS} justify-center px-4 py-2`}>
-          <span className="text-[10px] text-muted-foreground/60">已经到最早的消息了</span>
+          <span className="text-xs text-muted-foreground/60">已经到最早的消息了</span>
         </div>
       );
     }
     return <div />;
   }, [isFetchingNextPage, hasNextPage, grouped.length, onLoadMore]);
 
+  // f5-1: self-held inner ref + useImperativeHandle — forwards every
+  // ScrollPanelHandle method and adds scrollToEvent over the timeline items.
+  const timelineRef = useRef<ScrollPanelHandle>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToBottom: (options?: { smooth?: boolean }) => timelineRef.current?.scrollToBottom(options),
+      scrollToIndex: (index: number, options?: { smooth?: boolean }) => timelineRef.current?.scrollToIndex(index, options),
+      scrollToItem: (key: string) => timelineRef.current?.scrollToItem(key),
+      scrollToEvent: (eventId: string, options?: { smooth?: boolean }): boolean => {
+        const index = timelineItems.findIndex(
+          (item) =>
+            item.kind === 'message' &&
+            (item.gm.message.id === eventId ||
+              item.gm.message.eventId === eventId ||
+              (item.gm.message.sourceEventIds?.includes(eventId) ?? false)),
+        );
+        if (index < 0) return false;
+        timelineRef.current?.scrollToIndex(index, options);
+        return true;
+      },
+    }),
+    [timelineItems]
+  );
+
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {header}
       <TimelinePanel
-        ref={ref}
+        ref={timelineRef}
         items={grouped}
         readEventId={readEventId}
         itemContent={itemContent}
@@ -295,6 +385,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
             <SystemNoticeItem
               key={notice.id}
               notice={notice}
+              canRetry={_canSend}
               onRetry={onRetryNotice ?? (() => {})}
               onDismiss={onDismissNotice ?? (() => {})}
             />
@@ -312,6 +403,7 @@ export const MessageList = forwardRef<ScrollPanelHandle, MessageListProps>(funct
                 _message={toLocalDisplayMessage(local)}
                 showSender
                 isContinuation={false}
+                replyQuote={local.replyTo && <ReplyQuote eventId={local.replyTo.eventId || local.replyTo.id} target={local.replyTo} memberMap={memberMap} />}
                 onDelete={onDelete}
                 onResend={onResend}
                 onCancel={onCancel}

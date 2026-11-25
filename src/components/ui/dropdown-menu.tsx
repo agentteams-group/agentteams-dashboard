@@ -5,11 +5,16 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useHoverOpen } from "@/lib/desktop-interactions"
+
+const DropdownHoverContext = React.createContext<ReturnType<typeof useHoverOpen> | null>(null)
 
 function DropdownMenu({
+  open, defaultOpen, onOpenChange, modal = false,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  const hover = useHoverOpen({ open, defaultOpen, onOpenChange })
+  return <DropdownHoverContext.Provider value={hover}><DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} modal={modal} open={hover.open} onOpenChange={hover.setOpen} /></DropdownHoverContext.Provider>
 }
 
 function DropdownMenuPortal({
@@ -21,12 +26,19 @@ function DropdownMenuPortal({
 }
 
 function DropdownMenuTrigger({
+  onPointerEnter, onPointerLeave, onPointerDown, onKeyDown,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+  const hover = React.useContext(DropdownHoverContext)
   return (
     <DropdownMenuPrimitive.Trigger
       data-slot="dropdown-menu-trigger"
       {...props}
+      data-hover-region={hover?.triggerProps['data-hover-region']}
+      onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented) hover?.triggerProps.onPointerEnter(event) }}
+      onPointerLeave={event => { onPointerLeave?.(event); if (!event.defaultPrevented) hover?.triggerProps.onPointerLeave(event) }}
+      onPointerDown={event => { hover?.triggerProps.onPointerDown(); onPointerDown?.(event) }}
+      onKeyDown={event => { hover?.triggerProps.onKeyDown(); onKeyDown?.(event) }}
     />
   )
 }
@@ -34,8 +46,10 @@ function DropdownMenuTrigger({
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  onPointerEnter, onPointerLeave, onOpenAutoFocus, onCloseAutoFocus,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & { onOpenAutoFocus?: (_event: Event) => void }) {
+  const hover = React.useContext(DropdownHoverContext)
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
@@ -46,6 +60,11 @@ function DropdownMenuContent({
           className
         )}
         {...props}
+        data-hover-region={hover?.contentProps['data-hover-region']}
+        onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerEnter(event) }}
+        onPointerLeave={event => { onPointerLeave?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerLeave(event) }}
+        {...{ onOpenAutoFocus: (event: Event) => { onOpenAutoFocus?.(event); hover?.preserveFocus(event) } }}
+        onCloseAutoFocus={event => { onCloseAutoFocus?.(event); hover?.preserveFocus(event) }}
       />
     </DropdownMenuPrimitive.Portal>
   )
@@ -74,7 +93,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex min-h-11 cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 sm:min-h-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -92,7 +111,7 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus:bg-accent focus:text-accent-foreground relative flex min-h-11 cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 sm:min-h-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       checked={checked}
@@ -128,7 +147,7 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus:bg-accent focus:text-accent-foreground relative flex min-h-11 cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 sm:min-h-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -224,8 +243,10 @@ function DropdownMenuSubTrigger({
 
 function DropdownMenuSubContent({
   className,
+  onPointerEnter, onPointerLeave,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const hover = React.useContext(DropdownHoverContext)
   return (
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
@@ -234,6 +255,9 @@ function DropdownMenuSubContent({
         className
       )}
       {...props}
+      data-hover-region={hover?.contentProps['data-hover-region']}
+      onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerEnter(event) }}
+      onPointerLeave={event => { onPointerLeave?.(event); if (!event.defaultPrevented) hover?.contentProps.onPointerLeave(event) }}
     />
   )
 }

@@ -7,6 +7,7 @@ import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useNotificationStore } from '@/lib/notification-store';
+import { resourceHash } from '@/lib/nav-hash';
 import type { WorkerResponse, TeamResponse, ManagerResponse } from '@/lib/agentteams-api';
 
 function detectWorkerChanges(prev: WorkerResponse[], curr: WorkerResponse[]) {
@@ -94,7 +95,7 @@ export function usePhaseWatcher() {
           title: c.title,
           message: c.message,
           origin: 'system',
-          actionUrl: '#workers',
+          actionUrl: resourceHash('workers'),
         });
       }
     }
@@ -108,7 +109,7 @@ export function usePhaseWatcher() {
           title: c.title,
           message: c.message,
           origin: 'system',
-          actionUrl: '#teams',
+          actionUrl: resourceHash('teams'),
         });
       }
     }

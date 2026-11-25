@@ -15,7 +15,7 @@ export async function POST(
   const denied = await enforceServerSideRbac(request, 'wake', 'worker', name);
   if (denied) return denied;
 
-  const restart = await restartWorkerForSkillReload(name);
+  const restart = await restartWorkerForSkillReload(name, undefined, request);
   if (!restart.ok) {
     return NextResponse.json(
       {

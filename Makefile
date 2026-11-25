@@ -39,6 +39,7 @@ PUSH_LATEST   := $(if $(filter latest,$(VERSION)),,$(if $(filter 1,$(IS_PRERELEA
 
 # Extra build args
 DOCKER_BUILD_ARGS ?=
+SOURCE_TREE ?=
 DOCKER_PLATFORM   ?=
 ifdef DOCKER_PLATFORM
   PLATFORM_FLAG = --platform $(DOCKER_PLATFORM)
@@ -48,7 +49,7 @@ endif
 
 # ---------- Phony targets ----------
 
-.PHONY: all build tag push push-native buildx-setup buildx-upgrade clean help
+.PHONY: all build tag push push-platform push-manifest push-native buildx-setup buildx-upgrade clean help
 
 # ---------- Default ----------
 
@@ -132,6 +133,15 @@ else
 		--push \
 		.
 endif
+
+push-platform: ## Push one native platform to a temporary architecture tag
+	$(MAKE) push MULTIARCH_PLATFORMS=linux/$(ARCH) IMAGE_TAG=$(IMAGE_TAG)-$(ARCH) PUSH_LATEST=
+
+push-manifest: ## Publish the completed amd64 and arm64 images together
+	docker buildx imagetools create -t $(IMAGE_TAG) \
+		$(if $(SOURCE_TREE),--annotation index:io.agentteams.source-tree=$(SOURCE_TREE)) \
+		$(if $(PUSH_LATEST),-t $(IMAGE):latest) \
+		$(IMAGE_TAG)-amd64 $(IMAGE_TAG)-arm64
 
 # ---------- Push native-arch only (dev use) ----------
 

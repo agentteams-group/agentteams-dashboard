@@ -92,7 +92,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
         <InfoTip label="MCP 分配与授权说明">
           <span className="block">仅分配已登记的 MCP 地址，不会创建网关服务或授予权限。</span>
           <span className="mt-1 block">
-            请先通过 Manager / Higress 接入并授权；自定义 Headers 不会下发给 Worker，上游凭证请配置在网关。
+            受管服务请到「MCP 工具 → 详情 → Agent 授权」分配；外部地址请先通过 Manager / Higress 接入并授权。后端凭证与自定义 Headers 在网关配置。
           </span>
           <span className="mt-1 block">
             分配后请通过「已保存配置的网关验证」确认该 Worker 的 Consumer 已获授权。
@@ -122,12 +122,12 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
             {value.length > 0 ? `${value.length} 个 MCP 服务器已选择...` : '选择 MCP 服务器...'}
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
+        <DialogContent className="w-full min-w-0 max-w-[95vw] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>选择 MCP 服务器</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             <Input
               placeholder="搜索 MCP 服务器..."
               value={search}
@@ -138,7 +138,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
             <div className="max-h-[240px] overflow-y-auto space-y-1">
               {filtered.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-6">
-                  {search ? '没有匹配的 MCP 服务器' : '暂无已登记的 MCP 地址，请先到资源中心 → MCP 服务器登记'}
+                  {search ? '没有匹配的 MCP 服务器' : '暂无已登记的 MCP 地址，请先到资产中心 → 工具登记'}
                 </p>
               )}
               {filtered.map((srv) => {
@@ -158,7 +158,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{srv.name}</span>
-                        <Badge variant="outline" className="text-[10px] shrink-0">{srv.transport}</Badge>
+                        <Badge variant="outline" className="text-xs shrink-0">{srv.transport}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground truncate" title={srv.url}>
                         {srv.url}
@@ -181,7 +181,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                 <span className="text-xs text-muted-foreground">已选择 ({draft.length}):</span>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {draft.map((srv) => (
-                    <Badge key={srv.name} variant="secondary" className="text-[10px]">{srv.name}</Badge>
+                    <Badge key={srv.name} variant="secondary" className="text-xs">{srv.name}</Badge>
                   ))}
                 </div>
               </div>

@@ -14,6 +14,25 @@ afterEach(() => {
 });
 
 describe('openChatRoom', () => {
+  it('preserves a mention landing target and clears it for ordinary navigation', () => {
+    openChatRoom('!mentioned:matrix', undefined, 'mention');
+    expect(useSectionStore.getState().mentionRoomId).toBe('!mentioned:matrix');
+    openChatRoom('!other:matrix');
+    expect(useSectionStore.getState().mentionRoomId).toBeNull();
+  });
+  it('keeps the mention target while a team room routes to My Teams', () => {
+    openChatRoom('!team:matrix', undefined, 'mention');
+    useSectionStore.getState().setActiveSection('my-teams');
+    expect(useSectionStore.getState().mentionRoomId).toBe('!team:matrix');
+    useSectionStore.getState().setActiveSection('tasks');
+    expect(useSectionStore.getState().mentionRoomId).toBeNull();
+  });
+  it('keeps task collaboration context and clears it when opening another conversation', () => {
+    openChatRoom('!execution:matrix', 'task-123');
+    expect(useSectionStore.getState().taskCollaboration).toEqual({ taskId: 'task-123', roomId: '!execution:matrix' });
+    openChatRoom('!source:matrix');
+    expect(useSectionStore.getState().taskCollaboration).toBeNull();
+  });
   it('writes pendingChatRoomId and switches the active section to chat', () => {
     openChatRoom('!r1:matrix');
     expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!r1:matrix');

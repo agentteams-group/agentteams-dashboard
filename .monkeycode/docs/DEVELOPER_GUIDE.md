@@ -11,27 +11,48 @@ npm ci --no-audit --no-fund --legacy-peer-deps
 npm run dev
 ```
 
-开发服务器默认监听 3000 端口，输出同步写入 `dev.log`（生产 `npm start` 同理写 `server.log`）。使用 `.env.example` 作为本地配置起点；凭据保持在本地环境配置中。
+开发服务器默认监听 3000 端口，输出同步写入 `dev.log`（生产 `npm start` 同理写 `server.log`）。`npm run dev` 会先执行 `prepare:speech`，把固定版本的 Whisper tiny 模型与 WASM 备到 `public/speech/`（约 65 MB，首次较慢，可用 `SPEECH_MODEL_DOWNLOAD_BASE_URL` 指向镜像）。使用 `.env.example` 作为本地配置起点；凭据保持在本地环境配置中。
 
 ## 常用命令
 
 | 命令 | 用途 |
 |---|---|
-| `npm run dev` | 启动开发服务器 |
-| `npm run build` | 构建独立产物 |
+| `npm run dev` | 准备语音资源并启动开发服务器 |
+| `npm run prepare:speech` | 单独下载语音模型资产 |
+| `npm run build` | 构建 standalone 产物（含语音资产） |
 | `npm start` | 启动生产构建 |
-| `npm run lint` | 运行 ESLint |
-| `npm run typecheck` | 运行 TypeScript 类型检查 |
+| `npm run lint` | ESLint + 排版扫描 |
+| `npm run lint:tone` | AI 味文案扫描（可见文案硬词门禁） |
+| `npm run lint:typography` | 仅排版扫描 |
+| `npm run typecheck` | TypeScript 类型检查（覆盖 `**/*.ts`，含 `next.config.ts`） |
 | `npm test` | 运行无需外部服务的 Vitest 单元与组件测试 |
-| `npm run test:integration` | 运行集成测试，需要 3000 端口开发服务与对应外部依赖配置 |
-| `bash scripts/check-docs-consistency.sh` | 文档一致性门禁（CI 同款）：README/docs 禁过期字串、安装器默认版本与 install.sh 内嵌值同步断言、相对链接存在性检查；改 README/docs 后必跑（A4，2026-09-28） |
+| `npm run test:watch` | Vitest watch 模式 |
+| `npm run test:coverage` | Vitest 覆盖率 |
+| `npm run test:integration` | 集成测试，需要 3000 端口开发服务与对应外部依赖配置 |
+| `bash scripts/check-docs-consistency.sh` | 文档一致性门禁（陈旧字符串 / 安装器版本 / 链接） |
+| `bash install/agentteams-dashboard-tests.sh` | 安装器断言（62 用例） |
+
+> 验证顺序建议：`npm run typecheck` → `npm run lint` → `npm test`。tsconfig 的 include 覆盖 `**/*.ts`，改配置文件后同样需要 typecheck。
 
 ## 代码约定
 
-- API 路由位于 `src/app/api/`，目标服务访问通过服务端代理完成。
+- API 路由位于 `src/app/api/`，目标服务访问通过服务端代理完成；代理工具集中在 `src/app/api/agentteams/proxy-helper.ts`。
 - 前端请求客户端位于 `src/lib/`，TanStack Query hooks 位于 `src/hooks/`。
-- 测试与源码同目录，使用 `.test.ts` 或 `.test.tsx` 后缀。
+- 测试与源码同目录，使用 `.test.ts` 或 `.test.tsx` 后缀；需要真实后端的用例放 `src/__tests__/integration/`。
 - 新增外部地址时，先定义服务端校验和超时边界，再连接 UI。
+- 导航与深链：一级入口在 `workspace-navigation.tsx`，二级项与等级门控在 `nav-items.ts`，分层哈希唯一映射层是 `src/lib/nav-hash.ts`（不要在业务代码里手写哈希字符串）。
+
+## 模块导览
+
+| 模块 | 位置 | 说明 |
+|---|---|---|
+| 工作区外壳与导航 | `src/components/dashboard/agent-teams-dashboard.tsx`、`workspace-navigation.tsx`、`nav-items.ts` | section 注册、菜单、创建动作、通知计数 |
+| 设置弹窗 | `src/components/dashboard/settings/` | 后端配置、主题、插件、更新、语音、管理页（总览/审计/诊断/插件贡献入口） |
+| 任务看板 / 产物 / 编码执行 / 循环 | `src/components/dashboard/sections/{tasks,artifacts,coding-runs,loops}-section.tsx` | 项目干预、产物树、只读执行记录、循环定义 |
+| 聊天与运行时渲染 | `src/components/dashboard/sections/chat/`、`src/lib/a2ui/` | Matrix 事件归一化、A2UI/运行时块渲染、HITL 卡片 |
+| 资产中心 | `sections/{models,mcps,skills,knowledge,files}-section.tsx` | 模型别名与可用性、MCP 治理、技能中心、知识库、文件区 |
+| 观测与治理 | `sections/{tracing,audit}-section.tsx`、`src/lib/observability-*`、`agentloop-server.ts` | 可观测配置、双轨查询后端、审计列表 |
+| 插件运行时 | `src/lib/plugins/`、`src/components/plugins/`、`tools/create-dashboard-plugin/` | 插件加载、扩展点、错误隔离、脚手架 |
 
 ## Matrix 聊天开发
 

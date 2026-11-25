@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMcpCatalog, trustedCatalogServerNames } from '@/hooks/use-mcp-catalog';
+import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import {
   Select,
   SelectContent,
@@ -19,14 +20,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Wand2, Loader2 } from 'lucide-react';
+import { Loader2, Wand2 } from 'lucide-react';
 import type { CreateWorkerRequest } from '@/lib/agentteams-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { workerNameError } from '@/lib/resource-name';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
 import { SoulField } from '@/components/dashboard/sections/shared/soul-field';
-import { validateModelValue, modelVerdictText } from '@/lib/model-verdict';
+import { isPathLikeModel } from '@/lib/model-verdict';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 import { CREATABLE_WORKER_RUNTIMES } from '@/lib/runtime-options';
@@ -47,7 +47,7 @@ export function WorkerCreateDialog({
   onSubmit,
   modelOptions,
   sessionIssue,
-
+  modelsLoading = false,
   agentSpecs,
 }: {
   open: boolean;
@@ -58,33 +58,55 @@ export function WorkerCreateDialog({
   onSubmit: () => void;
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
-
+  modelsLoading?: boolean;
   agentSpecs?: AgentSpecTemplateOption[];
 }) {
   const nameError = workerNameError(value.name);
+  const infrastructure = useInfrastructure({ enabled: open });
+  const gatewayMode = infrastructure.data?.higress?.mode;
+  const modelIssue = sessionIssue ?? (modelsLoading
+    ? '正在加载模型列表，请稍候。'
+    : !gatewayMode
+      ? infrastructure.isLoading ? '正在读取模型连接设置，请稍候。' : '无法读取模型连接设置，请稍后重试。'
+      : null);
+  const modelId = useId();
+  const connectionId = useId();
+  const [externalConnection, setExternalConnection] = useState('');
+  useEffect(() => {
+    if (!open) setExternalConnection('');
+  }, [open]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateNote, setTemplateNote] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
-  // G2 写前校验（对齐插件）：候选 = alias 组（configured ∪ builtin 16）；
-  // error（路径/URL/空格，9/2 /models 事故硬规则）禁提交，
-  // warn（未命中 alias 组）两步「确认强写」。
-  const modelCandidates = (modelOptions ?? []).map((option) => option.alias);
-  const modelVerdict = validateModelValue(value.model ?? '', modelCandidates);
-  const [confirmForceWrite, setConfirmForceWrite] = useState(false);
+  const connectionsByModel = new Map<string, Set<string>>();
+  for (const { alias, kind, binding } of modelOptions ?? []) {
+    const model = alias.trim();
+    const provider = binding?.providerName.trim();
+    if (kind !== 'configured' || !binding?.available || !provider || !model || isPathLikeModel(model)) continue;
+    const connections = connectionsByModel.get(model) ?? new Set<string>();
+    connections.add(provider);
+    connectionsByModel.set(model, connections);
+  }
+  // External gateways route by alias, so a model with several upstreams is
+  // one choice with all of its connections shown, rather than a false override.
+  const selections = [...connectionsByModel].flatMap(([model, connections]) =>
+    (gatewayMode === 'external' ? [[...connections].join(' / ')] : [...connections])
+      .map((provider) => ({ model, provider, value: JSON.stringify([provider, model]) })),
+  );
+  const modelProviders = [...new Set(selections.map((selection) => selection.provider))].sort((a, b) => a.localeCompare(b));
+  const connection = gatewayMode === 'external'
+    ? externalConnection || selections.find((selection) => selection.model === value.model)?.provider || ''
+    : value.modelProvider || '';
+  const connectionModels = selections.filter((selection) => selection.provider === connection);
+  const selected = selections.find((selection) =>
+    selection.model === value.model && selection.provider === connection,
+  );
   // B7 21.1: catalog 上标记 trusted 的 MCP server 在新建 Worker 时默认勾选
   //（操作员可手动取消）；catalog 不可用（旧 Controller 404）时退化为无默认。
   const mcpCatalog = useMcpCatalog();
   const defaultMcpNames = trustedCatalogServerNames(mcpCatalog);
-  // 重开弹窗时重置强写确认（React「render 时按 prop 重置 state」官方模式，
-  // 不在 effect 里同步 setState——避免级联渲染告警）。
-  const [lastOpen, setLastOpen] = useState(open);
-  if (open !== lastOpen) {
-    setLastOpen(open);
-    if (open) setConfirmForceWrite(false);
-  }
-
   const handleTemplateSelect = async (templateName: string) => {
     if (!templateName || templateName === '__none__') {
       setSelectedTemplate('');
@@ -211,8 +233,37 @@ export function WorkerCreateDialog({
           </div>
 
           <div className="space-y-2 min-w-0">
+            <Label htmlFor={connectionId}>模型连接 *</Label>
+            <Select
+              name="worker-model-connection"
+              value={modelProviders.includes(connection) ? connection : ''}
+              disabled={isPending || !!modelIssue || modelProviders.length === 0}
+              onValueChange={(provider) => {
+                setExternalConnection(provider);
+                onChange({
+                  ...value,
+                  model: '',
+                  modelProvider: gatewayMode === 'external' ? undefined : provider,
+                });
+              }}
+            >
+              <SelectTrigger id={connectionId} aria-label="模型连接" className="w-full min-w-0">
+                <SelectValue placeholder="请选择模型连接" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelProviders.map((provider) => (
+                  <SelectItem key={provider} value={provider}>{provider}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {gatewayMode === 'external' && connection.includes(' / ') && (
+              <p className="text-xs text-muted-foreground">此连接组由外部网关按模型路由分配，无法单独指定其中一个连接。</p>
+            )}
+          </div>
+
+          <div className="space-y-2 min-w-0">
             <div className="flex items-center gap-1">
-              <Label>请求模型别名</Label>
+              <Label htmlFor={modelId}>模型 *</Label>
               <InfoTip label="模型访问与验证说明">
                 <span className="block">
                   Worker 通过 AI 网关访问模型，使用 Consumer 凭证认证，无需提供真实 API Key。
@@ -223,29 +274,50 @@ export function WorkerCreateDialog({
               </InfoTip>
             </div>
             <div className="min-w-0 w-full overflow-hidden">
-              <ModelSelector
-                value={value.model}
-                onChange={(model) => {
-                  setConfirmForceWrite(false);
-                  onChange({ ...value, model });
+              <Select
+                name="worker-model"
+                value={selected?.model ?? ''}
+                disabled={isPending || !!modelIssue || connectionModels.length === 0}
+                onValueChange={(next) => {
+                  const selection = connectionModels.find((item) => item.model === next);
+                  if (!selection) return;
+                  onChange({
+                    ...value,
+                    model: selection.model,
+                    // External gateways resolve the connection from the alias;
+                    // their API rejects an explicit modelProvider override.
+                    modelProvider: gatewayMode === 'external' ? undefined : selection.provider,
+                  });
                 }}
-                placeholder="例如 team-chat"
-                options={modelOptions}
-              sessionIssue={sessionIssue}
-              />
+              >
+                <SelectTrigger id={modelId} aria-label="模型" className="w-full min-w-0">
+                  <SelectValue placeholder={connection ? '请选择模型' : '请先选择模型连接'}>
+                    {value.model || undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {connectionModels.map((selection) => (
+                    <SelectItem key={selection.value} value={selection.model}>
+                      {selection.model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <p
-              className={`text-xs break-words ${
-                modelVerdict.level === 'error'
-                  ? 'text-red-600 dark:text-red-400'
-                  : modelVerdict.level === 'warn'
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-emerald-600 dark:text-emerald-400'
-              }`}
-            >
-              {modelVerdict.level === 'error' ? '✗ ' : modelVerdict.level === 'warn' ? '⚠ ' : '✓ '}
-              {modelVerdictText(modelVerdict, value.model ?? '', modelCandidates)}
-            </p>
+            {modelIssue ? (
+              <p role="alert" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
+                {modelIssue}
+              </p>
+            ) : selections.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                暂无已配置的模型，请先添加模型连接及模型路由。
+                <a href="#console/resources/models" className="ml-1 underline" onClick={() => onOpenChange(false)}>前往模型管理</a>
+              </p>
+            ) : value.model && !selected ? (
+              <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">请先选择模型连接，再选择该连接下的模型。</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">仅显示所选连接下已配置的模型。</p>
+            )}
           </div>
 
           <div className="space-y-2 min-w-0">
@@ -303,35 +375,13 @@ export function WorkerCreateDialog({
         </div>
 
         <DialogFooter className="px-6 py-4 shrink-0 border-t flex-col items-stretch gap-3 sm:flex-col">
-          {modelVerdict.level === 'warn' && confirmForceWrite && (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-              <span className="break-words">
-                模型「{(value.model ?? '').trim()}」未命中 alias 组，将按原样写入，确认强写？
-              </span>
-              <span className="flex shrink-0 gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => setConfirmForceWrite(false)}>
-                  返回修改
-                </Button>
-                <Button size="sm" onClick={onSubmit} disabled={isPending}>
-                  确认强写
-                </Button>
-              </span>
-            </div>
-          )}
           <div className="flex items-center justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               取消
             </Button>
             <Button
-              onClick={() => {
-                if (modelVerdict.level === 'warn') {
-                  setConfirmForceWrite(true);
-                  return;
-                }
-                onSubmit();
-              }}
-              disabled={!value.name || !!nameError || isPending || modelVerdict.level === 'error'}
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
+              onClick={onSubmit}
+              disabled={!value.name || !!nameError || isPending || !!modelIssue || !selected}
             >
               {isPending ? '创建中...' : '创建'}
             </Button>

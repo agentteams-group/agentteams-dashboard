@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appendAuditEvent, listAuditEvents, type AuditEventInput, type AuditEventRecord, type AuditQuery } from '@/lib/audit-log';
+import { appendAuditEvent, listAuditEvents, type AuditEventInput, type AuditEventRecord, type AuditQuery, type AuditSeverity } from '@/lib/audit-log';
 import { normalizeControllerEvents, type NormalizedAuditEvent } from '@/lib/audit-normalize';
 import { getControllerUrl, proxyToAgentTeams } from '../proxy-helper';
-import { readServerIdentity, SERVER_USER_LEVEL_HEADER } from '@/lib/server-auth';
+import { readServerIdentity, enforceLevelOnlyRbac, SERVER_USER_LEVEL_HEADER } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +14,8 @@ const ALLOWED_ENTITIES: ReadonlySet<AuditEventInput['entity_type']> = new Set([
   'human',
   'system',
 ]);
+
+const VALID_SEVERITIES: ReadonlySet<AuditSeverity> = new Set(['info', 'warning', 'error']);
 
 function badRequest(message: string): NextResponse {
   return NextResponse.json({ success: false, error: message }, { status: 400 });
@@ -239,6 +241,11 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+  // 审计写入属 admin-grade 操作，L3-only（manage 门）。常规持久化由
+  // proxy-helper 集中处理（见 audit-store.ts 注释，客户端不再 POST 镜像），
+  // 收紧该端点不影响现有链路。
+  const denied = await enforceLevelOnlyRbac(request, 'manage', 'audit', 'write');
+  if (denied) return denied;
 
   let payload: Partial<AuditEventInput> & { severity?: AuditEventInput['severity'] };
   try {
@@ -256,6 +263,9 @@ export async function POST(request: NextRequest) {
   }
   if (typeof payload.action !== 'string' || payload.action.length === 0) {
     return badRequest('action 必填');
+  }
+  if (payload.severity !== undefined && !VALID_SEVERITIES.has(payload.severity as AuditSeverity)) {
+    return badRequest('severity 非法（仅 info/warning/error）');
   }
 
   const record: AuditEventRecord | undefined = await appendAuditEvent({

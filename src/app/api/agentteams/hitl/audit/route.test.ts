@@ -69,6 +69,29 @@ describe('POST /api/agentteams/hitl/audit（F2.4）', () => {
     expect(request?.details).toContain('泳道？');
   });
 
+  it('带可信身份头时 body.actor 不覆盖（stateless 可信头优先）', async () => {
+    mockedSession.mockReturnValue(null);
+    const req = new NextRequest('http://localhost/api/agentteams/hitl/audit', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'expire',
+        confirmation_id: 'c4',
+        actor: '@victim:example.org',
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-agentteams-user': 'trusted-user',
+        'x-agentteams-user-level': '2',
+      },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const events = await listAuditEvents({ limit: 10 });
+    const hit = events.find((e) => e.action === 'hitl.expire');
+    expect(hit?.actor).toBe('trusted-user');
+    expect(hit?.actor_level).toBe(2);
+  });
+
   it('白名单外 action / 缺 confirmation_id → 400', async () => {
     const res1 = await POST(postRequest({ action: 'hack', confirmation_id: 'c' }));
     const res2 = await POST(postRequest({ action: 'answer' }));

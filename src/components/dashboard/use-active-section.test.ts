@@ -5,6 +5,9 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
+import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { taskCollaborationHash } from '@/lib/nav-hash';
+import { openChatRoom } from '@/lib/open-chat-room';
 
 function setHash(hash: string) {
   Object.defineProperty(window, 'location', {
@@ -18,7 +21,7 @@ describe('useActiveSection', () => {
 
   beforeEach(() => {
     resetInitialResolutionForTests();
-    useSectionStore.setState({ activeSection: 'overview' });
+    useSectionStore.setState({ activeSection: 'overview', taskCollaboration: null });
     localStorage.clear();
     replaceStateSpy = vi.spyOn(window.history, 'replaceState');
   });
@@ -34,10 +37,36 @@ describe('useActiveSection', () => {
   });
 
   describe('initial active section', () => {
-    it('defaults to the collaboration space when no hash or localStorage is set', () => {
-      setHash('');
+    it('restores a task collaboration URL and returns directly to the board', () => {
+      const hash = taskCollaborationHash('task-123', '!execution:test');
+      setHash(hash);
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('chat');
+      expect(useSectionStore.getState().taskCollaboration?.taskId).toBe('task-123');
+      expect(useHitlInboxStore.getState().pendingChatRoomId).toBe('!execution:test');
+      expect(window.location.hash).toBe(hash);
+      act(() => result.current.setActiveSection('tasks'));
+      expect(window.location.hash).toBe('#workbench/tasks');
+      expect(useSectionStore.getState().taskCollaboration).toBeNull();
+      act(() => { setHash(hash); window.dispatchEvent(new Event('hashchange')); });
+      expect(result.current.activeSection).toBe('chat');
+      expect(useSectionStore.getState().taskCollaboration?.taskId).toBe('task-123');
+    });
+
+    it('writes a task route on entry and clears it on ordinary chat navigation', () => {
+      setHash('#workbench/tasks');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => openChatRoom('!execution:test', 'task-123'));
+      expect(window.location.hash).toBe(taskCollaborationHash('task-123', '!execution:test'));
+      act(() => result.current.setActiveSection('chat'));
+      expect(window.location.hash).toBe('#workbench/space');
+      expect(useSectionStore.getState().taskCollaboration).toBeNull();
+    });
+    it('defaults to the homepage when no hash is set', () => {
+      setHash('');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('overview');
+      expect(window.location.hash).toBe('#console/system/overview');
     });
 
     it('resolves the layered space hash (PRD §5.3)', () => {
@@ -50,7 +79,22 @@ describe('useActiveSection', () => {
       setHash('#workers');
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('workers');
-      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#console/resources/workers');
+      expect(replaceStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
+        '#console/resources/workers',
+      );
+    });
+
+    it('normalizes #teams to the separate team page', () => {
+      setHash('#teams');
+      const { result } = renderHook(() => useActiveSection());
+      expect(result.current.activeSection).toBe('teams');
+      expect(replaceStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
+        '#console/resources/teams',
+      );
     });
 
     it('normalizes #chat to the layered space hash', () => {
@@ -68,24 +112,30 @@ describe('useActiveSection', () => {
     });
 
     it('routes the legacy grouped hash through to the fallback default', () => {
-      // Unknown grouped hashes were never a supported surface; they fall
-      // through to the collaboration-space default.
       setHash('#overview/overview');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
     });
 
-    it('falls back to localStorage when hash is empty', () => {
+    it('opens the homepage at the product root even after visiting a tool page', () => {
       setHash('');
       localStorage.setItem(STORAGE_KEY, 'teams');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('teams');
+      expect(result.current.activeSection).toBe('overview');
     });
 
-    it('falls back to chat when hash is invalid', () => {
+    it('falls back to the homepage when hash is invalid', () => {
       setHash('#unknown-section');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('chat');
+      expect(result.current.activeSection).toBe('overview');
+    });
+
+    it('returns to the homepage when the URL hash is cleared', () => {
+      setHash('#workbench/tasks');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => { setHash(''); window.dispatchEvent(new Event('hashchange')); });
+      expect(result.current.activeSection).toBe('overview');
+      expect(window.location.hash).toBe('#console/system/overview');
     });
 
     it('does not clobber the URL hash with the stale pre-resolution default', () => {
@@ -98,10 +148,10 @@ describe('useActiveSection', () => {
       expect(window.location.hash).toBe('#workbench/tasks');
     });
 
-    it('preserves a resource tab deep link on mount', () => {
+    it('opens a resource child page and preserves its deep link on mount', () => {
       setHash('#console/resources/humans');
       const { result } = renderHook(() => useActiveSection());
-      expect(result.current.activeSection).toBe('resources');
+      expect(result.current.activeSection).toBe('humans');
       expect(window.location.hash).toBe('#console/resources/humans');
     });
   });
@@ -131,13 +181,13 @@ describe('useActiveSection', () => {
   });
 
   describe('setActiveSection', () => {
-    it('writes the canonical layered hash for workers', () => {
+    it('writes the canonical layered hash for team-agents', () => {
       setHash('');
       const { result } = renderHook(() => useActiveSection());
       act(() => {
-        result.current.setActiveSection('workers');
+        result.current.setActiveSection('team-agents');
       });
-      expect(window.location.hash).toBe('#console/resources/workers');
+      expect(window.location.hash).toBe('#console/resources/team-agents');
     });
 
     it('writes the canonical layered hash for the collaboration space', () => {

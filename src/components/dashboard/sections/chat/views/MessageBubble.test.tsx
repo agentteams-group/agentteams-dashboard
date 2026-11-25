@@ -1,14 +1,26 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageBubble } from './MessageBubble';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import { RuntimeMapProvider } from '../runtime-map-context';
+
+it('shows a decision activity instead of exposing its transport command', () => {
+  renderWithProvider(<MessageBubble message={{ id: '$decision', sender: '@me:test', senderShort: 'me', content: '/approve 0 thread:turn', timestamp: 0, type: 'm.text', isMe: true, rawContent: { 'com.agentteams.answer': { confirmation_id: '0', answer: 'approved' } } }} showSender isContinuation={false} />);
+  expect(screen.getByText(/你.*已提交批准/)).toBeInTheDocument();
+  expect(screen.queryByText('/approve 0 thread:turn')).not.toBeInTheDocument();
+});
 
 // WorkflowCard（v11 live overlay）内含 useQuery → 渲染需 QueryClientProvider。
 function renderWithProvider(ui: Parameters<typeof render>[0]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+/** Finished runs start folded; open the process disclosure before inner assertions. */
+function expandProcess() {
+  fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
 }
 
 const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
@@ -21,7 +33,180 @@ beforeEach(() => {
   useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
 });
 
+describe('workflow notification presentation', () => {
+  const body = '[ProjectFlow] create_project + plan_dag: 项目「基线交付」（projectId=p-01）已创建，room=!private:server';
+  const message = { id: '$flow', sender: '@lead:server', senderShort: 'lead', workerName: 'lead', runtime: 'qwenpaw' as const, content: body, timestamp: 0, type: 'm.text' as const, isMe: false };
+
+  it('shows a readable event and keeps protocol fields inside expandable details', () => {
+    renderWithProvider(<MessageBubble message={message} showSender isContinuation={false} />);
+    expect(screen.getByRole('note', { name: '项目已启动' })).toBeVisible();
+    expect(screen.getByText('基线交付')).toBeVisible();
+    expect(screen.getByText(body)).not.toBeVisible();
+    fireEvent.click(screen.getByText('原始通知'));
+    expect(screen.getByText(body)).toBeVisible();
+  });
+
+  it('does not reformat a human message containing the same protocol prefix', () => {
+    renderWithProvider(<MessageBubble message={{ ...message, isMe: true }} showSender isContinuation={false} />);
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.getByText(body)).toBeVisible();
+  });
+});
+
+it('passes structured recipients into the body renderer', () => {
+  markdownMock.mockClear();
+  renderWithProvider(<MessageBubble message={{ id: '$mention', sender: '@leader:test', senderShort: 'leader', content: '任务已完成。', timestamp: 0, type: 'm.text', isMe: false, rawContent: { 'm.mentions': { user_ids: ['@admin:test'] } } }} showSender isContinuation={false} />);
+  expect(markdownMock.mock.calls.some(([props]) => (props as { mentionedUserIds?: string[] }).mentionedUserIds?.includes('@admin:test'))).toBe(true);
+});
+
+it('puts recipients on the visible answer after folded process text', () => {
+  markdownMock.mockClear();
+  renderWithProvider(<MessageBubble message={{ id: '$turn-mention', sender: '@leader:test', senderShort: 'leader', content: '任务已完成。', timestamp: 0, type: 'm.text', isMe: false,
+    rawContent: { 'm.mentions': { user_ids: ['@admin:test'] } },
+    precomputedBlocks: [{ type: 'text', text: '检查执行结果', inProcess: true }, { type: 'text', text: '任务已完成。' }] }} showSender isContinuation={false} />);
+  const answer = markdownMock.mock.calls.find(([props]) => props.content === '任务已完成。');
+  expect((answer?.[0] as { mentionedUserIds?: string[] }).mentionedUserIds).toEqual(['@admin:test']);
+});
+
+describe('消息复制反馈与已编辑徽标（方案 v3 B-4）', () => {
+  const base = {
+    sender: '@me:example.com',
+    senderShort: 'me',
+    timestamp: 0,
+    type: 'm.text' as const,
+    isMe: true,
+  };
+
+  it('复制成功后按钮改成「已复制到剪贴板」', async () => {
+    const onCopy = vi.fn().mockResolvedValue(true);
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$copy-ok', content: '要复制的文本' }}
+        showSender
+        isContinuation={false}
+        onCopy={onCopy}
+      />
+    );
+    fireEvent.mouseEnter(container.querySelector('[data-chat-message-body]')!);
+    const button = screen.getByRole('button', { name: '复制' });
+    fireEvent.click(button);
+    expect(onCopy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(button).toHaveAccessibleName('已复制到剪贴板'));
+  });
+
+  it('写入没成功时明说失败，不假装已复制', async () => {
+    const onCopy = vi.fn().mockResolvedValue(false);
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$copy-fail', content: '要复制的文本' }}
+        showSender
+        isContinuation={false}
+        onCopy={onCopy}
+      />
+    );
+    fireEvent.mouseEnter(container.querySelector('[data-chat-message-body]')!);
+    const button = screen.getByRole('button', { name: '复制' });
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toHaveAccessibleName('复制失败，请手动选中文字复制'));
+  });
+
+  it('已编辑徽标用中文，并在 title 里给出编辑次数', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$edited', content: '改过的文本', isEdited: true, revisionCount: 3 }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    expect(screen.getByText('已编辑')).toHaveAttribute('title', '已编辑 3 次');
+  });
+
+  it('服务端没回报次数时不编数字，title 说明未回报', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{ ...base, id: '$edited-unknown', content: '改过的文本', isEdited: true }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    expect(screen.getByText('已编辑')).toHaveAttribute('title', '已编辑（服务端未回报编辑次数）');
+  });
+
+  it('keeps the badge for another human but hides it on an Agent reply assembled from edits', () => {
+    renderWithProvider(<RuntimeMapProvider map={{ '@planner:example.com': { runtime: 'qwenpaw', workerName: 'planner' } }}>
+      <MessageBubble message={{ ...base, id: '$agent-edit', sender: '@planner:example.com', isMe: false, content: 'Agent 最终回复', isEdited: true }} showSender isContinuation={false} />
+      <MessageBubble message={{ ...base, id: '$human-edit', sender: '@alice:example.com', senderShort: 'alice', isMe: false, content: '人工编辑后的消息', isEdited: true }} showSender isContinuation={false} />
+    </RuntimeMapProvider>);
+    expect(screen.getByText('Agent 最终回复')).toBeVisible();
+    expect(screen.getByText('人工编辑后的消息')).toBeVisible();
+    expect(screen.getAllByText('已编辑')).toHaveLength(1);
+    expect(screen.getByText('已编辑').closest('[data-chat-message-meta]')).toHaveTextContent('alice');
+  });
+});
+
 describe('MessageBubble', () => {
+  it.each([false, true])('shows actions below the body without an overlay (isMe=%s)', (isMe) => {
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$actions', sender: '@user:test', senderShort: 'user', content: 'hello', timestamp: 0, type: 'm.text', isMe }}
+        showSender isContinuation={false} onCopy={vi.fn()} onReply={vi.fn()}
+      />
+    );
+    const body = container.querySelector('[data-chat-message-body]')!;
+    const actions = container.querySelector('[aria-label="消息操作"]')!;
+    expect(actions).toHaveClass('opacity-0', 'focus-within:opacity-100');
+    fireEvent.mouseEnter(container.firstElementChild!);
+    expect(actions).toHaveClass('opacity-0');
+    fireEvent.mouseEnter(body);
+    expect(actions).not.toHaveClass('opacity-0');
+    expect(body.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions).not.toHaveClass('md:absolute');
+    expect(actions).toHaveClass(isMe ? 'self-end' : 'self-start');
+    fireEvent.mouseLeave(actions.parentElement!);
+    expect(actions).toHaveClass('opacity-0');
+    expect(actions).toBeInTheDocument();
+  });
+
+  it.each([false, true])('keeps sender and time in reading order (isMe=%s)', (isMe) => {
+    const timestamp = new Date(2026, 10, 7, 9, 30).getTime();
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$time-header', sender: '@reviewer:test', senderShort: 'reviewer', content: 'hello', timestamp, type: 'm.text', isMe }}
+        showSender
+        isContinuation={false}
+      />
+    );
+    const meta = container.querySelector('[data-chat-message-meta]')!;
+    const sender = screen.getByText('reviewer');
+    const time = screen.getByText(/(?:^| )09:30$/);
+    expect(meta).toContainElement(sender);
+    expect(meta).toContainElement(time);
+    expect(sender.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(/(?:^| )09:30$/)).toHaveLength(1);
+  });
+
+  it.each([
+    { status: 'sending' as const, receipt: '发送中' },
+    { status: 'error' as const, receipt: '发送失败', title: true },
+    { status: undefined, receipt: '已读' },
+  ])('keeps continuation time and $receipt below the content', ({ status, receipt, title }) => {
+    const timestamp = new Date(2026, 10, 7, 9, 31).getTime();
+    const { container } = renderWithProvider(
+      <MessageBubble
+        message={{ id: '$time-continuation', sender: '@me:test', senderShort: 'me', content: 'continued message', timestamp, type: 'm.text', isMe: true, status }}
+        showSender
+        isContinuation
+        currentUserId="@me:test"
+        readReceipts={{ '@peer:test': { ts: timestamp + 1000, eventId: '$time-continuation' } }}
+      />
+    );
+    const footer = container.querySelector('[data-chat-message-footer]')!;
+    expect(footer).toContainElement(screen.getByText(/(?:^| )09:31$/));
+    expect(footer).toContainElement(title ? screen.getByTitle(receipt) : screen.getByLabelText(receipt));
+    expect(footer.previousElementSibling).toContainElement(screen.getByText('continued message'));
+    expect(container.querySelector('[data-chat-message-meta]')).toBeNull();
+  });
+
   it('passes isStreaming to the text block renderer while streaming', () => {
     markdownMock.mockClear();
     renderWithProvider(
@@ -66,6 +251,32 @@ describe('MessageBubble', () => {
     const props = markdownMock.mock.calls[0][0] as { isStreaming?: boolean };
     expect(props.isStreaming).toBeFalsy();
   });
+  it('renders precomputed turn blocks as one folded run plus the text output', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$turn',
+          sender: '@ceshi:example.com',
+          senderShort: 'ceshi',
+          content: '全部对上了。',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          precomputedBlocks: [
+            { type: 'thinking', content: '第一步：检查渲染' },
+            { type: 'tool_call', payload: { tool_name: 'read_file', status: 'succeeded' } },
+            { type: 'text', text: '全部对上了。' },
+          ],
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    expect(screen.getAllByRole('button', { name: /^过程/ })).toHaveLength(1);
+    expect(screen.getByText('全部对上了。')).toBeInTheDocument();
+  });
+
   it('renders mixed text and tool blocks without repeating the raw card payload', () => {
     renderWithProvider(
       <MessageBubble
@@ -85,6 +296,7 @@ describe('MessageBubble', () => {
 
     expect(screen.getByText('准备执行')).toBeInTheDocument();
     expect(screen.getByText('执行完成')).toBeInTheDocument();
+    expandProcess();
     expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.queryByText(/"tool_name"/)).toBeNull();
   });
@@ -108,9 +320,9 @@ describe('MessageBubble', () => {
       />
     );
 
-    expect(screen.getAllByText('请选择一种方案？')).toHaveLength(1);
+    expect(screen.getAllByRole('group', { name: '干预请求' })).toHaveLength(1);
     expect(screen.getAllByRole('radio')).toHaveLength(2);
-    expect(screen.getAllByText('补充说明')).toHaveLength(1);
+    expect(screen.getAllByLabelText('自由输入')).toHaveLength(1);
   });
 
   it('uses the command renderer and safely displays invalid JSON arguments', () => {
@@ -130,6 +342,7 @@ describe('MessageBubble', () => {
       />
     );
 
+    expandProcess();
     expect(screen.getByRole('button', { name: /执行命令/ })).toBeInTheDocument();
   });
 
@@ -196,9 +409,11 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByRole('button', { name: /工具审批 - execute_shell_command/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
+    // Preserve the pre-existing Tool Guard interaction; QwenPaw's queue
+    // commands require exact request IDs through the new contract.
+    expect(screen.getByRole('button', { name: '同意并发送' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /拒绝/ })).toBeInTheDocument();
   });
 
   it('renders AgentTeams workflow details from a structured message payload', () => {
@@ -255,9 +470,7 @@ Type /approve to approve, or send any message to deny.`,
     const textBubble = screen.getByText('宽内容').parentElement;
     expect(textBubble).toHaveClass('w-fit');
     expect(textBubble).toHaveClass('max-w-full');
-    expect(textBubble).toHaveClass('rounded-2xl');
-    expect(textBubble).toHaveClass('bg-muted/60');
-    expect(textBubble).toHaveClass('border-border/40');
+    expect(textBubble).not.toHaveClass('rounded-2xl', 'bg-muted/60', 'border');
     expect(textBubble).not.toHaveClass('shadow-sm');
     textMessage.unmount();
 
@@ -290,7 +503,7 @@ Type /approve to approve, or send any message to deny.`,
     ).toBeInTheDocument();
   });
 
-  it('tints own text bubbles emerald without a drop shadow', () => {
+  it('renders own text without a shaded message box', () => {
     renderWithProvider(
       <MessageBubble
         message={{
@@ -308,8 +521,7 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     const ownBubble = screen.getByText('我的消息').parentElement;
-    expect(ownBubble).toHaveClass('bg-emerald-500/10');
-    expect(ownBubble).toHaveClass('border-emerald-500/25');
+    expect(ownBubble).not.toHaveClass('bg-primary/5', 'border', 'rounded-2xl');
     expect(ownBubble).not.toHaveClass('shadow-sm');
   });
 
@@ -341,13 +553,17 @@ Parameters / 参数:
 { "command": "pwd" }
 
 Type /approve to approve, or send any message to deny.`,
-      assertRendered: () => expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument(),
+      assertRendered: () => {
+        // Legacy rendering remains compatible; no new CoPaw integration.
+        expect(screen.getByRole('region', { name: '操作审批：execute_shell_command' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '同意并发送' })).toBeInTheDocument();
+      },
     },
     {
       runtime: 'QwenPaw',
       content: "object='message' status='completed' error=None id='msg_qwen' type='reasoning' role='assistant' content=[TextContent(sequence_number=None, object='content', status=None, error=None, type='text', index=0, delta=None, msg_id='msg_qwen', text='正在推理')] code=None message=None usage=None metadata={}",
       assertRendered: () => {
-        fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+        expandProcess();
         expect(screen.getByText('正在推理')).toBeInTheDocument();
       },
     },
@@ -398,7 +614,7 @@ Type /approve to approve, or send any message to deny.`,
     );
     expect(notice).toHaveTextContent('Worker ceshi');
     expect(notice).toHaveTextContent('已自动暂停');
-    expect(notice.className).toContain('text-[11px]');
+    expect(notice.className).toContain('text-xs');
     // The sender avatar/name is replaced by the notice layout.
     expect(screen.queryByText('manager')).toBeNull();
     expect(screen.queryByText('MA')).toBeNull();
@@ -531,9 +747,86 @@ Type /approve to approve, or send any message to deny.`,
       />
     );
 
-    expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
+    // Tool step is running → the fold auto-opens so progress stays visible.
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText(/思考过程/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
     expect(screen.getByText('最终答案')).toBeInTheDocument();
+  });
+
+  it('folds a finished run into one collapsed disclosure with a step summary', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$agent-run-done',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              blocks: [
+                { type: 'thinking', content: '正在分析请求', isStreaming: false },
+                { type: 'tool_call', payload: { tool_name: 'read_file', status: 'success' } },
+                { type: 'text', text: '最终答案' },
+              ],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const process = screen.getByTestId('run-process');
+    expect(process).toHaveAttribute('data-state', 'closed');
+    expect(process).toHaveTextContent('思考 1 · 工具 1');
+    // Nothing inside the fold leaks out; the result text stays visible.
+    expect(screen.queryByText('正在分析请求')).toBeNull();
+    expect(screen.queryByRole('button', { name: /读取文件/ })).toBeNull();
+    expect(screen.getByText('最终答案')).toBeInTheDocument();
+
+    expandProcess();
+    expect(process).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText('正在分析请求')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /读取文件/ })).toBeInTheDocument();
+  });
+
+  it('surfaces failed steps in the collapsed process summary', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$agent-run-failed',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: '',
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              blocks: [
+                {
+                  type: 'tool_call',
+                  payload: { tool_name: 'execute_command', status: 'failed', result: 'exit code 1' },
+                },
+                { type: 'text', text: '执行失败，换个方式' },
+              ],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+      />
+    );
+
+    const process = screen.getByTestId('run-process');
+    expect(process).toHaveAttribute('data-state', 'closed');
+    expect(process).toHaveTextContent('工具 1');
+    expect(process).toHaveTextContent('失败 1');
+    expect(screen.getByText('执行失败，换个方式')).toBeInTheDocument();
   });
 
   it('shows a single check for my message with no read receipts', () => {
@@ -559,7 +852,7 @@ Type /approve to approve, or send any message to deny.`,
     expect(screen.queryByLabelText('已读')).toBeNull();
   });
 
-  it('shows a double check when another user has read my message', () => {
+  it('shows a single green check when another user has read my message', () => {
     renderWithProvider(
       <MessageBubble
         message={{
@@ -581,6 +874,7 @@ Type /approve to approve, or send any message to deny.`,
     );
 
     expect(screen.getByLabelText('已读')).toBeInTheDocument();
+    expect(screen.getByLabelText('已读')).not.toHaveClass('lucide-check-check');
     expect(screen.queryByLabelText('已发送')).toBeNull();
   });
 
@@ -686,7 +980,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       />,
     );
     // 卡片标题（问题原句）
-    expect(screen.getByText('你希望先实现哪一种交互？')).toBeInTheDocument();
+    expect(screen.getAllByText('你希望先实现哪一种交互？')[0]).toBeInTheDocument();
     // 选项进入卡内（radio 形态）
     expect(screen.getByRole('radio', { name: /消息内嵌卡片/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /底部快捷操作/ })).toBeInTheDocument();
@@ -717,6 +1011,9 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
       expect.stringContaining('甲'),
       '@ceshi:matrix-local.agentteams.io:18080',
       '$card',
+      // 这张卡是从正文猜出来的（heuristic: 前缀），运行时没有对应 id，
+      // 所以第四参是空的（方案 v3 C-3）；真卡会带上 com.agentteams.answer 字段。
+      undefined,
     );
   });
 
@@ -734,7 +1031,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('页面类型：想要哪种？')).toBeInTheDocument();
+    expect(screen.getAllByText('页面类型：想要哪种？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /落地页/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
@@ -758,7 +1055,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('问题 1/6：你想要哪种页面？')).toBeInTheDocument();
+    expect(screen.getAllByText('问题 1/6：你想要哪种页面？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /宣传落地页/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /提交选择/ })).toBeInTheDocument();
   });
@@ -783,7 +1080,7 @@ describe('MessageBubble — 干预启发式升格（F2.1 降级完整形态）',
         onSendConfirmation={vi.fn()}
       />,
     );
-    expect(screen.getByText('第 1 个问题：飞机页面还想加点什么？')).toBeInTheDocument();
+    expect(screen.getAllByText('第 1 个问题：飞机页面还想加点什么？')[0]).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /尾焰特效/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /夜间星空模式/ })).toBeInTheDocument();
     expect(screen.getByText('也可以直接输入你的想法：')).toBeInTheDocument();
@@ -847,7 +1144,7 @@ describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）'
     const column = screen.getByText('我发的').closest('.flex.flex-col');
     expect(column?.className).toContain('items-end');
     const bubble = screen.getByText('我发的').parentElement;
-    expect(bubble?.className).toContain('rounded-tr-md');
+    expect(bubble?.className).not.toContain('rounded-tr-md');
   });
 
   it('他人（Agent）的消息保持左侧：不镜像、items-start', () => {
@@ -872,6 +1169,68 @@ describe('MessageBubble — 左右分布（自己消息靠右、他人靠左）'
     const column = screen.getByText('Agent 回复').closest('.flex.flex-col');
     expect(column?.className).toContain('items-start');
     const bubble = screen.getByText('Agent 回复').parentElement;
-    expect(bubble?.className).toContain('rounded-tl-md');
+    expect(bubble?.className).not.toContain('rounded-tl-md');
   });
+});
+
+describe('MessageBubble missing body (#1436)', () => {
+  it('does not crash when content is undefined', () => {
+    expect(() => {
+      renderWithProvider(
+        <MessageBubble
+          message={{
+            id: '$nobody',
+            sender: '@agent:example.com',
+            senderShort: 'agent',
+            content: undefined as unknown as string,
+            timestamp: 0,
+            type: 'm.text',
+            isMe: false,
+            rawContent: {
+              'm.relates_to': { 'm.in_reply_to': { event_id: '$card' } },
+            },
+          }}
+          showSender={false}
+          isContinuation={false}
+        />,
+      );
+    }).not.toThrow();
+  });
+
+  it('still renders a v1 confirmation card when body is missing', () => {
+    renderWithProvider(
+      <MessageBubble
+        message={{
+          id: '$cfm',
+          sender: '@agent:example.com',
+          senderShort: 'agent',
+          content: undefined as unknown as string,
+          timestamp: 0,
+          type: 'm.text',
+          isMe: false,
+          rawContent: {
+            'org.agentteams.run': {
+              version: '1',
+              blocks: [{ type: 'confirmation', tool_name: 'bash', confirmation_id: 'cfm-1' }],
+            },
+          },
+        }}
+        showSender={false}
+        isContinuation={false}
+        onSendConfirmation={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /批准/ })).toBeInTheDocument();
+  });
+});
+
+
+it('renders an optimistic reference once as a file card while keeping the user caption', async () => {
+  const { withFileReferences } = await import('@/lib/file-refs');
+  const refs = [{ name: '演示.pptx', key: 'default/docs/演示.pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+  renderWithProvider(<MessageBubble message={{ id: 'local-ref', sender: '@me:test', senderShort: 'me', timestamp: 0, type: 'm.text', isMe: true, content: withFileReferences('看下这个', refs), fileRefs: refs }} showSender isContinuation={false} />);
+  expect(screen.getByText('看下这个')).toBeInTheDocument();
+  expect(screen.getAllByText('演示.pptx')).toHaveLength(1);
+  expect(screen.queryByText(/不要重新选择文件/)).toBeNull();
+  expect(screen.getByText('查看路径').closest('details')).not.toHaveAttribute('open');
 });

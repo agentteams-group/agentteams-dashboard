@@ -30,7 +30,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      themeId: SYSTEM_THEME_ID,
+      themeId: DEFAULT_THEME_ID,
       customThemes: [],
       enterpriseThemes: [],
       enterpriseDefaultTheme: null,
@@ -91,6 +91,14 @@ export const useThemeStore = create<ThemeState>()(
         themeId: state.themeId,
         customThemes: state.customThemes,
       }),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<ThemeState> | undefined;
+        return {
+          ...current,
+          themeId: saved?.themeId === 'scheduled' ? DEFAULT_THEME_ID : saved?.themeId ?? current.themeId,
+          customThemes: saved?.customThemes ?? current.customThemes,
+        };
+      },
     }
   )
 );

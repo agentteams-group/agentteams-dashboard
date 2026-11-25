@@ -4,17 +4,27 @@ import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 
 import { cn } from "@/lib/utils"
+import { isDesktopHover } from "@/lib/desktop-interactions"
+
+const HoverTabsContext = React.createContext<((_value: string) => void) | null>(null)
 
 function Tabs({
   className,
+  value, defaultValue, onValueChange,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  const [localValue, setLocalValue] = React.useState(defaultValue)
+  const change = (next: string) => { if (value === undefined) setLocalValue(next); onValueChange?.(next) }
   return (
+    <HoverTabsContext.Provider value={change}>
     <TabsPrimitive.Root
       data-slot="tabs"
       className={cn("flex flex-col gap-2", className)}
       {...props}
+      value={value ?? localValue}
+      onValueChange={change}
     />
+    </HoverTabsContext.Provider>
   )
 }
 
@@ -26,7 +36,7 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        "bg-muted text-muted-foreground inline-flex h-11 w-fit items-center justify-center rounded-lg p-[3px] sm:h-9",
         className
       )}
       {...props}
@@ -36,8 +46,10 @@ function TabsList({
 
 function TabsTrigger({
   className,
+  onPointerEnter,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  const change = React.useContext(HoverTabsContext)
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
@@ -46,6 +58,7 @@ function TabsTrigger({
         className
       )}
       {...props}
+      onPointerEnter={event => { onPointerEnter?.(event); if (!event.defaultPrevented && !props.disabled && isDesktopHover(event)) change?.(props.value) }}
     />
   )
 }

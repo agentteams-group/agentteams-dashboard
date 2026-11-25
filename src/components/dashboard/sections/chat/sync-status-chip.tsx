@@ -54,7 +54,7 @@ export function SyncStatusChip() {
 
   return (
     <span
-      className="flex items-center gap-1.5 h-7 px-2 rounded-md border border-border text-[10px] text-muted-foreground select-none"
+      className="flex items-center gap-1.5 h-7 px-2 rounded-md border border-border text-xs text-muted-foreground select-none"
       title={title}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />

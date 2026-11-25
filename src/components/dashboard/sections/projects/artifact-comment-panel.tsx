@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
+  commentAnchorLabel,
   parseArtifactComments,
   resolveCommentThreads,
   sendArtifactComment,
-  sendRoomText,
+  sendCommentDispatch,
 } from '@/lib/artifact-comment';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { matrixProxyFetch } from '@/lib/matrix-write';
@@ -31,6 +32,8 @@ interface ArtifactCommentPanelProps {
   artifact: string;
   /** 当前锚点行（预览区点击行号时设置）。 */
   anchorLine: number | null;
+  /** 当前坐标锚点（预览区点击图片时设置，E-1）。 */
+  anchorCoordinate?: { x: number; y: number } | null;
   /** 任务维度指派目标（F6.3 派单消息 @ 对象，如责任 Agent）。 */
   defaultAssignee?: string;
 }
@@ -41,7 +44,13 @@ interface ArtifactCommentPanelProps {
  * - 评论即房间消息（正文进时间线），解决状态以追加事件回溯；
  * - 批量派发（G2 降级）：勾选评论生成结构化修复指令发回房间。
  */
-export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssignee }: ArtifactCommentPanelProps) {
+export function ArtifactCommentPanel({
+  roomId,
+  artifact,
+  anchorLine,
+  anchorCoordinate,
+  defaultAssignee,
+}: ArtifactCommentPanelProps) {
   const queryClient = useQueryClient();
   const currentUserId = useMatrixStore((s) => s.userId) ?? 'unknown';
   const [text, setText] = useState('');
@@ -74,6 +83,7 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
         body: action === 'resolve' ? '' : text.trim(),
         author: currentUserId,
         ...(anchorLine !== null ? { line: anchorLine } : {}),
+        ...(anchorCoordinate ? { coordinate: anchorCoordinate } : {}),
         action,
         resolvesTs,
       });
@@ -91,17 +101,14 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
       toast.error('请勾选评论并填写指派对象');
       return;
     }
-    const lines = picked.map(
-      (t, i) => `${i + 1}. [${t.line ? `L${t.line}` : '全文'}] ${t.body}（评论人 ${t.author}）`,
-    );
-    const body = [
-      `【修复派单 · 工件评论】@${assignee.trim()}`,
-      `请处理工件 ${artifact} 的 ${picked.length} 条评论：`,
-      '',
-      ...lines,
-    ].join('\n');
     try {
-      await sendRoomText(roomId, body);
+      await sendCommentDispatch({
+        roomId,
+        artifact,
+        assignee,
+        comments: picked,
+        dispatchedBy: currentUserId,
+      });
       setChecked(new Set());
       toast.success(`已派发 ${picked.length} 条评论给 @${assignee.trim()}`);
     } catch (err) {
@@ -114,12 +121,12 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
       <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
         评论（{mine.length}）
-        {!roomId && <span className="text-[10px]">· 未绑定空间，只读</span>}
+        {!roomId && <span className="text-xs">· 未绑定空间，只读</span>}
       </p>
 
       <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
         {mine.map((t) => (
-          <label key={t.ts} className="flex items-start gap-2 rounded border border-border/50 px-2 py-1 text-[11px]">
+          <label key={t.ts} className="flex items-start gap-2 rounded border border-border/50 px-2 py-1 text-xs">
             <input
               type="checkbox"
               className="mt-0.5 h-3 w-3 accent-sky-600"
@@ -136,17 +143,17 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
             />
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5 flex-wrap">
-                {t.line !== undefined && (
-                  <Badge variant="outline" className="text-[9px] px-1">
-                    L{t.line}
+                {(t.line !== undefined || t.coordinate) && (
+                  <Badge variant="outline" className="text-xs px-1">
+                    {commentAnchorLabel(t)}
                   </Badge>
                 )}
                 <span>{t.body}</span>
               </span>
-              <span className="block text-[9px] text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 {t.author} · {new Date(t.ts).toLocaleTimeString('zh-CN', { hour12: false })}
                 {t.resolvedBy && (
-                  <Badge variant="outline" className="ml-1 text-[9px] border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
+                  <Badge variant="outline" className="ml-1 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
                     已解决（{t.resolvedBy}）
                   </Badge>
                 )}
@@ -156,7 +163,7 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-4 px-1 text-[9px] text-muted-foreground"
+                className="h-4 px-1 text-xs text-muted-foreground"
                 onClick={() => void post('resolve', t.ts)}
                 title="标记解决（追加事件，可回溯）"
               >
@@ -167,7 +174,7 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
           </label>
         ))}
         {mine.length === 0 && (
-          <p className="text-[10px] text-muted-foreground">暂无评论。文本工件可点击行号定位锚点。</p>
+          <p className="text-xs text-muted-foreground">暂无评论。文本工件可点击行号定位锚点。</p>
         )}
       </div>
 
@@ -176,7 +183,13 @@ export function ArtifactCommentPanel({ roomId, artifact, anchorLine, defaultAssi
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={anchorLine !== null ? `评论 L${anchorLine}…` : '评论整份工件…'}
+            placeholder={
+              anchorCoordinate
+                ? `评论 (${Math.round(anchorCoordinate.x * 100)}%, ${Math.round(anchorCoordinate.y * 100)}%)…`
+                : anchorLine !== null
+                  ? `评论 L${anchorLine}…`
+                  : '评论整份工件…'
+            }
             className="h-7 flex-1 text-xs"
             aria-label="评论内容"
           />

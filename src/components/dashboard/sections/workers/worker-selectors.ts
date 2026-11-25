@@ -47,6 +47,34 @@ export function paginateWorkers(
   return { totalPages, safePage, items: workers.slice(start, start + pageSize) };
 }
 
+export interface WorkerGroup {
+  /** 分组键：团队名，未归属为空串。 */
+  team: string;
+  workers: WorkerResponse[];
+}
+
+/**
+ * 卡片视图按团队分组：具名团队按名称排序，未归属（无 team）放最后。
+ * 空组不会出现（输入即已过滤后的列表）。
+ */
+export function groupWorkersByTeam(workers: WorkerResponse[]): WorkerGroup[] {
+  const groups = new Map<string, WorkerResponse[]>();
+  for (const worker of workers) {
+    const team = worker.team?.trim() ?? '';
+    const bucket = groups.get(team);
+    if (bucket) bucket.push(worker);
+    else groups.set(team, [worker]);
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => {
+      if (a === b) return 0;
+      if (a === '') return 1;
+      if (b === '') return -1;
+      return a.localeCompare(b);
+    })
+    .map(([team, members]) => ({ team, workers: members }));
+}
+
 export function computeRuntimeDist(workers: WorkerResponse[] | undefined): Record<string, number> {
   const dist: Record<string, number> = {};
   workers?.forEach((w) => {

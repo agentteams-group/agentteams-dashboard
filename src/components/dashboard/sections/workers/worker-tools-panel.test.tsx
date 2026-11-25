@@ -171,4 +171,28 @@ describe('B6 WorkerToolsPanel（#1255 消费）', () => {
     );
     await waitFor(() => expect(sw).toBeChecked());
   });
+
+  it('⑨ 工具图标走 SVG（不渲染后端 emoji，未知工具按组回退）', async () => {
+    const unknownTool = {
+      name: 'mystery_tool',
+      enabled: true,
+      description: 'Unknown tool',
+      asyncExecution: false,
+      icon: '🧪',
+      requiresConfig: false,
+    };
+    mockFetch([{ status: 200, body: { tools: [...TOOLS, unknownTool], total: 3 } }]);
+    render(<WorkerToolsPanel workerName="w1" runtime="qwenpaw" />);
+    await screen.findByText('内置工具（声明式保存，切换即生效）');
+
+    // 后端 emoji 不再出现在 DOM。
+    expect(screen.queryByText('🔧')).toBeNull();
+    expect(screen.queryByText('🌐')).toBeNull();
+    expect(screen.queryByText('🧪')).toBeNull();
+
+    // 已收录工具 → 专属 SVG；未收录工具 → 分组兜底 SVG（同样不是 emoji）。
+    expect(screen.getByTestId('tool-icon-execute_shell_command').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('tool-icon-web_search').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('tool-icon-mystery_tool').querySelector('svg')).not.toBeNull();
+  });
 });

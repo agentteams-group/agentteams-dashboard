@@ -8,7 +8,7 @@ import type { ProjectStatus } from '@/lib/agentteams-projects-api';
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
-    <Badge className={`text-[10px] gap-1 border ${PROJECT_STATUS_COLOR[status] ?? PROJECT_STATUS_COLOR.unknown}`}>
+    <Badge className={`text-xs gap-1 border ${PROJECT_STATUS_COLOR[status] ?? PROJECT_STATUS_COLOR.unknown}`}>
       {PROJECT_STATUS_LABEL[status] ?? status}
     </Badge>
   );

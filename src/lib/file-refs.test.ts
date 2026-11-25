@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FILE_REFS_CONTENT_KEY, parseFileRefs, type FileRef } from '@/lib/file-refs';
+import { FILE_REFS_CONTENT_KEY, parseFileRefs, withFileReferences, type FileRef } from '@/lib/file-refs';
 
 describe('parseFileRefs', () => {
   it('parses the { refs: [...] } envelope and defaults the name to the basename', () => {
@@ -46,5 +46,20 @@ describe('parseFileRefs', () => {
 
   it('exposes the stable content key', () => {
     expect(FILE_REFS_CONTENT_KEY).toBe('com.agentteams.file_refs');
+  });
+});
+
+describe('runtime-readable workspace references', () => {
+  it('includes the chosen filename, full key and owner in plain text', () => {
+    const refs: FileRef[] = [{ name: '报告.md', key: 'default/docs/报告.md', workspace: { kind: 'worker', ownerName: 'default' } }];
+    const body = withFileReferences('总结这个文件', refs);
+    expect(body).toContain('总结这个文件');
+    expect(body).toContain('default/docs/报告.md');
+    expect(body).toContain('Worker工作空间 "default"');
+    expect(parseFileRefs({ refs })).toEqual(refs);
+  });
+  it('leaves ordinary messages unchanged and supports legacy references', () => {
+    expect(withFileReferences('你好')).toBe('你好');
+    expect(withFileReferences('请阅读', [{ name: 'a.md', key: 'docs/a.md' }])).toContain('docs/a.md');
   });
 });

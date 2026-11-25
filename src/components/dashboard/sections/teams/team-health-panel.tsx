@@ -28,7 +28,7 @@ export function TeamHealthPanel({
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">就绪率</span>
             <Progress value={analytics.readinessPct} className="h-1.5 flex-1" />
-            <span className="text-[10px] font-mono">{analytics.readinessPct}%</span>
+            <span className="text-xs font-mono">{analytics.readinessPct}%</span>
           </div>
           <p className="text-xs text-muted-foreground">
             {team.readyWorkers}/{team.totalWorkers} Workers 就绪
@@ -42,7 +42,7 @@ export function TeamHealthPanel({
           <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <div>
             <p className="text-xs font-medium text-red-500">异常 Workers</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {analytics.criticalWorkers.join(', ')}
             </p>
           </div>
@@ -57,7 +57,7 @@ export function TeamHealthPanel({
             {Array.from(analytics.memberHealth.entries()).map(([name, score]) => (
               <div key={name} className="flex items-center gap-2 p-1.5 rounded bg-background/50">
                 <HealthRingCompact score={score} size={20} />
-                <span className="text-[10px] truncate">{name}</span>
+                <span className="text-xs truncate">{name}</span>
               </div>
             ))}
           </div>
@@ -70,7 +70,7 @@ export function TeamHealthPanel({
           <p className="text-xs font-medium mb-1.5">运行时分布</p>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(analytics.runtimeDistribution).map(([runtime, count]) => (
-              <Badge key={runtime} variant="secondary" className="text-[10px]">
+              <Badge key={runtime} variant="secondary" className="text-xs">
                 {RUNTIME_LABELS[runtime] || runtime}: {count}
               </Badge>
             ))}

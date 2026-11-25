@@ -1,0 +1,744 @@
+import { describe, expect, it } from 'vitest';
+import quietTaskHandoff from './__fixtures__/quiet-task-handoff.json';
+import { formatMatrixEvents } from '@/hooks/use-matrix';
+import type { MatrixEvent } from '@/lib/matrix-api';
+import { assembleChatTimeline, NO_ANSWER_STALE_MS } from './assemble';
+
+const ME = '@me:server';
+const BASE_TS = 1_700_000_000_000;
+
+function ev(
+  id: string,
+  sender: string,
+  body: string,
+  tsDelta: number,
+  contentExtra: Record<string, unknown> = {},
+): MatrixEvent {
+  return {
+    event_id: id,
+    sender,
+    type: 'm.room.message',
+    origin_server_ts: BASE_TS + tsDelta,
+    content: { msgtype: 'm.text', body, ...contentExtra },
+  } as MatrixEvent;
+}
+
+function notice(
+  id: string,
+  sender: string,
+  body: string,
+  tsDelta: number,
+  extra: Record<string, unknown> = {},
+) {
+  return ev(id, sender, body, tsDelta, { msgtype: 'm.notice', ...extra });
+}
+
+function threadOf(rootId: string) {
+  return { 'm.relates_to': { rel_type: 'm.thread', event_id: rootId } };
+}
+
+function replaceOf(rootId: string, newBody: string) {
+  return {
+    'm.relates_to': { rel_type: 'm.replace', event_id: rootId },
+    'm.new_content': { msgtype: 'm.text', body: newBody },
+  };
+}
+
+const COPAW_REASONING_REPR =
+  "sequence_number=12 object='message' status='completed' error=None id='msg_aaa' " +
+  "type='reasoning' role='assistant' " +
+  "content=[TextContent(sequence_number=None, object='content', status=None, error=None, " +
+  "type='text', index=0, delta=None, msg_id='msg_aaa', " +
+  "text='先分析需求，再给出方案。')] code=None message=None usage=None metadata={}";
+
+function assemble(
+  events: MatrixEvent[],
+  runtime: string,
+  sender = '@w:server',
+  now = BASE_TS + 10_000,
+) {
+  return assembleChatTimeline(formatMatrixEvents(events, ME), events, {
+    currentUserId: ME,
+    runtimeMap: { [sender]: { runtime, workerName: 'w' } },
+    now,
+  });
+}
+
+describe('ChatIR turn assembly', () => {
+  for (const runtime of ['codex', 'claudecode', 'qoder', 'openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman']) {
+    it(`${runtime}: correlates native tool edits, retains results and closes one process`, () => {
+      const run = 'native-owned-run';
+      const content = (block: Record<string, unknown>) => ({
+        msgtype: 'm.notice', 'org.agentteams.progress_only': true,
+        'm.mentions': { user_ids: [] },
+        'org.agentteams.run': { version: '1', run_id: run, blocks: [block] },
+      });
+      const first = { type: 'tool_call', tool_call_id: 'read-one', tool_name: 'read_file', arguments: { path: 'index.html' }, status: 'running' };
+      const second = { ...first, tool_call_id: 'read-two', arguments: { path: 'missing.html' } };
+      const events = [
+        notice('$one', '@w:server', 'read_file', 0, content(first)),
+        notice('$two', '@w:server', 'read_file', 1000, content(second)),
+        notice('$two-end', '@w:server', 'read_file', 2000, {
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$two' },
+          'm.new_content': { body: 'read_file', ...content({ ...second, status: 'failed', result: 'not found' }) },
+        }),
+        notice('$one-end', '@w:server', 'read_file', 3000, {
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$one' },
+          'm.new_content': { body: 'read_file', ...content({ ...first, status: 'succeeded', result: '<html>ok</html>' }) },
+        }),
+        notice('$end', '@w:server', '执行过程', 4000, content({ type: 'error', kind: 'quiet', title: '已处理' })),
+      ];
+      for (const ordered of [events, [...events].reverse()]) {
+        const { messages } = assemble(ordered, runtime, '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+        expect(messages).toHaveLength(1);
+        expect(messages[0].turnState).toBe('finalized');
+        const tools = messages[0].precomputedBlocks?.filter(block => block.type === 'tool_call');
+        expect(tools).toHaveLength(2);
+        expect(tools?.map(block => block.payload)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ tool_call_id: 'read-one', arguments: { path: 'index.html' }, result: '<html>ok</html>', status: 'succeeded' }),
+          expect.objectContaining({ tool_call_id: 'read-two', result: 'not found', status: 'failed' }),
+        ]));
+      }
+    });
+  }
+  it('replays the reported native planning handoff as one finalized process and its downstream message', () => {
+    const events = quietTaskHandoff as MatrixEvent[];
+    const sender = events[0].sender;
+    for (const ordered of [events, [...events].reverse()]) {
+      const { messages } = assemble(ordered, 'qwenpaw', sender, events.at(-1)!.origin_server_ts + NO_ANSWER_STALE_MS + 1);
+      expect(messages).toHaveLength(2);
+      expect(messages.filter(message => message.precomputedBlocks?.some(block => block.type === 'tool_call'))).toHaveLength(1);
+      expect(messages.map(message => message.turnState)).toEqual(['finalized', 'finalized']);
+      expect(messages.some(message => message.content.includes('@natural-openclaw'))).toBe(true);
+    }
+  });
+
+  it('folds a quiet Task handoff into its exact process thread without false interruption', () => {
+    const events = [
+      notice('$root', '@w:server', '处理中...', 0),
+      ev('$tool', '@w:server', '🔧 **teamharness__task**\n```json\n{"action":"plan"}\n```', 1000, threadOf('$root')),
+      ev('$handoff', '@w:server', '@next:server 请开始实现', 2000),
+      ev('$quiet', '@w:server', '* 已处理', 3000, replaceOf('$root', '已处理')),
+    ];
+    for (const ordered of [events, [...events].reverse()]) {
+      const { messages } = assemble(ordered, 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+      expect(messages).toHaveLength(2);
+      const process = messages.find(message => message.sourceEventIds?.includes('$tool'))!;
+      expect(process.turnState).toBe('finalized');
+      expect(process.content).toBe('');
+      expect(process.precomputedBlocks?.map(block => block.type)).toEqual(['tool_call']);
+      expect(messages.some(message => message.content === '已处理')).toBe(false);
+      expect(messages.some(message => message.content.includes('@next'))).toBe(true);
+    }
+  });
+
+  it('does not turn execution control notices into thinking bubbles for known workers', () => {
+    const events = [notice('$control', '@w:server', '正在处理，你可以继续补充信息或停止执行。', 0, {
+      'org.agentteams.progress_only': true,
+      'com.agentteams.execution': { run_id: '$source', status: 'running', capabilities: ['stop', 'steer'] },
+    })];
+    expect(assemble(events, 'qwenpaw').messages).toEqual([]);
+    const human = events.map(event => ({ ...event, sender: ME }));
+    expect(assemble(human, 'qwenpaw').messages).toHaveLength(1);
+  });
+
+  it('does not create an empty receipt bubble for a quiet turn with no process', () => {
+    expect(assemble([notice('$quiet', '@w:server', '已处理', 0)], 'qwenpaw').messages).toEqual([]);
+  });
+
+  it('retains failure endings and genuinely interrupted runs', () => {
+    const events = [
+      notice('$root', '@w:server', '处理中...', 0),
+      ev('$tool', '@w:server', '🔧 **execute_shell_command**\n```json\n{"command":"false"}\n```', 1000, threadOf('$root')),
+      ev('$failed', '@w:server', '* 处理异常', 2000, replaceOf('$root', '处理异常')),
+    ];
+    const { messages } = assemble(events, 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].precomputedBlocks).toContainEqual(expect.objectContaining({ type: 'error', payload: { kind: 'failed', title: '任务异常' } }));
+    const incomplete = assemble(events.slice(0, 2), 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 10_000);
+    expect(incomplete.messages[0].turnState).toBe('interrupted');
+  });
+
+  it('keeps protocol notifications separate from the assistant answer and retains their event ids', () => {
+    const body = '[ProjectFlow] create_project + plan_dag: 项目「基线交付」已创建';
+    const events = [ev('answer', '@w:server', '项目已正式启动并完成交接。', 0), ev('flow', '@w:server', body, 1_000)];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(2);
+    expect(messages.find(message => message.id === 'flow')).toMatchObject({ content: body, eventId: 'flow' });
+    expect(messages.find(message => message.id === 'answer')?.content).not.toContain('[ProjectFlow]');
+  });
+  it('assembles a qwenpaw turn: root edit is the answer, thread steps are process', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', 'Thinking:\n\n先拆解需求', 1_000, threadOf('root')),
+      ev('tool', '@w:server', '🔧 **execute_shell_command**\n```json\n{"command":"ls"}\n```', 2_000, threadOf('root')),
+      ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案：已完成')),
+    ];
+
+    const { messages, latestEventId } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'root',
+      canonicalEventId: 'root',
+      latestEventId: 'answer',
+      turnState: 'finalized',
+      content: '最终答案：已完成',
+    });
+    expect(messages[0].precomputedBlocks?.map((block) => block.type)).toEqual([
+      'thinking',
+      'tool_call',
+      'text',
+    ]);
+    expect(messages[0].precomputedBlocks?.[2]).toMatchObject({ text: '最终答案：已完成' });
+    expect(latestEventId).toBe('answer');
+  });
+
+  it('folds a QwenPaw persisted quoted reply into its traced process and finalizes the turn', () => {
+    const trace = (span: string) => ({
+      'com.agentteams.trace': { traceparent: `00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-${span.repeat(16)}-01` },
+    });
+    const events = [
+      ev('$prompt', ME, '介绍一下团队', 0),
+      notice('$root', '@w:server', '处理中...', 100, trace('1')),
+      notice('$think', '@w:server', 'Thinking:\n\n正在整理团队信息', 200, { ...threadOf('$root'), ...trace('2'), streaming: true }),
+      ev('$tool', '@w:server', '🔧 **read_file**\n```json\n{"path":"team.md"}\n```', 300, { ...threadOf('$root'), ...trace('3') }),
+      ev('$interleaved', '@another:server', '另一条独立消息', 400),
+      ev('$answer', '@w:server', '这是团队介绍。', 500, {
+        ...trace('4'),
+        'org.agentteams.reply_txn': 'matrix-reply:durable',
+        'm.relates_to': { 'm.in_reply_to': { event_id: '$prompt' } },
+      }),
+    ];
+
+    const preview = assemble(events.slice(0, 5), 'qwenpaw');
+    expect(preview.messages.find(message => message.id === '$root')?.turnState).toBe('running');
+
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(3);
+    expect(messages.find(message => message.id === '$root')).toMatchObject({
+      content: '这是团队介绍。',
+      replyToEventId: '$prompt',
+      latestEventId: '$answer',
+      sourceEventIds: ['$root', '$think', '$tool', '$answer'],
+      turnState: 'finalized',
+      isStreaming: false,
+    });
+    expect(messages.find(message => message.id === '$root')?.precomputedBlocks?.map(block => block.type))
+      .toEqual(['thinking', 'tool_call', 'text']);
+
+    const differentTrace = {
+      ...events[5],
+      content: { ...events[5].content, 'com.agentteams.trace': { traceparent: '00-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-4444444444444444-01' } },
+    };
+    expect(assemble([...events.slice(0, 5), differentTrace], 'qwenpaw').messages).toHaveLength(4);
+  });
+
+  it('keeps each QwenPaw process with its own answer when two mentioned agents interleave', () => {
+    const leader = '@leader:server';
+    const planner = '@planner:server';
+    const events = [
+      ev('ask-leader', ME, '@leader 你好', 0, { 'm.mentions': { user_ids: [leader] } }),
+      notice('leader-root', leader, '处理中...', 100),
+      ev('ask-planner', ME, '@planner 你好', 200, { 'm.mentions': { user_ids: [planner] } }),
+      notice('planner-root', planner, '处理中...', 300),
+      notice('planner-think', planner, 'Thinking:\n\n预算思考', 400, threadOf('planner-root')),
+      notice('leader-think', leader, 'Thinking:\n\n队长思考', 500, threadOf('leader-root')),
+      ev('planner-reply', planner, '* 预算答复', 600, replaceOf('planner-root', '预算答复')),
+      notice('leader-think-more', leader, 'Thinking:\n\n队长补充思考', 700, threadOf('leader-root')),
+      ev('leader-reply', leader, '* 队长答复', 800, replaceOf('leader-root', '队长答复')),
+    ];
+    const render = (raw: MatrixEvent[]) => assembleChatTimeline(formatMatrixEvents(raw, ME), raw, {
+      currentUserId: ME,
+      runtimeMap: { [leader]: { runtime: 'qwenpaw', workerName: 'leader' }, [planner]: { runtime: 'qwenpaw', workerName: 'planner' } },
+      now: BASE_TS + 900,
+    });
+
+    const preview = render(events.slice(0, 6));
+    expect(preview.turns).toHaveLength(2);
+    expect(preview.messages.find(message => message.id === 'leader-root')?.sourceEventIds).toContain('leader-think');
+
+    const { messages, turns } = render(events.toReversed());
+    expect(messages).toHaveLength(4);
+    expect(turns).toHaveLength(2);
+    expect(messages.find(message => message.id === 'planner-root')).toMatchObject({
+      content: '预算答复', turnState: 'finalized', latestEventId: 'planner-reply',
+      precomputedBlocks: [{ type: 'thinking', content: '预算思考' }, { type: 'text', text: '预算答复' }],
+    });
+    expect(messages.find(message => message.id === 'leader-root')).toMatchObject({
+      content: '队长答复', turnState: 'finalized', latestEventId: 'leader-reply',
+      precomputedBlocks: [
+        { type: 'thinking', content: '队长思考' },
+        { type: 'thinking', content: '队长补充思考' },
+        { type: 'text', text: '队长答复' },
+      ],
+    });
+  });
+
+  it('keeps an explicitly threaded final edit with its process across an independent message', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('step', '@w:server', '正在完成项目', 1_000, threadOf('root')),
+      ev('report', '@service:server', '项目已验收', 2_000),
+      ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
+    ];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined]);
+    expect(messages[0].content).toBe('最终答案');
+    expect(messages[0].sourceEventIds).toEqual(expect.arrayContaining(['root', 'step', 'answer']));
+  });
+
+  it('keeps qwenpaw thread narration inside the process fold', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      ev('say', '@w:server', '先分析一下仓库结构', 1_000, threadOf('root')),
+      ev('answer', '@w:server', '* 答案', 2_000, replaceOf('root', '答案在这里')),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('答案在这里');
+    expect(messages[0].precomputedBlocks?.[0]).toMatchObject({
+      type: 'text',
+      inProcess: true,
+      text: '先分析一下仓库结构',
+    });
+  });
+
+  it('marks a qwenpaw run without a final edit as interrupted once stale', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '还在处理', 1_000, threadOf('root')),
+    ];
+
+    const pending = assemble(events, 'qwenpaw', '@w:server', BASE_TS + 1_000);
+    const interrupted = assemble(events, 'qwenpaw', '@w:server', BASE_TS + NO_ANSWER_STALE_MS + 2_000);
+
+    expect(pending.messages[0]).toMatchObject({ turnState: 'pending', content: '' });
+    expect(interrupted.messages[0]).toMatchObject({ turnState: 'interrupted', content: '' });
+  });
+
+  it('folds hermes top-level process notices and keeps the last text as the answer', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '先分析需求', 1_000),
+      ev('answer', '@w:server', '最终答复', 2_000),
+    ];
+
+    const { messages } = assemble(events, 'hermes');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '最终答复' });
+    expect(messages[0].precomputedBlocks?.map((block) => block.type)).toEqual(['thinking', 'text']);
+  });
+
+  it('does not merge adjacent hermes runs across a human message', () => {
+    const events = [
+      notice('root-1', '@w:server', '处理中...', 0),
+      ev('answer-1', '@w:server', '第一轮', 1_000),
+      ev('human', ME, '继续', 2_000),
+      notice('root-2', '@w:server', '处理中...', 3_000),
+      ev('answer-2', '@w:server', '第二轮', 4_000),
+    ];
+
+    const { messages } = assemble(events, 'hermes');
+
+    expect(messages.map((message) => message.id)).toEqual([
+      'root-1',
+      'human',
+      'root-2',
+    ]);
+    expect(messages[0].content).toBe('第一轮');
+    expect(messages[2].content).toBe('第二轮');
+  });
+
+  it('tracks an openclaw streaming revision until the live marker disappears', () => {
+    const streaming = assemble([
+      ev('oc', '@w:server', '正在生成', 0, { 'org.matrix.msc4357.live': {} }),
+    ], 'openclaw', '@w:server', BASE_TS + 1_000);
+
+    const finalized = assemble([
+      ev('oc', '@w:server', '正在生成', 0),
+      ev('oc-final', '@w:server', '* 完成', 1_000, replaceOf('oc', '完成')),
+    ], 'openclaw');
+
+    expect(streaming.messages[0]).toMatchObject({
+      turnState: 'running',
+      isStreaming: true,
+      content: '正在生成',
+    });
+    expect(finalized.messages[0]).toMatchObject({
+      turnState: 'finalized',
+      isStreaming: false,
+      content: '完成',
+      latestEventId: 'oc-final',
+    });
+  });
+
+  it('keeps openclaw turns separate instead of merging by proximity', () => {
+    const events = [
+      ev('oc-1', '@w:server', '* 第一轮', 0, replaceOf('oc-1', '第一轮')),
+      ev('oc-2', '@w:server', '* 第二轮', 20_000, replaceOf('oc-2', '第二轮')),
+    ];
+
+    const { messages } = assemble(events, 'openclaw');
+
+    expect(messages.map((message) => [message.id, message.content])).toEqual([
+      ['oc-1', '第一轮'],
+      ['oc-2', '第二轮'],
+    ]);
+  });
+
+  it('treats copaw repr dumps as process and a later text as the answer', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      ev('reason', '@w:server', COPAW_REASONING_REPR, 1_000),
+      ev('answer', '@w:server', '* 最终答复', 2_000, replaceOf('root', '最终答复')),
+    ];
+
+    const { messages } = assemble(events, 'copaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '最终答复' });
+    // The reasoning repr folds as a thinking step, never as the answer.
+    expect(messages[0].precomputedBlocks?.map((block) => block.type)).toEqual([
+      'thinking',
+      'text',
+    ]);
+    expect(messages[0].precomputedBlocks?.[0]).toMatchObject({
+      type: 'thinking',
+      content: '先分析需求，再给出方案。',
+    });
+  });
+
+  it('does not fold manager messages (flat conversation)', () => {
+    const events = [
+      ev('m-1', '@mgr:server', '第一条', 0),
+      ev('m-2', '@mgr:server', '第二条', 1_000),
+    ];
+
+    const { messages } = assemble(events, 'manager', '@mgr:server');
+
+    expect(messages.map((message) => message.id)).toEqual(['m-1', 'm-2']);
+    expect(messages.every((message) => message.turnState === 'finalized')).toBe(true);
+  });
+
+  it('keeps thread replies with a missing root as a detached turn', () => {
+    const events = [
+      ev('r-1', '@w:server', '第一段答案', 0, threadOf('missing-root')),
+      ev('r-2', '@w:server', '第二段答案', 1_000, threadOf('missing-root')),
+    ];
+
+    const { messages, turns } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'missing-root',
+      detached: true,
+      turnState: 'detached',
+      content: '第一段答案\n\n第二段答案',
+    });
+    expect(turns[0]).toMatchObject({ turnId: 'missing-root', detached: true });
+  });
+
+  it('folds a qwenpaw long-message narration into its run without duplicating the file', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '正文过长，已转为附件', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/full-log',
+          filename: 'long-message-17930026100436757.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+      ev('file', '@w:server', 'long-message-17930026100436757.txt', 1_010, {
+        msgtype: 'm.file',
+        url: 'mxc://server/full-log',
+        info: { mimetype: 'text/plain' },
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'long' },
+      }),
+      ev('answer', '@w:server', '* 完成', 2_000, replaceOf('root', '已完成')),
+    ];
+
+    const { messages, turns } = assemble(events, 'qwenpaw');
+
+    // The narration stays inside the run as rich text, its file link appears
+    // once, and the related upload does not add a second identical card.
+    expect(messages.map((message) => message.id)).toEqual(['root']);
+    expect(turns).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '已完成' });
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'attachment', 'text']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: '正文过长，已转为附件', inProcess: true });
+    expect(blocks[1]).toMatchObject({
+      type: 'attachment',
+      inProcess: true,
+      payload: { url: 'mxc://server/full-log' },
+    });
+  });
+
+  it('does not treat a long-message narration as the run answer', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '叙述正文', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/steps',
+          filename: 'steps.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('');
+    expect(messages[0].precomputedBlocks?.map((block) => block.type)).toEqual(['text', 'attachment']);
+  });
+
+  it('keeps a long-message notice readable when its thread root is missing', () => {
+    const events = [
+      notice('long', '@w:server', '一段很长的过程叙述', 1_000, {
+        ...threadOf('missing-root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/detached',
+          filename: 'detached.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    // A detached turn has no runtime answer to show, so the narration keeps its
+    // text instead of degrading into an attachment-only bubble.
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ turnState: 'detached', content: '一段很长的过程叙述' });
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['attachment', 'text']);
+    expect(blocks[0]).toMatchObject({ inProcess: true, payload: { url: 'mxc://server/detached' } });
+  });
+
+  it('pulls an A2UI surface inside a long message into its turn, outside the fold', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('long', '@w:server', '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s1"}}\n```\n\n说明文字', 1_000, {
+        ...threadOf('root'),
+        'com.agentteams.long_message': {
+          url: 'mxc://server/surface',
+          filename: 'surface.txt',
+          mimetype: 'text/plain',
+        },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].precomputedBlocks ?? [];
+    expect(blocks.map((block) => block.type)).toEqual(['a2ui', 'text', 'attachment']);
+    // Interactive surfaces are process output but must stay visible (unfolded).
+    expect(blocks[0].inProcess).toBeUndefined();
+  });
+
+  it('is invariant to raw event arrival order', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', 'Thinking:\n\n先拆解需求', 1_000, threadOf('root')),
+      ev('tool', '@w:server', '🔧 **shell**\n```json\n{"command":"ls"}\n```', 2_000, threadOf('root')),
+      ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
+    ];
+
+    const forward = assemble(events, 'qwenpaw');
+    const shuffled = assemble([...events].reverse(), 'qwenpaw');
+
+    const snapshot = (result: ReturnType<typeof assemble>) => result.messages.map((message) => ({
+      id: message.id,
+      content: message.content,
+      state: message.turnState,
+      types: message.precomputedBlocks?.map((block) => block.type),
+    }));
+    expect(snapshot(shuffled)).toEqual(snapshot(forward));
+  });
+
+  it('f3-3：同一事件集倒序分页输入与时间序输入的 paused 结果一致（恢复 t2 在暂停 t1 之后不得误记 interrupted）', () => {
+    // 时间序：t2 恢复晚于 t1 暂停 → 最终已恢复 → turnState pending。
+    // ChatRoom dir:'b' 分页把 chunk 最新在前传进来，倒序输入此前会被误判。
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '还在处理', 1_000, threadOf('root')),
+      notice('paused', '@manager:server', 'Worker w container has been automatically paused due to idle timeout', 2_000),
+      notice('resumed', '@manager:server', 'Worker w container has been automatically resumed', 3_000),
+    ];
+    const rootOf = (result: ReturnType<typeof assemble>) =>
+      result.messages.find((message) => message.id === 'root');
+
+    const forward = assemble(events, 'qwenpaw', '@w:server', BASE_TS + 4_000);
+    const reversed = assemble([...events].reverse(), 'qwenpaw', '@w:server', BASE_TS + 4_000);
+
+    expect(rootOf(forward)).toMatchObject({ turnState: 'pending' });
+    expect(rootOf(reversed)).toMatchObject({ turnState: 'pending' });
+    expect(reversed.messages.map((message) => message.turnState)).toEqual(
+      forward.messages.map((message) => message.turnState),
+    );
+  });
+
+  it('f3-3：恢复在前(t1)暂停在后(t2)的倒序输入不得漏报 interrupted', () => {
+    // 时间序：暂停(t3s)是最新的生命周期事件 → worker 处于 paused → interrupted。
+    // 倒序输入（恢复先出现在数组里）若按到达序处理会漏掉暂停态。
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', '还在处理', 1_000, threadOf('root')),
+      notice('resumed', '@manager:server', 'Worker w container has been automatically resumed', 2_000),
+      notice('paused', '@manager:server', 'Worker w container has been automatically paused due to idle timeout', 3_000),
+    ];
+    const rootOf = (result: ReturnType<typeof assemble>) =>
+      result.messages.find((message) => message.id === 'root');
+
+    const forward = assemble(events, 'qwenpaw', '@w:server', BASE_TS + 4_000);
+    const reversed = assemble([...events].reverse(), 'qwenpaw', '@w:server', BASE_TS + 4_000);
+
+    expect(rootOf(forward)).toMatchObject({ turnState: 'interrupted' });
+    expect(rootOf(reversed)).toMatchObject({ turnState: 'interrupted' });
+  });
+
+  it('attaches an attachment relation to its exact target step', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      notice('think', '@w:server', 'Thinking:\n\n先拆解需求', 1_000, threadOf('root')),
+      ev('att', '@w:server', 'full-log.md', 1_500, {
+        msgtype: 'm.file',
+        url: 'mxc://server/att',
+        info: { mimetype: 'text/markdown' },
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'think' },
+      }),
+      ev('answer', '@w:server', '* 最终答案', 2_000, replaceOf('root', '最终答案')),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(1);
+    const types = messages[0].precomputedBlocks?.map((block) => block.type);
+    expect(types).toEqual(['thinking', 'attachment', 'text']);
+    expect(messages[0].precomputedBlocks?.[1].payload).toMatchObject({
+      filename: 'full-log.md',
+      url: 'mxc://server/att',
+    });
+  });
+
+  it('keeps an attachment whose target is missing as its own tile', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      ev('att', '@w:server', 'orphan.md', 1_000, {
+        msgtype: 'm.file',
+        url: 'mxc://server/orphan',
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'missing' },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1].precomputedBlocks?.[0]).toMatchObject({ type: 'attachment' });
+  });
+
+  it('exposes latest raw and latest top-level receipt targets', () => {
+    const events = [
+      ev('top-1', '@human:server', '问题一', 0),
+      ev('top-2', '@human:server', '问题二', 1_000),
+      ev('reply', '@human:server', '话题回复', 2_000, threadOf('top-1')),
+    ];
+
+    const result = assemble(events, 'qwenpaw');
+
+    expect(result.latestEventId).toBe('reply');
+    expect(result.latestTopLevelEventId).toBe('top-2');
+  });
+
+  it('records every thread participant for topic filtering', () => {
+    const events = [
+      ev('root', '@w:server', '原始问题', 0),
+      ev('worker-reply', '@w:server', '补充', 1_000, threadOf('root')),
+      ev('human-reply', '@human:server', '追问', 2_000, threadOf('root')),
+    ];
+
+    const result = assemble(events, 'qwenpaw');
+
+    expect(new Set(result.threadParticipants.root)).toEqual(
+      new Set(['@w:server', '@human:server']),
+    );
+  });
+
+  it('keeps one qwenpaw run together across its own file uploads', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      ev('think', '@w:server', '先做研究', 1_000, threadOf('root')),
+      ev('announce', '@w:server', '[File: /workspace/deliverable.html]', 2_000, threadOf('root')),
+      ev('file', '@w:server', 'deliverable.html', 2_010, {
+        msgtype: 'm.file',
+        url: 'mxc://server/opaqueId',
+        info: { mimetype: 'text/html' },
+      }),
+      ev('more', '@w:server', '文件已发送，整理结论', 3_000, threadOf('root')),
+      ev('answer', '@w:server', '* 完成', 4_000, replaceOf('root', '交付完成：deliverable.html')),
+    ];
+
+    const { messages, turns } = assemble(events, 'qwenpaw');
+
+    expect(messages.map((message) => message.id)).toEqual(['root', 'file']);
+    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '交付完成：deliverable.html' });
+    const text = messages[0].precomputedBlocks?.map((block) => block.text ?? '').join('\n') ?? '';
+    expect(text).toContain('先做研究');
+    expect(text).toContain('文件已发送');
+    expect(turns).toHaveLength(1);
+    expect(messages[1]).toMatchObject({ mediaUrl: 'mxc://server/opaqueId' });
+  });
+
+  it('associates an mxc image with the turn that names its filename', () => {
+    const events = [
+      notice('root', '@w:server', '处理中...', 0),
+      ev('announce', '@w:server', '[Image: /workspace/report-2026.png]', 500, threadOf('root')),
+      ev('answer', '@w:server', '* 结果', 1_000, replaceOf('root', '报告见 report-2026.png')),
+      ev('media', '@w:server', 'report-2026.png', 1_100, {
+        msgtype: 'm.image',
+        url: 'mxc://server/opaqueMediaId',
+        info: { mimetype: 'image/png' },
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    // The media keeps its own tile so its msgtype can render the preview, but
+    // the turn records it as a source event (receipts / divider matching).
+    expect(messages.map((message) => message.id)).toEqual(['root', 'media']);
+    expect(messages[0].sourceEventIds).toContain('media');
+    expect(messages[1]).toMatchObject({
+      id: 'media',
+      mediaUrl: 'mxc://server/opaqueMediaId',
+    });
+    expect(messages[0].mediaUrl).toBeUndefined();
+  });
+
+  it('does not associate ambiguous top-level media', () => {
+    const events = [
+      notice('root-1', '@w:server', '处理中...', 0),
+      ev('answer-1', '@w:server', '* 结果', 1_000, replaceOf('root-1', '见 shared.pdf')),
+      notice('root-2', '@w:server', '处理中...', 2_000),
+      ev('answer-2', '@w:server', '* 结果', 3_000, replaceOf('root-2', '再看 shared.pdf')),
+      ev('media', '@w:server', 'shared.pdf', 4_000, {
+        msgtype: 'm.file',
+        url: 'mxc://server/shared',
+      }),
+    ];
+
+    const { messages } = assemble(events, 'qwenpaw');
+
+    expect(messages.map((message) => message.id)).toEqual(['root-1', 'root-2', 'media']);
+    expect(messages[2].mediaUrl).toBe('mxc://server/shared');
+    expect(messages[0].sourceEventIds).not.toContain('media');
+    expect(messages[1].sourceEventIds).not.toContain('media');
+  });
+});

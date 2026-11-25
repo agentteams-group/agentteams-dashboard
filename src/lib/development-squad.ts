@@ -1,114 +1,55 @@
-import { agentteamsApi, type TeamResponse, type WorkerResponse } from './agentteams-api';
-import { ApiError } from './api-error';
+import { agentteamsApi } from './agentteams-api';
+import { matrixApi } from './matrix-api';
+import { useMatrixStore } from './matrix-store';
 import { DEVELOPMENT_ROLES } from './development-squad-template';
 export { DEVELOPMENT_ROLES } from './development-squad-template';
 
-type DevelopmentRole = typeof DEVELOPMENT_ROLES[number];
-export type SquadDeploymentStep = 'assets' | 'agents' | 'team' | 'starting';
-export interface SquadDeploymentResult { teamName: string; workerNames: string[]; skillNames: string[] }
+export interface SquadDeploymentRequest { name: string; repository: string; model?: string; requestId: string }
+export interface SquadDeploymentResult { teamName: string; managerName: string; roomId: string; eventId: string }
 
 export function developmentSquadNameError(name: string): string | null {
   return /^[a-z](?:[a-z0-9-]{0,8}[a-z0-9])?$/.test(name)
     ? null : '使用 1–10 位小写字母、数字或连字符，以字母开头，以字母或数字结尾。';
 }
 
-function identity(name: string, role: DevelopmentRole): string {
-  return `<!-- agentteams-development-squad:v1:${name}:${role.id} -->`;
+export function developmentSquadRepositoryError(repository: string): string | null {
+  return /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+$/.test(repository)
+    ? null : '填写 GitHub 仓库，格式为 owner/repository。';
 }
 
-export function deploymentAgents(name: string, role: DevelopmentRole): string {
-  return `${identity(name, role)}\nYou are the ${role.id} in development squad ${name}.\nUse the ${role.skillName} skill for your assigned work.\nFollow the built-in AgentTeams team and task instructions; do not replace their protocol.\n`;
+export function developmentSquadPrompt(request: SquadDeploymentRequest): string {
+  return `请部署开发小队，持久记录请求 ${request.requestId}，不要重复创建资源。
+请先读取官网角色清单 https://agentteams.cloud/skills/development-squad/manifest.json，按清单中的相对路径获取四份角色 Skill。使用你现有的资产管理、Worker 管理和团队管理工具完成部署，不依赖额外安装名为 development-squad 的 Skill。
+小队标识：${request.name}
+负责仓库：https://github.com/${request.repository}
+四个角色统一使用 Codex runtime（codex），包括 Leader、开发、代码评审、测试。
+${request.model?.trim() ? `四个 Agent 统一指定模型：${request.model.trim()}。先验证可用，失败时报告阻塞，不要换模型。` : '创建时使用当前集群默认模型；需要显式填写模型字段时先读取当前默认值。'}
+
+请拉取角色 Skill、同步到部署资产库、分发并关联 Skill、创建 Team 并等待四个 Agent 就绪。已有同名资产保留编辑；无关同名资源不得覆盖；失败后可继续，报告实际步骤和阻塞。
+创建前核实四个角色均可访问负责仓库，沿用已配置的 GitHub 授权访问方式；缺少权限时报告阻塞，不在消息或提示词中复制访问密钥。
+角色对应：${DEVELOPMENT_ROLES.map(role => `${request.name}-${role.id} → ${role.skillName}`).join('；')}。
+
+将负责仓库和 Issue 跟进记录保存到 Leader 的共享业务上下文。使用现有主动助手公共协议，为当前 Team Admin 配置每 30 分钟一次的只读检查，首次立即扫描。
+发现新 Issue 时由 Leader 发送带原始链接、标题和判断依据的待确认提示；没有新信息时提交 skipped 回执。未确认时不得创建 Task、派发开发或创建 PR。
+只有授权用户明确确认某个 Issue 后，才为它创建一条稳定 ID 的主 Task；同一仓库和 Issue 复用该 Task，开发、评审和测试用执行子任务跟进，不再创建 Leader 或新团队。
+确认后分析 Bug、检查所有状态的对应 PR。Bug 成立且未发现对应 PR 时进入开发 → 独立评审 → 测试 → Leader 验收；信息不足或已有 PR 时报告并停止重复开发。新提交必须重新评审和测试。
+部署请求不授权推送代码、创建 PR、合并或公开评论；具体 Issue 任务的发布授权另行核对。
+请在本会话报告小队、角色、模型、Skill 资产、仓库绑定与提醒配置的实际结果。若官网角色清单、公共管理工具或主动助手接口不可用，请明确报告阻塞，不要假装已完成。`;
 }
 
-function assertOwned(worker: WorkerResponse, name: string, role: DevelopmentRole) {
-  if (!worker.agents?.includes(identity(name, role))) {
-    throw new Error(`Agent「${worker.name}」已存在，不能覆盖；请使用其他小队名称。`);
-  }
-}
-
-function assertTeam(team: TeamResponse, names: string[]) {
-  const members = new Set([team.leaderName, ...(team.workerNames ?? [])]);
-  if (team.leaderName !== names[0] || members.size !== names.length || names.some(name => !members.has(name))) {
-    throw new Error(`团队「${team.name}」已存在，成员与开发小队不一致；请使用其他名称。`);
-  }
-}
-
-/** Reuses the authenticated asset, Worker and Team APIs, including their RBAC and audit checks. */
-export async function deployDevelopmentSquad(
-  name: string,
-  progress: (_step: SquadDeploymentStep, _message: string) => void = () => {},
-): Promise<SquadDeploymentResult> {
-  const invalid = developmentSquadNameError(name);
+/** The Dashboard submits intent; the Manager owns provisioning and its receipts. */
+export async function deployDevelopmentSquad(request: SquadDeploymentRequest): Promise<SquadDeploymentResult> {
+  const invalid = developmentSquadNameError(request.name) ?? developmentSquadRepositoryError(request.repository);
   if (invalid) throw new Error(invalid);
-  const names = DEVELOPMENT_ROLES.map(role => `${name}-${role.id}`);
-  const [workers, teams] = await Promise.all([agentteamsApi.listWorkers(), agentteamsApi.listTeams()]);
-  const existingWorkers = new Map(workers.map(worker => [worker.name, worker]));
-  let team = teams.find(item => item.name === name);
-  if (team) assertTeam(team, names);
-  for (const [index, role] of DEVELOPMENT_ROLES.entries()) {
-    const worker = existingWorkers.get(names[index]);
-    if (worker) assertOwned(worker, name, role);
-  }
-
-  const packages: File[] = [];
-  let templateSkills: Awaited<ReturnType<typeof agentteamsApi.getDevelopmentSquadSkills>> | undefined;
-  progress('assets', '正在同步角色 Skill 到资产库');
-  for (const role of DEVELOPMENT_ROLES) {
-    try {
-      await agentteamsApi.getSkill(role.skillName);
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 404) throw error;
-      const { zipSync, strToU8 } = await import('fflate');
-      templateSkills ??= await agentteamsApi.getDevelopmentSquadSkills();
-      const skill = templateSkills.skills.find(item => item.name === role.skillName);
-      if (!skill) throw new Error(`官网模板缺少 Skill「${role.skillName}」`);
-      const bytes = zipSync({ [`${role.skillName}/SKILL.md`]: strToU8(skill.content) });
-      const created = await agentteamsApi.createSkill(new File([bytes as BlobPart], `${role.skillName}.zip`, { type: 'application/zip' }));
-      if (!created.success && !created.conflict) throw new Error(`Skill「${role.skillName}」同步失败`);
-    }
-    // Always distribute the asset's canonical package, preserving edits made in the asset center.
-    packages.push(await agentteamsApi.downloadSkill(role.skillName));
-  }
-
-  for (const [index, role] of DEVELOPMENT_ROLES.entries()) {
-    const workerName = names[index];
-    progress('agents', `正在配置${role.title}并关联 Skill`);
-    if (!existingWorkers.has(workerName)) {
-      try {
-        await agentteamsApi.createWorker({
-          name: workerName, runtime: 'openclaw', state: 'Stopped',
-          agents: deploymentAgents(name, role), skills: [role.skillName],
-        });
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 409) throw error;
-        assertOwned(await agentteamsApi.getWorker(workerName), name, role);
-      }
-    }
-    const uploaded = await agentteamsApi.uploadWorkerSkill(workerName, packages[index], 'openclaw', { restart: false });
-    if (!uploaded.success || uploaded.skillName !== role.skillName) throw new Error(`Agent「${workerName}」的 Skill 分发未确认`);
-    const latest = await agentteamsApi.getWorker(workerName);
-    const skills = latest.skills ?? [];
-    if (!skills.includes(role.skillName)) await agentteamsApi.updateWorker(workerName, { skills: [...skills, role.skillName] });
-  }
-
-  progress('team', '正在建立小队及 Leader 关联');
-  if (!team) {
-    try {
-      team = await agentteamsApi.createTeam({
-        name, teamName: '开发小队', description: '开发、代码评审和测试协作交付，由 Leader 统一派发和验收。',
-        leader: { name: names[0] }, workerNames: names,
-      });
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 409) throw error;
-      team = (await agentteamsApi.listTeams()).find(item => item.name === name);
-      if (!team) throw error;
-      assertTeam(team, names);
-    }
-  }
-  progress('starting', '配置已完成，正在启动 Agent');
-  for (const workerName of names) {
-    const worker = await agentteamsApi.getWorker(workerName);
-    if (worker.state !== 'Running') await agentteamsApi.updateWorker(workerName, { state: 'Running' });
-  }
-  return { teamName: name, workerNames: names, skillNames: DEVELOPMENT_ROLES.map(role => role.skillName) };
+  if (request.model?.trim() && !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(request.model.trim())) throw new Error('请填写有效的模型名称。');
+  const { homeserver, accessToken, isLoggedIn } = useMatrixStore.getState();
+  if (!isLoggedIn || !homeserver || !accessToken) throw new Error('请先连接对话，再交给 Manager 部署。');
+  const manager = (await agentteamsApi.listManagers()).find(item => item.name === 'default');
+  if (!manager?.roomID || !manager.matrixUserID || manager.phase !== 'Running') throw new Error('默认 Manager 尚未就绪，请在助手页面检查状态。');
+  const joined = await matrixApi.getJoinedRooms(homeserver, accessToken);
+  if (!joined.joined_rooms.includes(manager.roomID)) throw new Error('当前账号尚未加入 Manager 会话，请先在助手页面连接。');
+  const receipt = await matrixApi.sendMessage(homeserver, accessToken, manager.roomID, developmentSquadPrompt(request), {
+    mentions: { user_ids: [manager.matrixUserID] },
+  });
+  return { teamName: request.name, managerName: manager.name, roomId: manager.roomID, eventId: receipt.event_id };
 }

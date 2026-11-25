@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/dialog';
 import type { CreateHumanRequest } from '@/lib/agentteams-api';
 import { PERMISSION_LABELS, PERMISSION_LEVELS } from './human-types';
+import { TeamAccessField, type TeamCandidateSource } from './team-access-field';
 
 export function HumanCreateDialog({
   open,
   value,
   onChange,
   isPending,
+  teamSource,
   onOpenChange,
   onSubmit,
 }: {
@@ -32,42 +34,46 @@ export function HumanCreateDialog({
   value: CreateHumanRequest;
   onChange: (_next: CreateHumanRequest) => void;
   isPending: boolean;
+  teamSource: TeamCandidateSource;
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw]">
+      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>创建 Human</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>名称 *</Label>
+            <Label htmlFor="human-create-name">名称 *</Label>
             <Input
+              id="human-create-name"
               value={value.name}
               onChange={(e) => onChange({ ...value, name: e.target.value })}
               placeholder="human-name"
             />
           </div>
           <div className="space-y-2">
-            <Label>显示名称 *</Label>
+            <Label htmlFor="human-create-display-name">显示名称 *</Label>
             <Input
+              id="human-create-display-name"
               value={value.displayName}
               onChange={(e) => onChange({ ...value, displayName: e.target.value })}
               placeholder="用户显示名称"
             />
           </div>
           <div className="space-y-2">
-            <Label>邮箱</Label>
+            <Label htmlFor="human-create-email">邮箱</Label>
             <Input
+              id="human-create-email"
               value={value.email || ''}
               onChange={(e) => onChange({ ...value, email: e.target.value || undefined })}
               placeholder="user@example.com"
             />
           </div>
           <div className="space-y-2">
-            <Label>权限等级</Label>
+            <Label htmlFor="human-create-permission">权限等级</Label>
             <Select
               // CR 标尺（1=管理员 2=团队成员 3=Worker）：默认 2，不默认给管理员
               value={String(value.permissionLevel ?? 2)}
@@ -75,7 +81,7 @@ export function HumanCreateDialog({
                 onChange({ ...value, permissionLevel: Number(v) as 1 | 2 | 3 })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="human-create-permission" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -88,23 +94,26 @@ export function HumanCreateDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>可访问团队（逗号分隔）</Label>
-            <Input
-              value={value.accessibleTeams?.join(', ') || ''}
-              onChange={(e) =>
+            <Label htmlFor="human-create-teams">可访问团队</Label>
+            <TeamAccessField
+              triggerId="human-create-teams"
+              selected={value.accessibleTeams ?? []}
+              source={teamSource}
+              onChange={(next) =>
                 onChange({
                   ...value,
-                  accessibleTeams: e.target.value
-                    ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                    : undefined,
+                  accessibleTeams: next.length > 0 ? next : undefined,
                 })
               }
-              placeholder="team1, team2, team3"
             />
+            <p className="text-xs text-muted-foreground">
+              只能选择已存在的团队；Controller 会把人拉入对应团队房间。
+            </p>
           </div>
           <div className="space-y-2">
-            <Label>可访问 Workers（逗号分隔）</Label>
+            <Label htmlFor="human-create-workers">可访问 Workers（逗号分隔）</Label>
             <Input
+              id="human-create-workers"
               value={value.accessibleWorkers?.join(', ') || ''}
               onChange={(e) =>
                 onChange({
@@ -119,13 +128,13 @@ export function HumanCreateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" className="min-h-11" onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
+            className="min-h-11"
             onClick={onSubmit}
             disabled={!value.name || !value.displayName || isPending}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
           >
             {isPending ? '创建中...' : '创建'}
           </Button>

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { GitBranch, Loader2 } from 'lucide-react';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { useProjectWorkflow } from '@/hooks/use-projects';
 import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
 import { buildWorkflowDag } from '@/lib/project-dag';
@@ -63,11 +64,7 @@ export function WorkflowDagView({
     );
   }
   if (dag.nodes.length === 0) {
-    return (
-      <p className="text-center py-10 text-muted-foreground text-sm">
-        该项目暂无任务节点
-      </p>
-    );
+    return <SectionEmptyState icon={GitBranch} title="该项目暂无任务节点" />;
   }
   if (dag.edges.length === 0 && dag.nodes.length <= 1) {
     return (
@@ -82,7 +79,7 @@ export function WorkflowDagView({
       <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
         <GitBranch className="h-3 w-3" />
         依赖图
-        <span className="text-[10px] text-muted-foreground/70 font-normal">
+        <span className="text-xs text-muted-foreground/70 font-normal">
           {dag.nodes.length} 任务 · {dag.edges.length} 依赖
           {dag.externalDeps.length > 0 && ` · ${dag.externalDeps.length} 外部依赖`}
         </span>
@@ -94,7 +91,7 @@ export function WorkflowDagView({
           title={`${wf.title} 任务依赖图（amber=关键路径 · 虚线=条件分支 · 红点=卡住节点）`}
           onStuckNodeClick={(nodeId) => openChatRoom(stuckNodeOwnerRoom(nodeId))}
         />
-        <p className="mt-1.5 text-[10px] text-muted-foreground/70">
+        <p className="mt-1.5 text-xs text-muted-foreground/70">
           <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1 align-middle" aria-hidden="true" />
           关键路径
           <span className="inline-block w-4 border-t border-dashed border-muted-foreground ml-3 mr-1 align-middle" aria-hidden="true" />

@@ -55,20 +55,17 @@ describe('resource deletion lock', () => {
           isActionPending={false}
           onToggleSelect={vi.fn()}
           onView={vi.fn()}
-          onEdit={vi.fn()}
+          onOpenDrawer={vi.fn()}
+          onRestart={vi.fn()}
           onWake={vi.fn()}
           onSleep={vi.fn()}
-          onEnsureReady={vi.fn()}
-          onDelete={vi.fn()}
         />
       </TooltipProvider>,
     );
 
     expect(screen.getByRole('status').textContent).toContain('删除中');
     expect((screen.getByRole('button', { name: '详情' }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '休眠' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'worker-a 更多操作' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps only team details available while deleting', () => {
@@ -93,9 +90,7 @@ describe('resource deletion lock', () => {
     expect(screen.getByRole('status').textContent).toContain('删除中');
     expect((screen.getByRole('button', { name: '详情' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '为 team-a 添加 Worker' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '查看 team-a 拓扑' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '编辑 team-a' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除 team-a' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '复制' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'team-a 更多操作' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
   });
 });

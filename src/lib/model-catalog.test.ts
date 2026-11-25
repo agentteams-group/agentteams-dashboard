@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_MODEL_ALIASES, buildModelSelectionOptions, describeRouteAuthorization } from './model-catalog';
+import {
+  BUILTIN_MODEL_ALIASES,
+  buildModelCandidateCatalog,
+  buildModelSelectionOptions,
+  describeRouteAuthorization,
+  modelOptionsForProvider,
+  providerModelPresets,
+  MODEL_PRESET_NOTES,
+} from './model-catalog';
 
 const providers = [{ name: 'openai', type: 'openai', protocol: 'openai/v1', tokenCount: 1 }];
 const routes = [{
@@ -12,11 +20,36 @@ const routes = [{
 }];
 
 describe('model-catalog', () => {
-  it('mirrors the official built-in model alias list', () => {
+  it('keeps existing aliases while including current provider models', () => {
     expect(BUILTIN_MODEL_ALIASES).toContain('deepseek-chat');
     expect(BUILTIN_MODEL_ALIASES).toContain('claude-sonnet-4-6');
     expect(BUILTIN_MODEL_ALIASES).toContain('qwen3.5-plus');
-    expect(BUILTIN_MODEL_ALIASES.length).toBe(16);
+    expect(BUILTIN_MODEL_ALIASES).toContain('MiniMax-M3');
+    expect(BUILTIN_MODEL_ALIASES).toContain('MiniMax-M3.1-Flash');
+    expect(new Set(BUILTIN_MODEL_ALIASES).size).toBe(BUILTIN_MODEL_ALIASES.length);
+  });
+
+  it.each([
+    ['minimax', 'MiniMax-M3.1-Flash'],
+    ['qwen', 'qwen4-max-preview'],
+    ['deepseek', 'deepseek-flash'],
+    ['moonshot', 'kimi-k3.1-pro'],
+    ['zhipuai', 'glm-5.3'],
+    ['openai', 'gpt-6.1-sol'],
+    ['claude', 'claude-fable-5-2'],
+    ['gemini', 'gemini-4-carbon'],
+    ['grok', 'grok-4.7'],
+  ])('offers current models for %s without mixing provider families', (provider, model) => {
+    expect(providerModelPresets(provider)).toContain(model);
+    expect(BUILTIN_MODEL_ALIASES).toContain(model);
+    if (provider !== 'minimax') expect(providerModelPresets(provider)).not.toContain('MiniMax-M3');
+  });
+
+  it('preserves manual entry for unknown providers and describes channel constraints', () => {
+    expect(providerModelPresets('custom')).toEqual([]);
+    expect(providerModelPresets('azure')).toEqual(providerModelPresets('openai'));
+    expect(MODEL_PRESET_NOTES['qwen4-max-preview']).toContain('Token Plan');
+    expect(MODEL_PRESET_NOTES['gpt-6.1-sol']).toContain('Responses');
   });
 
   it('combines configured aliases with builtin aliases', () => {
@@ -111,5 +144,58 @@ describe('describeRouteAuthorization', () => {
       .toBe('已启用认证，未限定 Consumer');
     expect(describeRouteAuthorization({ enabled: true, allowedConsumers: ['worker-a', 'worker-b'] }))
       .toBe('授权 Consumer：worker-a、worker-b');
+  });
+});
+
+describe('buildModelCandidateCatalog（provider / model 候选）', () => {
+  const options = [
+    {
+      alias: 'team-chat',
+      kind: 'configured' as const,
+      binding: {
+        requestModelAlias: 'team-chat',
+        routeName: 'chat',
+        providerName: 'openai',
+        targetModel: 'gpt-4.1',
+        available: true,
+      },
+    },
+    {
+      alias: 'deep-chat',
+      kind: 'configured' as const,
+      binding: {
+        requestModelAlias: 'deep-chat',
+        routeName: 'chat',
+        providerName: 'deepseek',
+        targetModel: 'deepseek-chat',
+        available: true,
+      },
+    },
+    { alias: 'qwen3.5-plus', kind: 'builtin' as const },
+    { alias: 'qwen-local', kind: 'sglang' as const },
+  ];
+
+  it('provider 来自 binding 且去重排序；无绑定 alias 不计入 provider', () => {
+    const catalog = buildModelCandidateCatalog(options);
+
+    expect(catalog.providers).toEqual(['deepseek', 'openai']);
+    expect(catalog.models).toEqual(['deep-chat', 'qwen-local', 'qwen3.5-plus', 'team-chat']);
+  });
+
+  it('按 provider 分桶并给出 alias → provider 反查', () => {
+    const catalog = buildModelCandidateCatalog(options);
+
+    expect(catalog.modelsByProvider).toEqual({ openai: ['team-chat'], deepseek: ['deep-chat'] });
+    expect(catalog.providerByModel['team-chat']).toBe('openai');
+    expect(catalog.providerByModel['qwen-local']).toBeUndefined();
+  });
+
+  it('过滤模型候选：命中映射收窄，无映射回退全部', () => {
+    const catalog = buildModelCandidateCatalog(options);
+
+    expect(modelOptionsForProvider(catalog, 'openai')).toEqual(['team-chat']);
+    // 未配置映射的 provider / 空 provider → 全部候选（不误伤自由输入）。
+    expect(modelOptionsForProvider(catalog, 'unknown')).toEqual(catalog.models);
+    expect(modelOptionsForProvider(catalog, '')).toEqual(catalog.models);
   });
 });

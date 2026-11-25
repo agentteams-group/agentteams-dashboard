@@ -14,7 +14,7 @@ export interface RunEndingPayload {
 export function RunEndingNote({ payload }: { payload: RunEndingPayload }) {
   if (payload.kind === 'quiet') {
     return (
-      <p className="my-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/70" data-testid="run-ending-quiet">
+      <p className="my-1 flex items-center gap-1.5 text-xs text-muted-foreground/70" data-testid="run-ending-quiet">
         <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
         {payload.title}
       </p>

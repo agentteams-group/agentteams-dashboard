@@ -16,7 +16,7 @@ export function ReadMarker({ label = '未读消息', unreadCount }: ReadMarkerPr
       aria-label={displayLabel}
     >
       <div className="h-px flex-1 bg-gradient-to-r from-transparent to-primary/40" />
-      <span className="text-[10px] font-medium uppercase tracking-wider text-primary/50 whitespace-nowrap">
+      <span className="text-xs font-medium uppercase tracking-wider text-primary/50 whitespace-nowrap">
         {displayLabel}
       </span>
       <div className="h-px flex-1 bg-gradient-to-l from-transparent to-primary/40" />

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, Download, FileCode, LayoutGrid, List, Loader2, Plus, Rows3, Square, Upload, X, XCircle } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { AlertCircle, ArrowUpDown, Bot, CheckCircle, CheckSquare, LayoutGrid, List, Loader2, Plus, Rows3, Square, X, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import {
   Select,
   SelectContent,
@@ -24,35 +26,26 @@ import { useSearch } from '@/lib/search-context';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useViewMode } from '@/lib/use-view-mode';
-import { RUNTIME_LABELS } from '@/lib/phase-colors';
 import { useModelSelection } from '@/hooks/use-model-selection';
 import { buildModelBindings, hasUnavailableModelAliases } from '@/lib/model-bindings';
 import { ApiErrorState } from '@/components/dashboard/api-error-state';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { ConfirmDeleteDialog } from '@/components/dashboard/confirm-delete-dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { describeWorkerDeleteError } from '@/lib/api-error';
+import { describeWorkerDeleteError, formatErrorMessage } from '@/lib/api-error';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { toast } from 'sonner';
 import type { CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse } from '@/lib/agentteams-api';
-import { isLegacyCopaw, rejectCopawCreate } from '@/lib/runtime-options';
+import { rejectCopawCreate } from '@/lib/runtime-options';
 import { SORT_OPTIONS, ITEMS_PER_PAGE, type SortKey } from './workers/worker-types';
 import {
-  computeRuntimeDist,
   filterWorkers,
+  groupWorkersByTeam,
   paginateWorkers,
   sortWorkers,
 } from './workers/worker-selectors';
 import { WorkerCard } from './workers/worker-card';
+import { WorkerDrawer } from './workers/worker-drawer';
+import { Badge } from '@/components/ui/badge';
 import { WorkerTable } from './workers/worker-table';
 import { WorkerPagination } from './workers/worker-pagination';
 import { WorkerBulkBar, WorkerBulkConfirm, type BulkAction } from './workers/worker-bulk-bar';
@@ -67,24 +60,6 @@ import { WorkerUploadDialog } from './workers/worker-upload-dialog';
 
 const DELETE_REFRESH_INTERVAL_MS = 2_000;
 const DELETE_REFRESH_TIMEOUT_MS = 30_000;
-
-function RuntimeDistribution({ dist }: { dist: Record<string, number> }) {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {Object.entries(RUNTIME_LABELS).map(([key, label]) => (
-        <Card key={key} className="glass-card">
-          <CardContent className="p-3 flex items-center gap-3">
-            <Bot className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
-            <div>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-lg font-bold">{dist[key] || 0}</p>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
 
 function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' }) {
   if (viewMode === 'card') {
@@ -116,17 +91,13 @@ function WorkersSkeleton({ viewMode }: { viewMode: 'card' | 'table' | 'compact' 
 function EmptyState({ hasQuery, onCreate }: { hasQuery: boolean; onCreate: () => void }) {
   return (
     <Card className="glass-card">
-      <CardContent className="p-12 text-center">
-        <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" aria-hidden="true" />
-        <p className="text-muted-foreground">
-          {hasQuery ? '没有匹配的 Worker' : '暂无 Worker'}
-        </p>
-        {!hasQuery && (
-          <Button variant="outline" className="mt-4" onClick={onCreate}>
-            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-            创建第一个 Worker
-          </Button>
-        )}
+      <CardContent className="p-0">
+        <SectionEmptyState
+          icon={Bot}
+          title={hasQuery ? '没有匹配的 Worker' : '暂无 Worker'}
+          // 搜不到不等于一个都没有：筛选出来的空页不推「创建第一个」。
+          action={hasQuery ? undefined : { label: '创建第一个 Worker', onClick: onCreate }}
+        />
       </CardContent>
     </Card>
   );
@@ -168,7 +139,7 @@ function skillChipClass(done: boolean, failed: boolean, specFailed: boolean): st
 
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
-  const { isConnected } = useAgentTeamsStore();
+  const { isConnected, userLevel } = useAgentTeamsStore();
   const { searchQuery } = useSearch();
   const createWorker = useCreateWorker();
   const deleteWorker = useDeleteWorker();
@@ -177,12 +148,17 @@ export function WorkersSection() {
   const ensureReadyWorker = useEnsureReadyWorker();
   const updateWorker = useUpdateWorker();
   // Soft model alias validation (embedded mode): warn but allow submit.
-  const { options: modelOptions, providers, aiRoutes, sessionIssue } = useModelSelection();
+  const { options: modelOptions, providers, aiRoutes, sessionIssue, isLoading: modelsLoading } = useModelSelection();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [detailWorker, setDetailWorker] = useState<WorkerResponse | null>(null);
+  const [drawerWorker, setDrawerWorker] = useState<WorkerResponse | null>(null);
+  const [restartingWorker, setRestartingWorker] = useState<string | null>(null);
   const [editWorker, setEditWorker] = useState<WorkerResponse | null>(null);
+  const [loadingWorker, setLoadingWorker] = useState<string | null>(null);
+  const detailRequest = useRef(0);
+  useEffect(() => () => { detailRequest.current++; }, []);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -202,7 +178,6 @@ export function WorkersSection() {
 
   const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
-  const [upgradeTarget, setUpgradeTarget] = useState<WorkerResponse | null>(null);
   const [agentSpecs, setAgentSpecs] = useState<Array<{ name: string; description: string; version: string }>>([]);
   // modelOptions 来自 useModelSelection（上方）——同源单一实现。
 
@@ -212,7 +187,7 @@ export function WorkersSection() {
     () => paginateWorkers(sorted, currentPage, ITEMS_PER_PAGE),
     [sorted, currentPage]
   );
-  const runtimeDist = useMemo(() => computeRuntimeDist(workers), [workers]);
+  const cardGroups = useMemo(() => groupWorkersByTeam(sorted), [sorted]);
 
   // Reset to first page when filters change (adjust state during render)
   const [prevFilters, setPrevFilters] = useState({ searchQuery, sortKey });
@@ -334,18 +309,22 @@ export function WorkersSection() {
     waitForWorkersToDisappear,
   ]);
 
-  const handleExport = useCallback(() => {
-    if (!workers) return;
-    const data = JSON.stringify(workers, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `agentteams-workers-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Workers 数据已导出');
-  }, [workers]);
+  const handleExport = useCallback(async () => {
+    try {
+      // Export is an explicit bulk-detail operation, not the polling snapshot.
+      const data = JSON.stringify(await agentteamsApi.listWorkers(), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `agentteams-workers-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Workers 数据已导出');
+    } catch {
+      toast.error('Workers 数据导出失败，请重试');
+    }
+  }, []);
 
   // Soft model alias validation (embedded mode): warn but allow submit.
   // If the requested alias cannot be resolved through any configured AiRoute,
@@ -526,19 +505,53 @@ export function WorkersSection() {
     []
   );
 
-  const openEdit = useCallback((worker: WorkerResponse) => {
-    setEditWorker(worker);
-    setEditForm({
-      name: worker.name,
-      env: worker.envEditable ? (worker.env || {}) : undefined,
-      model: worker.model || '',
-      runtime: worker.runtime,
-      image: worker.image || '',
-      skills: worker.skills || [],
-      agents: worker.agents,
-      mcpServers: worker.mcpServers,
-    });
+  const loadWorker = useCallback(async (row: WorkerResponse, mode: 'view' | 'edit') => {
+    const request = ++detailRequest.current;
+    setDetailWorker(null);
+    setEditWorker(null);
+    setEditForm({});
+    setLoadingWorker(row.name);
+    try {
+      const worker = await agentteamsApi.getWorker(row.name);
+      if (request !== detailRequest.current) return;
+      if (mode === 'view') {
+        setDetailWorker(worker);
+      } else {
+        setEditWorker(worker);
+        setEditForm({
+          name: worker.name,
+          env: worker.envEditable ? (worker.env || {}) : undefined,
+          model: worker.model || '',
+          llmHeartbeatEnabled: worker.llmHeartbeatEnabled,
+          runtime: worker.runtime,
+          image: worker.image || '',
+          skills: worker.skills || [],
+          agents: worker.agents,
+          mcpServers: worker.mcpServers,
+        });
+      }
+    } catch {
+      if (request === detailRequest.current) toast.error(`读取 Worker "${row.name}" 详情失败，请重试`);
+    } finally {
+      if (request === detailRequest.current) setLoadingWorker(null);
+    }
   }, []);
+  const openEdit = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'edit'); }, [loadWorker]);
+  const openDetail = useCallback((worker: WorkerResponse) => { void loadWorker(worker, 'view'); }, [loadWorker]);
+
+  const handleCardRestart = useCallback(async (workerName: string) => {
+    if (restartingWorker) return;
+    setRestartingWorker(workerName);
+    try {
+      await agentteamsApi.restartWorker(workerName);
+      toast.success(`Worker "${workerName}" 重启中`);
+      await refetch();
+    } catch (err) {
+      toast.error(formatErrorMessage(err));
+    } finally {
+      setRestartingWorker(null);
+    }
+  }, [refetch, restartingWorker]);
 
   const closeEdit = useCallback(() => {
     setEditWorker(null);
@@ -551,8 +564,9 @@ export function WorkersSection() {
     const envChanged = JSON.stringify(editForm.env) !== JSON.stringify(editWorker.envEditable ? (editWorker.env || {}) : undefined);
     const hasChanges =
       envChanged ||
+      editForm.llmHeartbeatEnabled !== editWorker.llmHeartbeatEnabled ||
       editForm.model !== (editWorker.model || '') ||
-      editForm.runtime !== editWorker.runtime ||
+      editForm.modelProvider !== undefined ||
       editForm.image !== (editWorker.image || '') ||
       editForm.agents !== (editWorker.agents || '') ||
       !arraysEqual(editForm.skills || [], editWorker.skills || []) ||
@@ -565,11 +579,11 @@ export function WorkersSection() {
 
     const { name: _ignored, ...data } = editForm;
     void _ignored;
-    if (isLegacyCopaw(data.runtime) && data.runtime !== editWorker.runtime) {
-      toast.error('CoPaw 已停止新建。请将运行时改为 QwenPaw 后再保存。');
-      return;
-    }
+    // Runtime changes go through the conditional handoff endpoint.
+    delete data.runtime;
+    if (data.image === (editWorker.image || '')) delete data.image;
     if (!envChanged) delete data.env;
+    if (editForm.llmHeartbeatEnabled === editWorker.llmHeartbeatEnabled) delete data.llmHeartbeatEnabled;
     warnIfModelAliasUnbound(editForm.model);
     updateWorker.mutate(
       { name: editWorker.name, data: data as UpdateWorkerRequest },
@@ -588,19 +602,6 @@ export function WorkersSection() {
       }
     );
   }, [editForm, editWorker, updateWorker, closeEdit, warnIfModelAliasUnbound, syncWorkerSkills]);
-
-  const handleUpgradeToQwenPaw = useCallback(() => {
-    if (!upgradeTarget) return;
-    updateWorker.mutate(
-      { name: upgradeTarget.name, data: { runtime: 'qwenpaw' } },
-      {
-        onSuccess: () => {
-          setUpgradeTarget(null);
-          toast.success(`已将 Worker "${upgradeTarget.name}" 的运行时改为 QwenPaw，Controller 将协调升级。`);
-        },
-      },
-    );
-  }, [upgradeTarget, updateWorker]);
 
   const handleConfigApply = useCallback(() => {
     setConfigError(null);
@@ -637,6 +638,12 @@ export function WorkersSection() {
 
   return (
     <div className="space-y-6">
+      {loadingWorker && (
+        <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />正在读取 {loadingWorker} 的详情…
+          <Button variant="ghost" size="sm" onClick={() => { detailRequest.current++; setLoadingWorker(null); }}>取消</Button>
+        </div>
+      )}
       {syncingSkills && (
         (() => {
           const isPartial = !!syncingSkills.specFailed?.length;
@@ -678,43 +685,28 @@ export function WorkersSection() {
       )}
 
       <SectionHeader
-        title="Workers"
-        description="管理和监控 AI Agent Workers"
+        title={`Agent${workers ? ` · ${workers.length}` : ''}`}
+        description="管理 Agent 与运行状态"
         isLive={isConnected}
         onRefresh={() => refetch()}
         isRefreshing={isRefetching}
         actions={
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={!workers || workers.length === 0}
-            >
-              <Download className="w-4 h-4 mr-1" aria-hidden="true" />
-              导出 JSON
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
-              <Upload className="w-4 h-4 mr-1" aria-hidden="true" />
-              上传包
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
-              <FileCode className="w-4 h-4 mr-1" aria-hidden="true" />
-              JSON 应用
-            </Button>
+            <ResourceListMenu label="列表更多操作" items={[
+              { label: '导出 JSON', onSelect: handleExport, disabled: !workers || workers.length === 0 },
+              { label: '上传包', onSelect: () => setUploadOpen(true) },
+              { label: 'JSON 应用', onSelect: () => setConfigOpen(true) },
+            ]} />
             <Button
               size="sm"
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
-              创建 Worker
+              创建 Agent
             </Button>
           </div>
         }
       />
-
-      <RuntimeDistribution dist={runtimeDist} />
 
       <WorkerBulkBar
         count={selectedWorkers.size}
@@ -819,25 +811,35 @@ export function WorkersSection() {
       ) : (
         <>
           {viewMode === 'card' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paginatedWorkers.map((worker, i) => (
-                <WorkerCard
-                  key={worker.name}
-                  worker={worker}
-                  index={i}
-                  isSelected={selectedWorkers.has(worker.name)}
-                  onToggleSelect={() => toggleSelect(worker.name)}
-                  onView={() => setDetailWorker(worker)}
-                  onEdit={() => openEdit(worker)}
-                  onOpenChat={() => openChatRoom(worker.roomID)}
-                  onWake={() => wakeWorker.mutate(worker.name)}
-                  onSleep={() => sleepWorker.mutate(worker.name)}
-                  onEnsureReady={() => ensureReadyWorker.mutate(worker.name)}
-                  onUpgradeToQwenPaw={() => setUpgradeTarget(worker)}
-                  onDelete={() => setDeleteTarget(worker.name)}
-                  isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
-                  isDeleting={deletingWorkerNames.has(worker.name)}
-                />
+            <div className="space-y-6">
+              {cardGroups.map((group) => (
+                <section key={group.team || '__ungrouped'} aria-label={group.team || '未分组'}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">{group.team || '未分组'}</h3>
+                    <Badge variant="secondary" className="text-xs">
+                      {group.workers.length} 个 Worker
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.workers.map((worker, i) => (
+                      <WorkerCard
+                        key={worker.name}
+                        worker={worker}
+                        index={i}
+                        isSelected={selectedWorkers.has(worker.name)}
+                        onToggleSelect={() => toggleSelect(worker.name)}
+                        onView={() => openDetail(worker)}
+                        onOpenDrawer={() => setDrawerWorker(worker)}
+                        onRestart={() => void handleCardRestart(worker.name)}
+                        onWake={() => wakeWorker.mutate(worker.name)}
+                        onSleep={() => sleepWorker.mutate(worker.name)}
+                        isActionPending={wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending}
+                        isRestarting={restartingWorker === worker.name}
+                        isDeleting={deletingWorkerNames.has(worker.name)}
+                      />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
@@ -845,13 +847,13 @@ export function WorkersSection() {
               workers={paginatedWorkers}
               selectedWorkers={selectedWorkers}
               onToggleSelect={toggleSelect}
-              onView={setDetailWorker}
+              onView={openDetail}
               onEdit={openEdit}
               onOpenChat={(worker) => openChatRoom(worker.roomID)}
               onWake={(name) => wakeWorker.mutate(name)}
               onSleep={(name) => sleepWorker.mutate(name)}
               onEnsureReady={(name) => ensureReadyWorker.mutate(name)}
-              onUpgradeToQwenPaw={setUpgradeTarget}
+              onUpgradeToQwenPaw={(worker) => { void loadWorker(worker, 'edit'); }}
               onDelete={setDeleteTarget}
               isActionPending={
                 wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending
@@ -860,12 +862,14 @@ export function WorkersSection() {
               compact={viewMode === 'compact'}
             />
           )}
-          <WorkerPagination
-            currentPage={safePage}
-            totalPages={totalPages}
-            totalItems={sorted.length}
-            onChange={setCurrentPage}
-          />
+          {viewMode !== 'card' && (
+            <WorkerPagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={sorted.length}
+              onChange={setCurrentPage}
+            />
+          )}
         </>
       )}
 
@@ -878,6 +882,7 @@ export function WorkersSection() {
         onSubmit={handleCreate}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
+        modelsLoading={modelsLoading}
         agentSpecs={agentSpecs}
       />
 
@@ -889,16 +894,28 @@ export function WorkersSection() {
         value={editForm}
         onChange={setEditForm}
         isPending={updateWorker.isPending}
-        onOpenChange={(open) => !open && closeEdit()}
+        onOpenChange={(open) => {
+          if (!open) { closeEdit(); void refetch(); }
+        }}
         onSubmit={handleUpdate}
         modelOptions={modelOptions}
+        modelProvider={editWorker?.modelProvider}
         sessionIssue={sessionIssue}
       />
 
       <WorkerDetailDialog
         worker={detailWorker}
         onOpenChange={(open) => !open && setDetailWorker(null)}
-        onSaved={() => refetch()}
+      />
+
+      <WorkerDrawer
+        worker={drawerWorker}
+        onOpenChange={(open) => !open && setDrawerWorker(null)}
+        modelOptions={modelOptions}
+        sessionIssue={sessionIssue}
+        userLevel={userLevel}
+        onChanged={() => { void refetch(); }}
+        onDeleted={() => { setDrawerWorker(null); void refetch(); }}
       />
 
       <WorkerConfigDialog
@@ -931,22 +948,6 @@ export function WorkersSection() {
         isLoading={deleteWorker.isPending}
       />
 
-      <AlertDialog open={!!upgradeTarget} onOpenChange={(open) => !open && setUpgradeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>升级到 QwenPaw</AlertDialogTitle>
-            <AlertDialogDescription>
-              将 Worker &quot;{upgradeTarget?.name}&quot; 的运行时从 CoPaw 改为 QwenPaw。升级前请备份持久化数据，并避免在任务执行中切换。工作区、会话、记忆和凭据会按 Controller 迁移链路保留。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updateWorker.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUpgradeToQwenPaw} disabled={updateWorker.isPending}>
-              {updateWorker.isPending ? '升级中...' : '确认升级'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

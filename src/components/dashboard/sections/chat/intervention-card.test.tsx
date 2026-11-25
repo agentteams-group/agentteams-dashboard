@@ -1,7 +1,7 @@
 /**
  * 选项式干预卡（F2.1/F2.2）单测：推荐置顶默认选中、自由输入互斥、
  * 序号快捷键、提交禁用规则、降级回写文本、提交后只读 + 收件箱互通、
- * 超时置灰 + 升级通知、requested_of 权限门。
+ * 超时置灰 + 升级通知、requested_of 权限门；回写结果决定卡片状态（C-3）。
  */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -13,9 +13,12 @@ afterEach(cleanup);
 import { InterventionCard, composeAnswerText } from './intervention-card';
 import type { RuntimeConfirmationBlock } from '@/lib/a2ui/protocol';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
+import type { ConfirmationAnswerField } from './confirmation-reply';
+import { heuristicToInterventionPayload, parseInterventionHeuristic } from '@/lib/a2ui/intervention-heuristic';
 
 const mockAddNotification = vi.fn();
-const mockOnAnswer = vi.fn();
+// 默认回报「已写入房间」：C-3 后卡片只在拿到 true 时才翻成已答复。
+const mockOnAnswer = vi.fn<(_text: string, _answer?: ConfirmationAnswerField) => boolean>(() => true);
 
 vi.mock('@/lib/matrix-store', () => ({
   useMatrixStore: (selector: (_s: { userId: string | null }) => unknown) =>
@@ -57,6 +60,19 @@ function seedInbox(timestamp = Date.now()) {
 }
 
 describe('composeAnswerText（降级自然语言回写）', () => {
+  it('requires an explicit dropdown choice and sends the selected Human', async () => {
+    render(<InterventionCard payload={{ ...basePayload, tool_name: 'select_team_admin', options: [{ id: 'alice', label: 'Alice（alice）' }, { id: 'bob', label: 'Bob（bob）' }] }} onAnswer={mockOnAnswer} />);
+    const picker = screen.getByRole('combobox', { name: 'Team Admin' });
+    expect(picker).toHaveValue('');
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    expect(screen.queryByLabelText('自由输入')).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: 'bob' } });
+    expect(picker).toHaveValue('bob');
+    mockOnAnswer.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith(expect.stringContaining('Bob（bob）'), expect.objectContaining({ tool_name: 'select_team_admin', confirmation_id: 'iv-test-1' })));
+    expect(composeAnswerText([{ question: 'Admin', options: [{ id: 'bob', label: 'Bob（bob）' }] }], { selections: { 0: ['bob'] }, freeText: {} })).toContain('Bob（bob）');
+  });
   it('选中项映射为 label，多问题 A1/A2 逐行', () => {
     const text = composeAnswerText(
       [
@@ -80,9 +96,47 @@ describe('composeAnswerText（降级自然语言回写）', () => {
 });
 
 describe('InterventionCard（F2.1 交互契约）', () => {
+  it('expires a submitted native question that has no owner receipt', () => {
+    useHitlInboxStore.setState({ confirmations: {}, resolutions: { 'iv-test-1': { id: 'iv-test-1', status: 'submitted', timestamp: Date.now(), answer: 'A' } } });
+    render(<InterventionCard payload={{ ...basePayload, reply_format: 'com.agentteams.answer', expires_at: Date.now() - 1000 }} onAnswer={mockOnAnswer} />);
+    expect(screen.getByText('已超时')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1'].status).toBe('submitted');
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
+  });
+
+  it('shows short normal-weight choices with full conditions available and sends the original answer', async () => {
+    const label = '只评审验证：检查接口写入、回读、校验及容器注入，输出完整报告，不修改任何实现代码。';
+    render(<InterventionCard payload={{ ...basePayload, options: [
+      { id: 'review', label, description: '发现缺口后先汇报，再确定是否修复。' },
+      { id: 'implement', label: '直接实现修复' },
+    ] }} onAnswer={mockOnAnswer} />);
+    const radio = screen.getByRole('radio', { name: label });
+    expect(radio).toHaveTextContent('只评审验证');
+    expect(radio).not.toHaveTextContent('检查接口写入');
+    expect(screen.getByText('只评审验证')).toHaveClass('font-normal');
+    let details = screen.getByText('选项说明').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(radio);
+    details = screen.getByText('选项说明').closest('details');
+    expect(details).toHaveAttribute('open');
+    expect(details).toHaveTextContent(label);
+    expect(details).toHaveTextContent('发现缺口后先汇报');
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith(`【干预答复】\nA1：${label}`, expect.anything()));
+  });
+
+  it('sends the actual nested choice instead of the numbered clarification question', async () => {
+    const parsed = parseInterventionHeuristic('开工前需要您确认三点：\n1. 需求对象：以哪个为准？\n2. 任务边界：已有 PR。我们要 (a) 独立实现修复，(b) 只评审/验证该 PR，还是 (c) 其他？\n3. 建单授权：确认后创建 Project。');
+    expect(parsed).not.toBeNull();
+    render(<InterventionCard payload={heuristicToInterventionPayload(parsed!, 'heuristic:$nested:1')} onAnswer={mockOnAnswer} />);
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: '只评审/验证该 PR' }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    await vi.waitFor(() => expect(mockOnAnswer).toHaveBeenCalledWith('【干预答复】\nA1：只评审/验证该 PR', undefined));
   });
 
   it('① 推荐项置顶 + 默认选中；序号随展示序', () => {
@@ -139,7 +193,7 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(submit).toBeEnabled();
   });
 
-  it('⑤ 提交后：只读态显示提交人与时间、答案转自然语言经 onAnswer 发出、收件箱互通消失', () => {
+  it('⑤ 提交后：只读态显示提交人与时间、答案转自然语言经 onAnswer 发出、收件箱互通消失', async () => {
     seedInbox();
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
@@ -147,9 +201,19 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     expect(mockOnAnswer).toHaveBeenCalledTimes(1);
     expect(mockOnAnswer.mock.calls[0][0]).toContain('【干预答复】');
     expect(mockOnAnswer.mock.calls[0][0]).toContain('A1：按模块');
+    // C-3：除了自然语言正文，还要带得上确认 id / 答案 / 提交人，才能追踪到那张卡。
+    expect(mockOnAnswer.mock.calls[0][1]).toEqual({
+      confirmation_id: 'iv-test-1',
+      answer: expect.stringContaining('【干预答复】'),
+      tool_name: 'ask_human',
+      actor: '@me:example.org',
+      responses: [{ id: '0', selected: ['module'] }],
+    });
     // 只读态 + 提交人
-    expect(screen.getByText(/已答复/)).toBeInTheDocument();
-    expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
+    // 降级可见：进了房间不等于回了运行时，卡上得标出来。
+    expect(screen.getByText('答案已发送，等待 Agent 继续处理。')).toBeInTheDocument();
     // F2.3 收件箱互通
     expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeUndefined();
     expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toEqual(
@@ -157,15 +221,44 @@ describe('InterventionCard（F2.1 交互契约）', () => {
     );
   });
 
-  it('⑤b 重新挂载后从共享记录保留已答复状态', () => {
+  it('⑤c 未写入房间（回写回报 false）：不翻成已答复、给出重试提示、收件箱仍留这条待办', async () => {
+    seedInbox();
+    mockOnAnswer.mockImplementationOnce(() => false);
+    render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
+    fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('答复未写入房间');
+    expect(screen.queryByText(/已提交选择/)).not.toBeInTheDocument();
+    expect(useHitlInboxStore.getState().confirmations['iv-test-1']).toBeDefined();
+    expect(useHitlInboxStore.getState().resolutions['iv-test-1']).toBeUndefined();
+    // 卡片保持可再次提交
+    expect(screen.getByRole('button', { name: /提交选择/ })).toBeEnabled();
+  });
+
+  it('⑤d 启发式卡不附结构化字段：那个 id 是本机造的，写进房间只会对不上号', async () => {
+    render(
+      <InterventionCard
+        payload={{ ...basePayload, confirmation_id: 'heuristic:$e1:0' }}
+        onAnswer={mockOnAnswer}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /按模块/ }));
+    fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
+    expect(mockOnAnswer.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it('⑤b 重新挂载后从共享记录保留已答复状态', async () => {
     seedInbox();
     const first = render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
     fireEvent.click(screen.getByRole('button', { name: /提交选择/ }));
+    // 回写结果在下一个微任务里才回到卡片，等它落定再卸载。
+    expect(await screen.findByText(/已提交选择/)).toBeInTheDocument();
     first.unmount();
 
     render(<InterventionCard payload={basePayload} onAnswer={mockOnAnswer} />);
-    expect(screen.getByText(/已答复/)).toBeInTheDocument();
-    expect(screen.getByText(/提交人 @me:example\.org/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
+    expect(screen.getByText(/已提交选择/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /提交选择/ })).not.toBeInTheDocument();
   });
 

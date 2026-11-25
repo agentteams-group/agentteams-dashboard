@@ -6,7 +6,8 @@
 // - Per-user credentials live in a server-side in-memory map (see
 //   proxy-helper: "NEVER trust browser-supplied Authorization header").
 // - Controller credential selection:
-//     L1 (dashboard level 3) → the admin SA token from env (full access)
+//     Human L1/L2/L3 → the user's own Matrix token; Controller resolves permissions.
+//     Legacy Console-only / explicit-token sessions retain their own credentials.
 //     L2 (dashboard level 2) → the user's own Matrix access token (A2 chain:
 //       whoami → Human CR → team-scoped reads + same-team project writes)
 // - Level mapping (E5, 级别量表反转): the Human CRD scale is INVERTED relative
@@ -31,18 +32,9 @@ const MAX_SESSIONS = 1000;
 
 /** Controller credential carried server-side per session. */
 export type ControllerCredential =
-  | { kind: 'sa' } // Admin data-plane access: the admin SA token from env
-  //   (never leaves the server). Used by the Console track AND by
-  //   top-permission (CR level 1) accounts logging in via the Matrix track
-  //   after their admin account PASSWORD has been verified — the Controller's
-  //   Matrix auth only accepts level-2 tokens, so a level-1 Matrix token
-  //   cannot be the data-plane credential.
-  | { kind: 'controller-token'; token: string } // CR level 1 via the Matrix
-  //   track with a pasted Controller admin token (verified against the
-  //   Controller at login, held server-side only — same as the workbench
-  //   plugin's admin-token mode).
-  | { kind: 'matrix'; token: string }; // Own-permission accounts (CR level 2/3):
-  //   the user's own Matrix access token; A2 scopes reads to accessibleTeams.
+  | { kind: 'sa' } // Legacy external Console-only deployments
+  | { kind: 'controller-token'; token: string } // Explicit operational token login
+  | { kind: 'matrix'; token: string }; // Human L1/L2/L3; Controller authorizes each operation
 
 export interface DashboardSession {
   sid: string;
@@ -55,12 +47,7 @@ export interface DashboardSession {
   /** Human CR accessibleTeams (L2 scoping; informational — Controller enforces). */
   teams: string[];
   credential: ControllerCredential;
-  /**
-   * 12.16: Higress Console session bound server-side after the admin-account
-   * verification (Matrix track, L1). NEVER forwarded to the browser — the
-   * gateway/data-plane proxies reuse it so an operator's own login can
-   * manage the model gateway without switching to the admin account.
-   */
+  /** Legacy Console binding; new Human sessions do not carry downstream credentials. */
   consoleCookie?: string;
   createdAt: number;
 }
@@ -288,11 +275,39 @@ export function getSessionFromRequest(request: { headers: { get(_name: string): 
   return validateSessionToken(token);
 }
 
-/** Build the Set-Cookie header value for a session. */
-export function sessionCookieHeader(cookieValue: string): string {
-  const secure = process.env.DASHBOARD_COOKIE_SECURE === '1' ? '; Secure' : '';
+/** Minimal request shape needed to detect the transport scheme. */
+export interface CookieRequestLike {
+  headers: { get(_name: string): string | null };
+  nextUrl?: { protocol?: string };
+}
+
+function requestIsHttps(request: CookieRequestLike): boolean {
+  // Behind a TLS-terminating proxy the request itself is HTTP but the
+  // forwarded proto is HTTPS — trust that first, then fall back to the URL.
+  const forwarded = request.headers.get('x-forwarded-proto');
+  if (forwarded) return forwarded.split(',')[0]!.trim().toLowerCase() === 'https';
+  return request.nextUrl?.protocol === 'https:';
+}
+
+/**
+ * Build the Set-Cookie header value for a session.
+ *
+ * Secure follows the ACTUAL transport scheme when a request is passed:
+ * DASHBOARD_COOKIE_SECURE=0 never emits Secure; =1 (or unset) emits Secure
+ * only for HTTPS requests (x-forwarded-proto: https or an https: nextUrl).
+ * On plain HTTP (localhost / LAN deployments) Secure is omitted — a Secure
+ * cookie over HTTP is stored but never sent back, which made every
+ * post-login data request 401 despite a successful login.
+ * Without a request (tests / legacy callers) the old env-based behavior is
+ * kept: Secure iff DASHBOARD_COOKIE_SECURE=1.
+ */
+export function sessionCookieHeader(cookieValue: string, request?: CookieRequestLike): string {
+  const secure =
+    request === undefined
+      ? process.env.DASHBOARD_COOKIE_SECURE === '1'
+      : process.env.DASHBOARD_COOKIE_SECURE !== '0' && requestIsHttps(request);
   return (
-    `${SESSION_COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}${secure}`
+    `${SESSION_COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}${secure ? '; Secure' : ''}`
   );
 }
 

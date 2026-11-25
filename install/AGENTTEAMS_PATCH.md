@@ -14,14 +14,37 @@ This document describes how agentteams-dashboard integrates with the AgentTeams 
 
 The external Higress adapter reference implementation lives in this
 repository's `install/agentteams-install.sh` and `install/agentteams-dashboard.sh`
-working copies and is pending an upstream PR. Rebase the changes onto the
-current `agentscope-ai/AgentTeams` `main` when submitting; there is no pinned
-source revision anymore.
+working copies. Adapter env, Console-host allowlist merge, volume
+export/chown, and Controller Console URL forwarding now live upstream.
+Rebase this tree onto current `agentscope-ai/AgentTeams` `main` when the
+weekly drift check fires; there is no pinned source revision.
 
-Working copy status (2026-10-20): rebased onto `agentscope-ai/AgentTeams`
-`main` at `6ede59771fc6`. The remaining installer delta is limited to the
-external adapter variables and Dashboard persistence fixes described here,
-which still need the upstream PR.
+Release preparation (2026-11-12): the bundled Bash installer
+match the Core v1.2.7 candidate in
+[upstream PR #1593](https://github.com/agentscope-ai/AgentTeams/pull/1593).
+The candidate uses shared `agentteams-harness-xxx:v1.2.7` images and recommends
+Dashboard v1.4.1; explicit custom image and version overrides remain supported.
+Upstream includes `AGENTTEAMS_HIGRESS_ADAPTER_MODE`,
+`AGENTTEAMS_AI_GATEWAY_URL`, `_dashboard_merge_console_host` on every
+`step_dashboard` return path, Dashboard volume export/chown,
+`AGENTTEAMS_HIGRESS_WASM_PLUGIN_REGISTRY`,
+`_controller_admin_url_env_args`, `AGENTTEAMS_FS_PUBLIC_ENDPOINT`
+(presigned download origin, upstream #1501), and the embedded-mode
+`CONTROLLER_URL=http://agentteams-controller:8090` injection (upstream
+#1526: the Controller advertises its in-network URL to the Manager and
+Workers it provisions instead of the image-default `127.0.0.1`).
+Standalone `install/agentteams-dashboard.sh` now uses the same
+Console-host merge and volume export/chown path as upstream
+`_start_dashboard`. It remains outside the weekly drift check (upstream
+has no standalone dashboard.sh).
+
+`AGENTTEAMS_FS_PUBLIC_ENDPOINT` is a Controller variable, so the
+standalone installer does not forward it: the Controller mints the
+presigned URL, and the Dashboard only talks to the object store through
+`AGENTTEAMS_FS_ENDPOINT`. Embedded installs must leave
+`AGENTTEAMS_FS_PUBLIC_ENDPOINT` unset unless the operator supplies a
+browser-reachable origin; otherwise the Controller answers presign
+requests with `501`.
 
 ### Runtime Contract
 
@@ -56,7 +79,7 @@ separately from this wire-contract migration.
 3. In external adapter mode, neither Controller reconciliation nor Worker configuration generation replaces the configured data-plane URL with a Console URL or `aigw-local.agentteams.io`.
 4. A Higress AI Route and model mapping resolving `team-chat` accepts the Manager and Worker request model value.
 
-### Reference Implementation (pending upstream PR)
+### Reference Implementation (installer-side now upstream)
 
 The external Higress adapter persists
 `AGENTTEAMS_HIGRESS_ADAPTER_MODE` and `AGENTTEAMS_AI_GATEWAY_URL`, passes the
@@ -114,7 +137,7 @@ The upstream integration provides the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENTTEAMS_DASHBOARD` | `1` | Install Dashboard? (1=yes, 0=no) |
-| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.3.1` | Dashboard version tag (independent of AgentTeams version) |
+| `AGENTTEAMS_DASHBOARD_VERSION` | `v1.4.1` | Dashboard version tag (independent of AgentTeams version) |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 | `AGENTTEAMS_DASHBOARD_IMAGE` | derived | Full image reference (uses `AGENTTEAMS_DASHBOARD_VERSION`) |
 | `AGENTTEAMS_AI_GATEWAY_ADMIN_URL` | auto-detected | Higress Console URL for shared login |
@@ -150,7 +173,7 @@ The upstream integration provides the following capabilities:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DASHBOARD_CONTEXT` | `../agentteams-dashboard` | Path to dashboard source tree |
-| `DASHBOARD_VERSION` | `v1.3.1` | Dashboard version tag |
+| `DASHBOARD_VERSION` | `v1.4.1` | Dashboard version tag |
 | `DASHBOARD_IMAGE` | derived | Full image reference |
 | `AGENTTEAMS_PORT_DASHBOARD` | `13000` | Dashboard host port |
 

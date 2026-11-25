@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -8,8 +8,10 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
 import rehypeSanitize from 'rehype-sanitize';
+import type { Root, RootContent } from 'mdast';
+import { escapeHtml } from '@/lib/utils';
 import { chatMarkdownSchema } from './sanitize-schema';
-import { Copy, Check, Download, FileText, Play, Volume2 } from 'lucide-react';
+import { Copy, Check, Download, Play, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MermaidRenderer } from './mermaid-renderer';
 import { MediaViewer } from './media-viewer';
@@ -21,7 +23,8 @@ import {
   resolveMentionsToDisplayNames,
 } from './format';
 import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
-import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { AttachmentCard } from './attachment-card';
+import { parseObservabilityLink } from '@/lib/observability-links';
 
 interface MarkdownMessageProps {
   content: string;
@@ -31,15 +34,17 @@ interface MarkdownMessageProps {
   mediaInfo?: { mimetype?: string; size?: number; w?: number; h?: number };
   homeserver?: string;
   memberMap?: Record<string, string>;
+  mentionedUserIds?: string[];
   /** Streaming placeholder path: lightweight text render + trailing cursor. */
   isStreaming?: boolean;
 }
 
-function CodeBlock({ language, children }: { language?: string; children: string }) {
+function CodeBlock({ language, children }: { language?: string; children: ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const codeRef = useRef<HTMLElement>(null);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(children);
+    navigator.clipboard.writeText((codeRef.current?.textContent ?? '').replace(/\n$/, ''));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -59,7 +64,7 @@ function CodeBlock({ language, children }: { language?: string; children: string
         </Button>
       </div>
       <pre className="p-3 overflow-x-auto m-0">
-        <code className={`text-xs ${language ? `language-${language}` : ''}`}>{children}</code>
+        <code ref={codeRef} className={`text-xs ${language ? `language-${language}` : ''}`}>{children}</code>
       </pre>
     </div>
   );
@@ -135,79 +140,58 @@ function linkifyMxcUris(text: string, homeserver?: string): string {
   });
 }
 
-const HTML_INLINE_LIMIT = 512 * 1024;
-
-/** Renders an HTML file attachment inline in the conversation (sandboxed). */
-function HtmlFileMessage({
-  url,
-  filename,
-  downloadUrl,
-  size,
-}: {
-  url: string;
-  filename: string;
-  downloadUrl?: string;
-  size?: number;
-}) {
-  const [html, setHtml] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((text) => {
-        if (cancelled) return;
-        if (text.length > HTML_INLINE_LIMIT) {
-          setError('HTML 文件过大，请下载后查看');
-          return;
-        }
-        setHtml(text);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '预览加载失败');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  return (
-    <div className="matrix-message-content space-y-2">
-      {html ? (
-        <HtmlPreview html={html} title={filename} baseHref={url} />
-      ) : (
-        <div className="flex h-24 items-center justify-center rounded-md border bg-muted/20 text-xs text-muted-foreground">
-          {error ? `预览失败：${error}` : '加载 HTML 预览…'}
-        </div>
-      )}
-      {downloadUrl && (
-        <a
-          href={downloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 hover:underline"
-          title="下载文件"
-        >
-          <Download className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          下载 {filename}
-          {size && <span className="text-muted-foreground">{formatFileSize(size)}</span>}
-        </a>
-      )}
-    </div>
-  );
-}
-
 function formatFileSize(size?: number): string {
   if (!size) return '';
   if (size > 1024 * 1024) return `(${(size / (1024 * 1024)).toFixed(1)} MB)`;
   return `(${(size / 1024).toFixed(1)} KB)`;
 }
 
-export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, isStreaming }: MarkdownMessageProps) {
+/**
+ * 引用块（回复时带进来的原消息）在气泡内的唯一一套版式（方案 v3 B-4）。
+ *
+ * 原来两处各写一份 `border-l-4 border-emerald-500/50 pl-4 italic`（一份在流式
+ * 渲染的 [&_blockquote] 变体里，一份在 react-markdown 的 components 里），
+ * 颜色写死绿色不跟随主题，缩进也比消息里其它次级信息宽一档。引用是「别人的
+ * 话」而不是正文，统一成细左边线 + 12px 缩进 + 次要色。
+ */
+const QUOTE_CLASS = 'my-2 border-l-2 border-border pl-3 italic text-muted-foreground';
+const EVIDENCE_CLASS = 'my-3 min-w-0 rounded-xl border border-border bg-card p-4 text-foreground not-italic shadow-none [&_pre]:max-h-56 [&_pre]:whitespace-pre-wrap [&_pre]:break-words';
+const MENTION_CLASS = 'matrix-mention rounded bg-blue-500/10 px-1 font-medium text-blue-600 dark:text-blue-400';
+
+function remarkMentions(memberMap?: Record<string, string>, prefixHtml?: string) {
+  return () => (tree: Root) => {
+    function walk(parent: { children: RootContent[] }) {
+      parent.children = parent.children.flatMap<RootContent>(node => {
+        if (node.type === 'link' || node.type === 'linkReference') return [node];
+        if (node.type !== 'text') {
+          if ('children' in node) walk(node as { children: RootContent[] });
+          return [node];
+        }
+        return node.value.split(/((?<![\p{L}\p{N}._])@[\p{L}\p{N}._:/-]+)/u).filter(Boolean).map(part => {
+          const name = resolveMentionsToDisplayNames(part, memberMap);
+          return part.startsWith('@') && name !== part
+            ? { type: 'html' as const, value: `<span class="${MENTION_CLASS}">@${escapeHtml(name)}</span>` }
+            : { type: 'text' as const, value: part };
+        });
+      });
+    }
+    walk(tree);
+    if (prefixHtml) {
+      const firstParagraph = tree.children.find(node => node.type === 'paragraph');
+      const prefix = { type: 'html' as const, value: prefixHtml };
+      if (firstParagraph) firstParagraph.children.unshift(prefix);
+      else tree.children.unshift({ type: 'paragraph', children: [prefix] });
+    }
+  };
+}
+
+function hasEvidenceLink(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false;
+  const element = node as { properties?: { href?: string }; children?: unknown[] };
+  return Boolean(parseObservabilityLink(element.properties?.href)) || Boolean(element.children?.some(hasEvidenceLink));
+}
+
+export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, mediaInfo, homeserver, memberMap, mentionedUserIds, isStreaming }: MarkdownMessageProps) {
   // Prop takes precedence; fall back to the logged-in homeserver from the
   // store so media URLs resolve even when the caller omits the prop.
   const { homeserver: storeHomeserver } = useMatrixStore();
@@ -217,27 +201,42 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     return mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver);
   }, [mediaUrl, resolvedHomeserver]);
 
+  const mentionPrefix = useMemo(() => {
+    const tokens = new Set(content.match(/@[\p{L}\p{N}._:/-]+/gu) ?? []);
+    return [...new Set(mentionedUserIds)].filter(id => {
+      const name = memberMap?.[id] ?? id.slice(1).split(':')[0];
+      return ![id, `@${id.slice(1).split(':')[0]}`, `@${name}`].some(token => tokens.has(token))
+        && !formattedContent?.includes(encodeURIComponent(id)) && !formattedContent?.includes(id);
+    }).map(id => `<span class="${MENTION_CLASS}">@${escapeHtml(memberMap?.[id] ?? id.slice(1).split(':')[0])}</span> `).join('');
+  }, [content, formattedContent, memberMap, mentionedUserIds]);
+
   const html = useMemo(() => {
     if (formattedContent) {
       const formatted = renderFormattedContent(formattedContent, content).html;
-      const mentionResolved = resolveMentionsInHtml(
+      let mentionResolved = resolveMentionsInHtml(
         formatted,
         memberMap,
-        (name) => `<span class="matrix-mention text-emerald-700 dark:text-emerald-400 font-medium">${name}</span>`
-      );
+        (name) => `<span class="${MENTION_CLASS}">@${name}</span>`
+      ).replace(/<a\b[^>]*href=["']https:\/\/matrix\.to\/#\/(?:@|%40)[^"']+["'][^>]*>([\s\S]*?)<\/a>/gi,
+        (_link, label: string) => `<span class="${MENTION_CLASS}">@${label.replace(/<[^>]*>/g, '').replace(/^@/, '')}</span>`);
+      if (mentionPrefix) {
+        mentionResolved = /<p(?:\s[^>]*)?>/i.test(mentionResolved)
+          ? mentionResolved.replace(/<p(?:\s[^>]*)?>/i, paragraph => paragraph + mentionPrefix)
+          : mentionPrefix + mentionResolved;
+      }
       // Runtimes that wrap GFM tables in <pre><code> blocks render as literal
       // pipes; convert them to real tables before the HTML path renders.
       return convertFencedTablesInHtml(mentionResolved);
     }
     return undefined;
-  }, [formattedContent, content, memberMap]);
+  }, [formattedContent, content, memberMap, mentionPrefix]);
 
   const resolvedContent = useMemo(
     () => linkifyMxcUris(
-      unwrapFencedTables(resolveMentionsToDisplayNames(content, memberMap)),
+      unwrapFencedTables(content),
       resolvedHomeserver,
     ),
-    [content, memberMap, resolvedHomeserver]
+    [content, resolvedHomeserver]
   );
 
   // Full-screen image preview (element-web lightbox)
@@ -249,7 +248,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       <div className="matrix-message-content">
         <button
           type="button"
-          className="block max-w-full rounded-lg cursor-zoom-in focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+          className="block max-w-full rounded-lg cursor-zoom-in focus:outline-none focus:ring-1 focus:ring-ring"
           onClick={() => setViewerOpen(true)}
           title="点击查看大图"
         >
@@ -266,7 +265,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             href={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 hover:underline shrink-0"
+            className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2 shrink-0"
           >
             <Download className="w-3 h-3" />
             下载
@@ -313,36 +312,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     );
   }
 
-  if (msgType === 'm.file' && resolvedMediaUrl) {
-    const isHtmlFile =
-      mediaInfo?.mimetype === 'text/html' || /\.html?$/i.test(content);
-    if (isHtmlFile) {
-      return (
-        <HtmlFileMessage
-          url={resolvedMediaUrl}
-          filename={content}
-          downloadUrl={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
-          size={mediaInfo?.size}
-        />
-      );
-    }
-    return (
-      <div className="matrix-message-content">
-        <a
-          href={mxcToDownloadUrl(mediaUrl ?? '', resolvedHomeserver, { download: true })}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 hover:underline"
-          title="下载文件"
-        >
-          <FileText className="w-4 h-4 shrink-0" />
-          <span className="truncate">{content}</span>
-          {mediaInfo?.size && (
-            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(mediaInfo.size)}</span>
-          )}
-        </a>
-      </div>
-    );
+  if (msgType === 'm.file' && mediaUrl && resolvedMediaUrl) {
+    return <AttachmentCard homeserver={resolvedHomeserver} payload={{
+      url: mediaUrl, filename: content, mimetype: mediaInfo?.mimetype ?? '', size: mediaInfo?.size,
+    }} />;
   }
 
   // For HTML formatted_body, render directly (card/thinking already split off
@@ -353,7 +326,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
   // the case (no real table element while the text has a Markdown table) and
   // fall through to the Markdown renderer below, where remark-gfm builds the
   // table.
-  if (html) {
+  // Matrix formatted_body and plain Markdown use the same evidence renderer.
+  // Other formatted messages retain their existing lightweight HTML path.
+  const evidenceHtml = html && /#console\/governance\/(?:monitoring|tracing)(?:[?"'<>\s]|$)/.test(html) ? html : null;
+  if (html && !evidenceHtml) {
     const hasRealHtmlTable = /<table[\s>]/i.test(html);
     const mdTableOnly = !hasRealHtmlTable && hasMarkdownTable(htmlToPlainText(html));
 
@@ -361,7 +337,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       const mermaidChart = html.match(/```mermaid\n([\s\S]*?)\n```/);
       const hasMermaid = !!mermaidChart;
 
-      if (isStreaming && !hasBlockFeatures(html) && !hasMermaid) {
+      if (isStreaming && !mentionPrefix && !hasBlockFeatures(html) && !hasMermaid) {
         return (
           <div className="matrix-message-content text-sm whitespace-pre-wrap break-words">
             <TypingEffect text={content} speed={10} />
@@ -396,7 +372,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
           <div
             dangerouslySetInnerHTML={{ __html: enhancedHtml }}
             className="[&>p]:mb-1 [&>br]:block
-              [&_a]:text-emerald-700 dark:text-emerald-400 [&_a]:hover:underline
+              [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2
               [&_img]:max-w-full [&_img]:max-h-64 [&_img]:rounded-lg
               [&_pre]:bg-muted/50 [&_pre]:rounded-lg [&_pre]:p-3
               [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
@@ -404,7 +380,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
               [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1
               [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5
               [&_h4]:text-sm [&_h4]:font-medium [&_h4]:mt-1 [&_h4]:mb-0.5
-              [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500/50 [&_blockquote]:pl-4 [&_blockquote]:italic"
+              [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground"
           />
         </div>
       );
@@ -412,12 +388,13 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     // mdTableOnly → the Markdown renderer below owns this message.
   }
 
-  const mermaidChart = resolvedContent.match(/```mermaid\n([\s\S]*?)\n```/);
+  const markdownContent = evidenceHtml || resolvedContent;
+  const mermaidChart = markdownContent.match(/```mermaid\n([\s\S]*?)\n```/);
   const hasMermaid = !!mermaidChart;
-  const plainContent = hasMermaid ? resolvedContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : resolvedContent;
+  const plainContent = hasMermaid ? markdownContent.replace(/```mermaid\n[\s\S]*?\n```/g, '').trim() : markdownContent;
 
   // Streaming lightweight path: no block-level features → plain pre + cursor.
-  if (isStreaming && !hasBlockFeatures(plainContent) && !hasMermaid) {
+  if (isStreaming && !mentionPrefix && !evidenceHtml && !hasBlockFeatures(plainContent) && !hasMermaid) {
     return (
       <div className="matrix-message-content text-sm">
         <pre className="whitespace-pre-wrap break-words m-0 font-inherit text-inherit">
@@ -431,7 +408,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     <div className="matrix-message-content text-sm space-y-1">
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkMentions(memberMap, evidenceHtml ? undefined : mentionPrefix)]}
         rehypePlugins={[
           rehypeRaw,
           [rehypeSanitize, chatMarkdownSchema],
@@ -440,13 +417,12 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
         ]}
         components={{
           code({ className, children, ...props }) {
-            const language = className?.replace('language-', '');
-            const code = String(children).replace(/\n$/, '');
+            const language = /\blanguage-([^\s]+)/.exec(className ?? '')?.[1];
             if (className?.includes('language-')) {
-              return <CodeBlock language={language}>{code}</CodeBlock>;
+              return <CodeBlock language={language}>{children}</CodeBlock>;
             }
             return (
-              <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props} />
+              <code className="bg-muted px-1 py-0.5 rounded text-xs" {...props}>{children}</code>
             );
           },
           pre({ children }) {
@@ -477,12 +453,13 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
             return <li className="mb-0.5">{children}</li>;
           },
           a({ href, children }) {
+            const evidenceLink = parseObservabilityLink(href);
             return (
               <a
                 href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-emerald-700 dark:text-emerald-400 hover:underline"
+                target={evidenceLink ? undefined : '_blank'}
+                rel={evidenceLink ? undefined : 'noopener noreferrer'}
+                className={evidenceLink ? 'mr-2 mt-1 inline-flex min-h-8 items-center rounded-md border bg-background px-3 py-1 text-xs font-medium text-foreground no-underline hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'text-primary underline underline-offset-2'}
               >
                 {children}
               </a>
@@ -501,9 +478,10 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
           td({ children }) {
             return <td className="border border-border px-2 py-1">{children}</td>;
           },
-          blockquote({ children }) {
+          blockquote({ children, node }) {
+            const evidence = hasEvidenceLink(node);
             return (
-              <blockquote className="border-l-4 border-emerald-500/50 pl-4 italic my-2">
+              <blockquote data-observability-evidence={evidence || undefined} className={evidence ? EVIDENCE_CLASS : QUOTE_CLASS}>
                 {children}
               </blockquote>
             );

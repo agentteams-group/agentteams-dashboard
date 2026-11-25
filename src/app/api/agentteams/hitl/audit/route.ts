@@ -2,11 +2,14 @@
 //
 // 干预回路审计落点（PRD F2.4）：hitl.request（收件箱 ingest 新干预）、
 // hitl.answer（用户提交答复：所选答案与耗时）、hitl.expire（超时升级）。
-// 事件类型白名单校验，actor 取 dashboard session（归因与 matrix.invite.accept
-// 同模式）；entity 以 confirmation_id 标识，details 携带任务/答案/耗时。
+// 事件类型白名单校验，actor 归因优先级：dashboard session → middleware
+// 注入的可信身份头（stateless 下同样可用，body.actor 无法伪造归因）→
+// body.actor 兜底（仅无 session 且无身份头的兼容场景）；entity 以
+// confirmation_id 标识，details 携带任务/答案/耗时。
 import { NextRequest, NextResponse } from 'next/server';
 import { appendAuditEvent } from '@/lib/audit-log';
 import { getSessionFromRequest } from '@/lib/dashboard-session';
+import { readServerIdentity } from '@/lib/server-auth';
 
 const ALLOWED_ACTIONS = new Set(['request', 'answer', 'expire']);
 
@@ -20,7 +23,17 @@ export async function POST(request: NextRequest) {
       actorLevel = session.level;
     }
   } catch {
-    /* stateless: identity falls back to the caller-provided actor */
+    /* stateless: fall through to the trusted identity headers below */
+  }
+  // 可信身份头优先于 body.actor：stateless 下 middleware 按 token 解析身份并
+  // 注入可信头（middleware.ts resolveStaticIdentity 分支），带头的调用不可被
+  // body.actor 冒名归因。
+  if (actor === 'unknown') {
+    const identity = readServerIdentity(request);
+    if (identity) {
+      actor = identity.name;
+      actorLevel = identity.level;
+    }
   }
 
   let body: Record<string, unknown>;

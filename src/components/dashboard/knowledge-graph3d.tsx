@@ -724,7 +724,7 @@ export function KnowledgeGraph3D(props: G3DGraph) {
           </div>
         ) : null}
       </div>
-      <div className="mt-1 text-[11.5px] text-muted-foreground">
+      <div className="mt-1 text-xs text-muted-foreground">
         拖拽旋转 · 滚轮缩放 · 右键平移 · 点节点选中（邻接高亮）并打开预览 · 点空白取消
       </div>
     </div>

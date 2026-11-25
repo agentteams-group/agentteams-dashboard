@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { BucketItem, Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
-import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { enforceLevelOnlyRbac, readServerIdentity } from '@/lib/server-auth';
+import { publicMcpRecord, readMcpRecord, withMcpRecordLock, type ManagedMcpRecord } from '@/lib/server/mcp-management';
+import { callControllerAsset } from '@/app/api/higress/controller-helper';
 
 const MCP_SERVERS_PREFIX = 'mcp-servers/';
 
@@ -30,13 +32,20 @@ async function listAllObjects(client: Client, bucket: string, prefix: string): P
   return objects;
 }
 
-export async function GET() {
-  const bucket = getMinioBucket();
-  if (!bucket) {
-    return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
-  }
-
+export async function GET(request: NextRequest) {
   try {
+    // Managed saves go through Controller; read the same directory before
+    // consulting legacy registrations. Asset management requires level 3.
+    if (readServerIdentity(request)?.level === 3) {
+      const managed = await callControllerAsset(request, 'mcps', { action: 'list' });
+      if (managed) return NextResponse.json(managed.body, { status: managed.response.status });
+    }
+
+    const bucket = getMinioBucket();
+    if (!bucket) {
+      return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
+    }
+
     const client = createMinioClient();
     const objects = await listAllObjects(client, bucket, MCP_SERVERS_PREFIX);
     const servers: McpServerConfig[] = [];
@@ -57,7 +66,7 @@ export async function GET() {
         });
         const config = JSON.parse(data.toString('utf-8')) as McpServerConfig;
         if (config.name && config.url && config.transport) {
-          servers.push(config);
+          servers.push((config as unknown as ManagedMcpRecord).managed ? publicMcpRecord(config as unknown as ManagedMcpRecord, readServerIdentity(request)?.level === 3) : config);
         }
       } catch {
         // skip corrupted entries
@@ -99,29 +108,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'transport 须为 "sse" 或 "streaminghttp"' }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const config: McpServerConfig = {
-    name,
-    url,
-    transport,
-    type: type || undefined,
-    timeout: timeout || undefined,
-    headers: headers || undefined,
-    description: description || undefined,
-    createdAt: now,
-    updatedAt: now,
-  };
+  return withMcpRecordLock(name, async () => {
+    if ((await readMcpRecord(name))?.managed) return NextResponse.json({ error: '名称已被受管 MCP 服务占用。' }, { status: 409 });
 
-  try {
-    const client = createMinioClient();
-    const key = `${MCP_SERVERS_PREFIX}${name}.json`;
-    const data = Buffer.from(JSON.stringify(config, null, 2));
-    await client.putObject(bucket, key, data, data.length, {
-      'Content-Type': 'application/json',
-    });
-    return NextResponse.json({ success: true, ...config }, { status: 201 });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown storage error';
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
+    const now = new Date().toISOString();
+    const config: McpServerConfig = {
+      name,
+      url,
+      transport,
+      type: type || undefined,
+      timeout: timeout || undefined,
+      headers: headers || undefined,
+      description: description || undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    try {
+      const client = createMinioClient();
+      const key = `${MCP_SERVERS_PREFIX}${name}.json`;
+      const data = Buffer.from(JSON.stringify(config, null, 2));
+      await client.putObject(bucket, key, data, data.length, {
+        'Content-Type': 'application/json',
+      });
+      return NextResponse.json({ success: true, ...config }, { status: 201 });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown storage error';
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  });
 }

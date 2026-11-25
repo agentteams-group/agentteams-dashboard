@@ -84,6 +84,8 @@ import {
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
+import { DocumentPreview } from '@/components/dashboard/document-preview';
+import { isSlideDocument } from '@/lib/document-preview';
 
 // ── 文件类型（与插件 Artifacts.kindOf 同款扩展名分组）──────────────────
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp']);
@@ -141,7 +143,7 @@ type Selection =
 
 interface PreviewState {
   entry: FileEntry;
-  status: 'loading' | 'ready' | 'binary' | 'error';
+  status: 'loading' | 'ready' | 'binary' | 'error' | 'document';
   text?: string;
   error?: string;
 }
@@ -353,6 +355,10 @@ export function ArtifactsSection() {
   }, [selected, allFiles]);
 
   const openPreview = useCallback((entry: FileEntry) => {
+    if (isSlideDocument(entry.name)) {
+      setPreview({ entry, status: 'document' });
+      return;
+    }
     const url = getTaskArtifactUrl(entry.projectId, entry.taskId, entry.path);
     setPreview({ entry, status: 'loading' });
     void (async () => {
@@ -436,7 +442,6 @@ export function ArtifactsSection() {
     <div className="space-y-4">
       <SectionHeader
         title="产物"
-        description="项目任务产物（Controller 项目端点）：全部 / 类型 / 项目→任务，点文件名直接预览与下载"
         isLive
         onRefresh={() => void refresh()}
         isRefreshing={loading}
@@ -532,7 +537,7 @@ export function ArtifactsSection() {
             )}
             <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">项目产物</span>
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {sortedProjects.length > 0 ? String(sortedProjects.length) : ''}
             </span>
           </button>
@@ -582,13 +587,13 @@ export function ArtifactsSection() {
                             {title}
                           </span>
                           {project.status && project.status !== 'active' && (
-                            <Badge variant="secondary" className="ml-auto h-4 px-1 text-[11px] shrink-0">
+                            <Badge variant="secondary" className="ml-auto h-4 px-1 text-xs shrink-0">
                               {project.status}
                             </Badge>
                           )}
                         </div>
                         {(project.team_id || ts > 0) && (
-                          <p className="truncate text-[10px] text-muted-foreground">
+                          <p className="truncate text-xs text-muted-foreground">
                             {project.team_id || ''}
                             {project.team_id && ts > 0 ? ' · ' : ''}
                             {ts > 0 ? formatTime(ts) : ''}
@@ -599,12 +604,12 @@ export function ArtifactsSection() {
                     {isExpanded && (
                       <div className="ml-4 border-l pl-1">
                         {tasksError[project.project_id] && (
-                          <p className="px-1.5 py-1 text-[10px] text-red-600 dark:text-red-400">
+                          <p className="px-1.5 py-1 text-xs text-red-600 dark:text-red-400">
                             {tasksError[project.project_id].slice(0, 120)}
                           </p>
                         )}
                         {tasks && tasks.length === 0 && (
-                          <p className="px-1.5 py-1 text-[10px] text-muted-foreground">无任务</p>
+                          <p className="px-1.5 py-1 text-xs text-muted-foreground">无任务</p>
                         )}
                         {tasks?.map((task) => {
                           const taskFiles = allFiles.filter(
@@ -613,7 +618,7 @@ export function ArtifactsSection() {
                           return (
                             <div
                               key={task.task_id}
-                              className={`flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] cursor-pointer hover:bg-muted ${
+                              className={`flex items-center gap-1 rounded-md px-1.5 py-1 text-xs cursor-pointer hover:bg-muted ${
                                 selected.kind === 'task' && selected.projectId === project.project_id && selected.taskId === task.task_id
                                   ? 'bg-muted font-medium'
                                   : ''
@@ -626,13 +631,13 @@ export function ArtifactsSection() {
                                 })
                               }
                             >
-                              <span className="truncate font-mono text-[10px] text-muted-foreground" title={task.task_id}>
+                              <span className="truncate font-mono text-xs text-muted-foreground" title={task.task_id}>
                                 {task.task_id}
                               </span>
                               {task.assigned_to && (
-                                <span className="truncate text-[10px] text-muted-foreground">· {task.assigned_to}</span>
+                                <span className="truncate text-xs text-muted-foreground">· {task.assigned_to}</span>
                               )}
-                              <span className="ml-auto text-[11px] text-muted-foreground shrink-0">
+                              <span className="ml-auto text-xs text-muted-foreground shrink-0">
                                 {taskFiles.length > 0 ? `${taskFiles.length} 文件` : ''}
                               </span>
                             </div>
@@ -649,7 +654,7 @@ export function ArtifactsSection() {
 
         {/* 右栏：面包屑（回上级）+ 文件列表 */}
         <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(100vh - 320px)', minHeight: 420 }}>
-          <nav className="mb-2 flex items-center gap-1 text-[11px] text-muted-foreground" aria-label="当前层级">
+          <nav className="mb-2 flex items-center gap-1 text-xs text-muted-foreground" aria-label="当前层级">
             {breadcrumb.map((seg, i) => (
               <span key={i} className="flex items-center gap-1 min-w-0">
                 {i > 0 && (
@@ -694,15 +699,15 @@ export function ArtifactsSection() {
                       <p className="truncate font-medium" title={entry.name}>
                         {entry.name}
                       </p>
-                      <p className="truncate text-[10px] text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground">
                         {entry.source}
                         {entry.path ? '' : ' · 结果文件'}
                       </p>
                     </div>
-                    <Badge variant="secondary" className="h-4 px-1 text-[11px] shrink-0">
+                    <Badge variant="secondary" className="h-4 px-1 text-xs shrink-0">
                       {meta.label}
                     </Badge>
-                    <span className="hidden text-[10px] text-muted-foreground sm:inline shrink-0">
+                    <span className="hidden text-xs text-muted-foreground sm:inline shrink-0">
                       {entry.taskLabel}
                     </span>
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -730,7 +735,9 @@ export function ArtifactsSection() {
 
       {/* 预览对话框（9/14 加宽：max-w-2xl→max-w-5xl，内容 70vh） */}
       <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="sm:max-w-5xl max-w-[95vw]">
+        <DialogContent className={preview?.status === 'document'
+          ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none sm:max-w-none'
+          : 'sm:max-w-5xl max-w-[95vw]'}>
           <DialogHeader>
             <DialogTitle className="truncate">
               {preview ? `${preview.entry.name} — 预览` : ''}
@@ -739,7 +746,15 @@ export function ArtifactsSection() {
               {preview ? `${preview.entry.source} · ${preview.entry.taskLabel}` : ''}
             </DialogDescription>
           </DialogHeader>
-          {preview && (
+          {preview?.status === 'document' && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+              <DocumentPreview
+                url={getTaskArtifactUrl(preview.entry.projectId, preview.entry.taskId, preview.entry.path)}
+                filename={preview.entry.name}
+              />
+            </div>
+          )}
+          {preview && preview.status !== 'document' && (
             <div className="max-h-[70vh] overflow-y-auto rounded-md border bg-muted/20 p-3">
               {preview.status === 'loading' && (
                 <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
@@ -784,7 +799,7 @@ export function ArtifactsSection() {
                     />
                   </div>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                  <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
                     {preview.text}
                   </pre>
                 ))}
@@ -821,7 +836,7 @@ function TreeRow({
     >
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate">{label}</span>
-      {trailing && <span className="ml-auto text-[10px] text-muted-foreground">{trailing}</span>}
+      {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
     </div>
   );
 }

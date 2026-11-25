@@ -4,10 +4,11 @@ import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, us
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { CHAT_COLUMN_CLASS } from '../layout';
 import type { GroupedMessage } from '../grouper/MainGrouper';
+import { TimelineRail, type TimelineRailHandle } from './TimelineRail';
 
 export interface ScrollPanelHandle {
   scrollToBottom: (_options?: { smooth?: boolean }) => void;
-  scrollToIndex: (_index: number) => void;
+  scrollToIndex: (_index: number, _options?: { smooth?: boolean }) => void;
   /** Scrolls the first timeline item whose key matches (read-marker divider, message id/event id). */
   scrollToItem: (_key: string) => void;
 }
@@ -40,6 +41,14 @@ const BOTTOM_THRESHOLD = 100;
  */
 const FIRST_ITEM_INDEX = 1_000_000;
 
+/**
+ * A programmatic jump (rail dash, reply anchor, unread divider) animates for a
+ * few hundred milliseconds. Until it lands, the list still reports "at bottom",
+ * so an appended message would re-pin the view to the latest message and drag
+ * the user back down. Bottom-follow stays suppressed for this window after a jump.
+ */
+const JUMP_FOLLOW_WINDOW_MS = 900;
+
 function keyOf(item: GroupedMessage, index: number): string {
   const timelineItem = item as unknown as { key?: string; gm?: GroupedMessage };
   return String(
@@ -67,9 +76,11 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   ref
 ) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const railRef = useRef<TimelineRailHandle>(null);
   const atBottomRef = useRef(true);
   const initialMountRef = useRef(true);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jumpWindowUntilRef = useRef(0);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const indexStateRef = useRef({ firstIndex: FIRST_ITEM_INDEX, keys: [] as string[] });
 
@@ -142,6 +153,35 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 1800);
   }, []);
 
+  // Virtuoso reports indices in the shifted space; the rail speaks data indices.
+  const toDataIndex = useCallback(
+    (index: number) => {
+      const shifted = index >= firstItemIndex ? index - firstItemIndex : index;
+      return Math.min(Math.max(shifted, 0), Math.max(items.length - 1, 0));
+    },
+    [firstItemIndex, items.length]
+  );
+
+  const handleRangeChanged = useCallback(
+    (range: { startIndex: number; endIndex: number }) => {
+      railRef.current?.setRange(toDataIndex(range.startIndex), toDataIndex(range.endIndex));
+    },
+    [toDataIndex]
+  );
+
+  const jumpToIndex = useCallback(
+    (index: number, options?: { smooth?: boolean }) => {
+      if (index < 0 || index >= items.length) return;
+      // Leaving the bottom is an explicit user intent: report it before the
+      // animation starts, while the list still measures itself at the bottom.
+      handleAtBottomChange(false);
+      jumpWindowUntilRef.current = Date.now() + JUMP_FOLLOW_WINDOW_MS;
+      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: options?.smooth === false ? 'auto' : 'smooth' });
+      highlightIndex(index);
+    },
+    [handleAtBottomChange, highlightIndex, items.length]
+  );
+
   useImperativeHandle(ref, () => ({
     scrollToBottom: (_options = { smooth: true }) => {
       if (items.length === 0) return;
@@ -151,13 +191,10 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
         behavior: _options.smooth ? 'smooth' : 'auto',
       });
       atBottomRef.current = true;
+      jumpWindowUntilRef.current = 0;
       onAtBottomChange?.(true);
     },
-    scrollToIndex: (index: number) => {
-      if (index < 0 || index >= items.length) return;
-      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
-      highlightIndex(index);
-    },
+    scrollToIndex: jumpToIndex,
     scrollToItem: (key: string) => {
       const index = items.findIndex((item) => {
         const t = item as unknown as { key?: string; gm?: GroupedMessage };
@@ -167,11 +204,9 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
           (item as { message?: { id: string } }).message?.id === key
         );
       });
-      if (index < 0) return;
-      virtuosoRef.current?.scrollToIndex({ index, align: 'center', behavior: 'smooth' });
-      highlightIndex(index);
+      jumpToIndex(index);
     },
-  }), [highlightIndex, items, onAtBottomChange]);
+  }), [items, jumpToIndex, onAtBottomChange]);
 
   if (loading && items.length === 0) {
     return (
@@ -203,7 +238,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
   }
 
   return (
-    <>
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <span className="sr-only" aria-live="polite">
         {highlightedIndex === null ? '' : `已定位到第 ${highlightedIndex + 1} 条消息`}
       </span>
@@ -220,6 +255,7 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
           return (
             <div
               data-timeline-index={dataIndex}
+              data-chat-timeline-item
               className={`mx-auto w-full ${CHAT_COLUMN_CLASS} px-4 py-0.5 transition-[background-color,box-shadow] duration-300 ${
                 highlightedIndex === dataIndex ? 'rounded-md bg-primary/10 ring-1 ring-primary/40' : ''
               }`}
@@ -231,11 +267,15 @@ export const ScrollPanel = React.forwardRef<ScrollPanelHandle, ScrollPanelProps>
         increaseViewportBy={{ top: 600, bottom: 600 }}
         atBottomThreshold={BOTTOM_THRESHOLD}
         atBottomStateChange={handleAtBottomChange}
-        followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+        rangeChanged={handleRangeChanged}
+        followOutput={(isAtBottom) =>
+          isAtBottom && Date.now() >= jumpWindowUntilRef.current ? 'auto' : false
+        }
         startReached={() => {
           if (hasNextPage && !isFetchingNextPage) onLoadMore();
         }}
       />
-    </>
+      <TimelineRail ref={railRef} items={items} onJump={jumpToIndex} />
+    </div>
   );
 });

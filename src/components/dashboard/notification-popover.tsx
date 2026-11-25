@@ -1,14 +1,17 @@
 'use client';
 
-import { Bell, Check, Trash2, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
+import { Bell, Bot, Check, Trash2, CheckCircle2, XCircle, AlertTriangle, Info, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
+} from '@/components/ui/sheet';
+import { useSectionStore } from '@/lib/section-store';
+import { usePendingTally } from '@/hooks/use-pending-tally';
+import { MyWorkbenchSection } from './sections/my-workbench-section';
 import { useNotificationStore } from '@/lib/notification-store';
+import { useMatrixStore } from '@/lib/matrix-store';
+import { hasNotificationTarget, openNotificationTarget } from '@/lib/notification-nav';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -27,31 +30,41 @@ const typeColors: Record<string, string> = {
 };
 
 export function NotificationPopover() {
-  const { notifications, markAsRead, markAllRead, clearAll, unreadCount } =
+  const { notifications: allNotifications, markAsRead, markAllRead, clearAll } =
     useNotificationStore();
-  const count = unreadCount();
+  const userId = useMatrixStore(state => state.userId);
+  const notifications = allNotifications.filter(n => !n.recipientId || n.recipientId === userId);
+  const count = notifications.filter(n => !n.read).length;
+  // 跳完要把气泡关掉，所以 open 由本组件持有（原来是非受控，关不掉）。
+  const open = useSectionStore(state => state.notificationsOpen);
+  const setOpen = useSectionStore(state => state.setNotificationsOpen);
+  const pending = usePendingTally().total;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 relative" aria-label={`通知（${count} 条未读）`}>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 relative" aria-label={`通知（${count} 条未读）${pending ? `，${pending} 条待处理` : ''}`}>
           <Bell className="w-4 h-4" aria-hidden="true" />
-          {count > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center">
-              {count > 9 ? '9+' : count}
-            </span>
+          {(count > 0 || pending > 0) && (
+            <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-xs text-primary-foreground" aria-hidden="true">{pending > 0 ? pending > 99 ? '99+' : pending : '•'}</span>
           )}
         </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
+      </SheetTrigger>
+      <SheetContent className="w-full sm:max-w-xl gap-0">
+        <SheetHeader className="border-b">
+          <SheetTitle>通知{pending > 0 && <span className="ml-2 text-sm font-normal text-muted-foreground">{pending} 条待处理</span>}</SheetTitle>
+          <SheetDescription className="sr-only">处理审批、答复和 @提醒，查看系统通知。</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="p-4"><MyWorkbenchSection onNavigate={() => setOpen(false)} /></div>
         <div className="flex items-center justify-between p-3 border-b">
-          <span className="font-medium text-sm">通知</span>
+          <span className="text-sm">系统与助手通知{count > 0 && <span className="ml-2 text-xs text-muted-foreground">{count} 条未读</span>}</span>
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => markAllRead(userId)}>
               <Check className="w-3 h-3 mr-1" />
               全部已读
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearAll}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => clearAll(userId)}>
               <Trash2 className="w-3 h-3 mr-1" />
               清空
             </Button>
@@ -59,7 +72,7 @@ export function NotificationPopover() {
         </div>
         {/* Native overflow scroll: Radix ScrollArea's focusable viewport
             paints a ring that gets clipped into stray edge stripes. */}
-        <div className="max-h-96 overflow-y-auto custom-scrollbar">
+        <div>
           {notifications.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
               暂无通知
@@ -67,15 +80,20 @@ export function NotificationPopover() {
           ) : (
             <div className="divide-y">
               {notifications.map((n) => {
-                const TypeIcon = typeIcons[n.type] || Info;
+                const TypeIcon = n.kind === 'assistant' ? Bot : typeIcons[n.type] || Info;
                 const typeColor = typeColors[n.type] || 'text-muted-foreground';
+                const hasTarget = hasNotificationTarget(n);
                 return (
-                  <div
+                  <button
                     key={n.id}
-                    className={`p-3 text-sm cursor-pointer hover:bg-accent transition-colors ${
+                    type="button"
+                    className={`block w-full p-3 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent ${
                       !n.read ? 'border-l-2 border-l-primary bg-primary/[0.04]' : ''
                     }`}
-                    onClick={() => markAsRead(n.id)}
+                    onClick={() => {
+                      markAsRead(n.id);
+                      if (openNotificationTarget(n)) setOpen(false);
+                    }}
                   >
                     <div className="flex items-start gap-2">
                       <TypeIcon className={`w-4 h-4 ${typeColor} mt-0.5 shrink-0`} />
@@ -91,9 +109,9 @@ export function NotificationPopover() {
                               n.type === 'warning' ? 'secondary' :
                               'outline'
                             }
-                            className="text-[10px] shrink-0"
+                            className="text-xs shrink-0"
                           >
-                            {n.type === 'success' ? '成功' :
+                            {n.kind === 'assistant' ? '助手提醒' : n.type === 'success' ? '成功' :
                              n.type === 'error' ? '错误' :
                              n.type === 'warning' ? '警告' : '信息'}
                           </Badge>
@@ -103,16 +121,25 @@ export function NotificationPopover() {
                         </p>
                       </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1 ml-6">
-                      {formatDistanceToNow(n.timestamp, { addSuffix: true, locale: zhCN })}
-                    </p>
-                  </div>
+                    <div className="mt-1 ml-6 flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(n.timestamp, { addSuffix: true, locale: zhCN })}
+                      </p>
+                      {hasTarget && (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-primary">
+                          {n.kind === 'assistant' ? '查看助手会话' : '查看上下文'}
+                          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                        </span>
+                      )}
+                    </div>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
-      </PopoverContent>
-    </Popover>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

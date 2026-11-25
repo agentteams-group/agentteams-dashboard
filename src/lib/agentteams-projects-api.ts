@@ -48,6 +48,7 @@ export interface ProjectSummary {
 
 export interface WorkflowNode {
   id: string;
+  parent_task_id?: string;
   name: string;
   status: WorkflowNodeStatus;
   assignee?: string;
@@ -102,6 +103,10 @@ export interface WorkflowLoop {
   current_iteration?: number;
   max_iterations?: number;
   status?: string;
+  /** Additive pause gate (#1402/#1431). Non-empty while any source ("user"
+   * or "project") holds the loop paused; the worker-side dispatcher reads
+   * this exact key. Absent on old Controllers. */
+  pause_sources?: string[];
   tasks?: WorkflowLoopTask[];
   history?: unknown[];
 }
@@ -130,7 +135,11 @@ export interface TaskTransition {
 /** Mirrors taskDetail, returned when ?includeTasks=true. */
 export interface WorkflowTaskDetail {
   task_id: string;
+  parent_task_id?: string;
   project_id?: string;
+  /** Matrix execution room, distinct from the conversation that requested it. */
+  room_id?: string;
+  source_room_id?: string;
   status?: string;
   spec_path?: string;
   assigned_to?: string;
@@ -181,7 +190,7 @@ export interface ProjectListResponse {
   degradedReason?: 'api-not-deployed' | 'controller-error';
 }
 
-const PROJECTS_URL = '/api/agentteams/projects';
+const PROJECTS_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/agentteams/projects`;
 
 // requestJson / extractErrorDetail now live in ./api-base (shared by all
 // agentteams clients — projects, workers — since PR #86 review).
@@ -434,4 +443,323 @@ export async function getProjectEvents(
     `${PROJECTS_URL}/${encodeURIComponent(projectId)}/events${qs ? `?${qs}` : ''}`,
     options.signal,
   );
+}
+
+// ----- project signal-event feed (upstream #1433) -----
+
+/**
+ * One signal event (`signalEvent` in signal_events.go). The 11-field
+ * contract has no project_id — the controller attributes the event to the
+ * project by `ref` (project-level) or by the task meta's project_id.
+ */
+export interface ProjectSignalEvent {
+  event_id: string;
+  /** Empty string for project-level events. */
+  task_id: string;
+  loop_id?: string | null;
+  event_type: string;
+  is_signal: boolean;
+  source_event: { origin: string; request_id?: string | null };
+  ref?: string;
+  fingerprint?: string;
+  iteration_index?: number | null;
+  payload?: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface ProjectSignalEventsResponse {
+  project_id: string;
+  /** Page of events, oldest first. */
+  events: ProjectSignalEvent[];
+  count: number;
+  /** Present only when more events remain. */
+  next_cursor?: string;
+}
+
+/**
+ * Page the signal-event read surface for one project.
+ *
+ * - `types` becomes one or more `type` query params (controller accepts
+ *   repeatable and comma-separated values).
+ * - `since` is an RFC3339 lower bound (inclusive).
+ * - `cursor` is opaque (`base64url(occurred_at\0event_id)`) — pass
+ *   `next_cursor` back verbatim.
+ * - `teamId` disambiguates cross-team duplicate project ids (409
+ *   otherwise), same contract as workflow/history/events.
+ *
+ * 404 passes through as ApiError when the Controller predates #1433 — the
+ * panel renders the "active after Controller upgrade" placeholder.
+ */
+export async function getProjectSignalEvents(
+  projectId: string,
+  teamId?: string,
+  options: {
+    types?: string[];
+    taskId?: string;
+    since?: string;
+    limit?: number;
+    cursor?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<ProjectSignalEventsResponse> {
+  const params = new URLSearchParams();
+  if (teamId) params.set('team', teamId);
+  for (const type of options.types ?? []) {
+    if (type) params.append('type', type);
+  }
+  if (options.taskId) params.set('task', options.taskId);
+  if (options.since) params.set('since', options.since);
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  const qs = params.toString();
+  return requestJson<ProjectSignalEventsResponse>(
+    `${PROJECTS_URL}/${encodeURIComponent(projectId)}/signal-events${qs ? `?${qs}` : ''}`,
+    options.signal,
+  );
+}
+
+// ----- project attention aggregate (upstream #1434) -----
+
+export interface ProjectAttentionOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * One in-flight human attention request aggregated from a task meta's
+ * `attention` list (`attentionItem` in attention_read.go). Read-only: the
+ * answer still goes to the task's Matrix room.
+ */
+export interface ProjectAttentionItem {
+  task_id: string;
+  task_title: string;
+  task_status: string;
+  /** Task-level Matrix room binding — where the ping and the answer live. */
+  room_id?: string;
+  kind: string;
+  question: string;
+  attempt: number;
+  requested_at: string;
+  resolved: boolean;
+  event_id?: string;
+  options?: ProjectAttentionOption[];
+  suggested?: string;
+  /** S0 deadline (TeamHarness writes `timeoutAt`; design alias `expiresAt`). */
+  expires_at?: string;
+}
+
+export interface ProjectAttentionResponse {
+  project_id: string;
+  items: ProjectAttentionItem[];
+  count: number;
+}
+
+/**
+ * Fetch the unresolved attention requests across a project's graph tasks.
+ *
+ * - `includeResolved` also returns resolved records (controller `1` flag).
+ * - `limit` clamped 1..500 by the controller (default 200).
+ * - `teamId` disambiguates cross-team duplicate project ids (409 otherwise).
+ *
+ * 404 passes through as ApiError when the Controller predates #1434 — the
+ * panel renders the "active after Controller upgrade" placeholder.
+ */
+export async function getProjectAttention(
+  projectId: string,
+  teamId?: string,
+  options: { includeResolved?: boolean; limit?: number; signal?: AbortSignal } = {},
+): Promise<ProjectAttentionResponse> {
+  const params = new URLSearchParams();
+  if (teamId) params.set('team', teamId);
+  if (options.includeResolved) params.set('include_resolved', '1');
+  if (options.limit) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  return requestJson<ProjectAttentionResponse>(
+    `${PROJECTS_URL}/${encodeURIComponent(projectId)}/attention${qs ? `?${qs}` : ''}`,
+    options.signal,
+  );
+}
+
+// ----- project spawn subagent sessions (controller /spawns) -----
+//
+// Controller contract (`project_handler.go`, spawn aggregation): the TeamHarness
+// meta only tracks team-level task state, so the spawn tree is aggregated from
+// each worker's chats.json:
+//
+//   GET /api/v1/projects/{id}/spawns                       -> projectSpawnsResponse
+//   GET /api/v1/projects/{id}/spawns/{sessionId}/messages  -> spawnMessagesResponse
+//
+// Parent linkage comes from `root_session_id` (QwenPaw 2.1+); on 2.0.1 workers
+// it is null and callers degrade to a flat list. The tool/skill whitelists are
+// only persisted by 2.1+ (`subagent_allowed_tools` / `subagent_skills`).
+
+export type SpawnStatus = 'idle' | 'running' | 'done';
+
+/** One spawn subagent session (`spawnInfo`). */
+export interface SpawnNode {
+  session_id: string;
+  name?: string;
+  status: SpawnStatus;
+  /** RFC3339 last activity (`updated_at`). */
+  last_activity?: string;
+  /** RFC3339 creation time (`created_at`); absent on legacy workers. */
+  created_at?: string;
+  /** Parent session id; null/absent on QwenPaw 2.0.1 workers. */
+  root_session_id?: string | null;
+  /** Spawn tool whitelist (2.1+ only). */
+  allowedTools?: string[];
+  /** Spawn skill whitelist (2.1+ only). */
+  skills?: string[];
+  /** Children linked client-side from root_session_id (never sent upstream). */
+  children?: SpawnNode[];
+}
+
+export interface ProjectWorkerSpawns {
+  worker: string;
+  spawns: SpawnNode[];
+}
+
+export interface ProjectSpawnsResponse {
+  project_id: string;
+  workers: ProjectWorkerSpawns[];
+}
+
+export interface SpawnMessage {
+  seq?: number;
+  kind?: string;
+  role?: string;
+  name?: string;
+  content?: string;
+  tool_state?: string;
+  headline?: string;
+  /** RFC3339. */
+  created_at?: string;
+}
+
+export interface SpawnMessagesResponse {
+  session_id?: string;
+  /** First user message (the spawn's task text); may be absent. */
+  task?: string;
+  messages: SpawnMessage[];
+  /** true = older messages were truncated by `limit`. */
+  has_more: boolean;
+}
+
+/** Controller cap for the messages `limit` (project_handler.go). */
+const MAX_SPAWN_MESSAGES_LIMIT = 50;
+
+function normalizeSpawnStatus(value: unknown): SpawnStatus {
+  return value === 'running' || value === 'done' ? value : 'idle';
+}
+
+/** String list from the controller (non-array / blank entries dropped). */
+function spawnStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out = value.filter((item): item is string => typeof item === 'string' && item !== '');
+  return out.length ? out : undefined;
+}
+
+/** Raw spawnInfo → SpawnNode (defensive: unknown fields never throw). */
+function normalizeSpawnNode(raw: unknown): SpawnNode | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const sessionId = typeof o.session_id === 'string' ? o.session_id : '';
+  if (!sessionId) return null;
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v !== '' ? v : undefined;
+  return {
+    session_id: sessionId,
+    name: str(o.name),
+    status: normalizeSpawnStatus(o.status),
+    last_activity: str(o.updated_at),
+    created_at: str(o.created_at),
+    root_session_id: str(o.root_session_id) ?? null,
+    allowedTools: spawnStringList(o.subagent_allowed_tools),
+    skills: spawnStringList(o.subagent_skills),
+  };
+}
+
+/**
+ * Fetch one project's spawn tree, grouped by worker.
+ *
+ * - `teamId` disambiguates cross-team duplicate project ids (409 otherwise).
+ * - 404/405 passes through as ApiError: Controllers without the spawn routes
+ *   (or a project with no readable workers) — the panel hides the block.
+ */
+export async function getProjectSpawns(
+  projectId: string,
+  teamId?: string,
+  signal?: AbortSignal,
+): Promise<ProjectSpawnsResponse> {
+  const qs = teamId ? `?team=${encodeURIComponent(teamId)}` : '';
+  const raw = await requestJson<{
+    project_id?: unknown;
+    workers?: unknown;
+  }>(`${PROJECTS_URL}/${encodeURIComponent(projectId)}/spawns${qs}`, signal);
+  const workers = Array.isArray(raw.workers) ? raw.workers : [];
+  return {
+    project_id: typeof raw.project_id === 'string' ? raw.project_id : projectId,
+    workers: workers
+      .map((entry): ProjectWorkerSpawns | null => {
+        if (!entry || typeof entry !== 'object') return null;
+        const o = entry as Record<string, unknown>;
+        const worker = typeof o.worker === 'string' ? o.worker : '';
+        if (!worker) return null;
+        const spawns = (Array.isArray(o.spawns) ? o.spawns : [])
+          .map(normalizeSpawnNode)
+          .filter((node): node is SpawnNode => node !== null);
+        return { worker, spawns };
+      })
+      .filter((entry): entry is ProjectWorkerSpawns => entry !== null),
+  };
+}
+
+/** One message row (defensive normalization; `content` defaults to ""). */
+function normalizeSpawnMessage(raw: unknown): SpawnMessage {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v !== '' ? v : undefined;
+  return {
+    seq: typeof o.seq === 'number' && Number.isFinite(o.seq) ? o.seq : undefined,
+    kind: str(o.kind),
+    role: str(o.role),
+    name: str(o.name),
+    content: typeof o.content === 'string' ? o.content : '',
+    tool_state: str(o.tool_state),
+    headline: str(o.headline),
+    created_at: str(o.created_at),
+  };
+}
+
+/**
+ * Read a spawn session's recent messages (lazy detail under one node).
+ *
+ * - `limit` defaults to the controller maximum (50); values above the cap are
+ *   clamped client-side so `has_more` stays meaningful.
+ * - Errors keep their status: 404 (session not in this project / no history
+ *   mirror) is the empty state, 403 the no-permission state, the rest retryable.
+ */
+export async function getSpawnMessages(
+  projectId: string,
+  sessionId: string,
+  options: { limit?: number; signal?: AbortSignal } = {},
+): Promise<SpawnMessagesResponse> {
+  const requested = options.limit && options.limit > 0
+    ? Math.min(Math.floor(options.limit), MAX_SPAWN_MESSAGES_LIMIT)
+    : MAX_SPAWN_MESSAGES_LIMIT;
+  const raw = await requestJson<{
+    session_id?: unknown;
+    task?: unknown;
+    messages?: unknown;
+    has_more?: unknown;
+  }>(
+    `${PROJECTS_URL}/${encodeURIComponent(projectId)}/spawns/${encodeURIComponent(sessionId)}/messages?limit=${requested}`,
+    options.signal,
+  );
+  return {
+    session_id: typeof raw.session_id === 'string' ? raw.session_id : undefined,
+    task: typeof raw.task === 'string' && raw.task !== '' ? raw.task : undefined,
+    messages: (Array.isArray(raw.messages) ? raw.messages : []).map(normalizeSpawnMessage),
+    has_more: raw.has_more === true,
+  };
 }

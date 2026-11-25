@@ -55,6 +55,10 @@ vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
   ),
 }));
 
+vi.mock('@/components/dashboard/document-preview', () => ({
+  DocumentPreview: ({ filename }: { filename: string }) => <div>分页预览 {filename}</div>,
+}));
+
 describe('ArtifactsSection（9/14 UX 对齐插件）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -85,12 +89,22 @@ describe('ArtifactsSection（9/14 UX 对齐插件）', () => {
 
   it('① 时间排序：无时间戳项目按 project_id 内嵌日期兜底（0914 在 0901 前）', async () => {
     render(<ArtifactsSection />);
-    const b = await screen.findByText('B 项目');
-    expect(screen.getByText('A 项目')).toBeInTheDocument();
+    const b = await screen.findByTitle('B 项目');
+    expect(screen.getByTitle('A 项目')).toBeInTheDocument();
     // 默认 时间 新→旧：0914 的 B 在 0901 的 A 之前
     expect(
-      b.compareDocumentPosition(screen.getByText('A 项目')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      b.compareDocumentPosition(screen.getByTitle('A 项目')) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('opens PDF artifacts as slides instead of decoding them as text', async () => {
+    const workflow = workflowFixture();
+    workflow.tasks_detail![0].deliverables = ['report.pdf'];
+    mocks.getProjectWorkflow.mockResolvedValue(workflow);
+    render(<ArtifactsSection />);
+    fireEvent.click((await screen.findAllByTitle('report.pdf'))[0]);
+    expect(await screen.findByRole('dialog')).toHaveTextContent('分页预览 report.pdf');
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
   it('⑤ 类型分类节点带计数，点击按 kind 过滤（自动预取后计数 = 全部项目）', async () => {

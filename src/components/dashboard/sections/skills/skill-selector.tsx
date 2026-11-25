@@ -1,5 +1,6 @@
 'use client';
 
+import { NativeSelect } from '@/components/ui/native-select';
 import { useState, useMemo, useCallback } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -104,12 +105,12 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
             : '选择技能...'}
         </Button>
 
-        <DialogContent className="sm:max-w-md max-w-[95vw] overflow-hidden">
+        <DialogContent className="w-full min-w-0 max-w-[95vw] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>选择技能</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 py-3 overflow-hidden">
+          <div className="min-w-0 space-y-3 overflow-x-hidden py-3">
             <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
@@ -120,7 +121,7 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                   className="pl-9"
                 />
               </div>
-              <select
+              <NativeSelect
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as 'all' | 'custom' | 'nacos')}
                 className="rounded-md border border-input bg-background px-2 py-1 text-sm shrink-0"
@@ -128,7 +129,7 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                 <option value="all">全部</option>
                 <option value="custom">自定义</option>
                 <option value="nacos">Nacos</option>
-              </select>
+              </NativeSelect>
             </div>
 
             <div className="max-h-60 min-h-0 overflow-y-auto space-y-1">
@@ -154,11 +155,11 @@ export function SkillSelector({ value, onChange, placeholder = '' }: SkillSelect
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-medium truncate max-w-[180px]">{skill.name}</span>
                         {skill.source === 'nacos' ? (
-                          <Badge variant="outline" className="text-[10px] shrink-0">
+                          <Badge variant="outline" className="text-xs shrink-0">
                             Nacos
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                          <Badge variant="secondary" className="text-xs shrink-0">
                             自定义
                           </Badge>
                         )}

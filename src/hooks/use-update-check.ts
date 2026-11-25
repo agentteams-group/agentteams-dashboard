@@ -1,5 +1,7 @@
 'use client';
 
+import { apiUrl } from '@/lib/api-base';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { compareSemver } from '@/lib/version';
 
@@ -85,7 +87,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
     setState({ phase: 'checking' });
     try {
       const [buildRes, releaseRes] = await Promise.allSettled([
-        fetchWithTimeout('/api/dashboard-build'),
+        fetchWithTimeout(apiUrl('/api/dashboard-build')),
         fetchWithTimeout(GITHUB_RELEASE_URL, {
           headers: { Accept: 'application/vnd.github+json' },
         }),
@@ -174,7 +176,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
       try {
         // The route downloads + applies the bundle before responding — this
         // legitimately takes a minute or two, so no client timeout here.
-        const res = await fetch('/api/self-update', { method: 'POST' });
+        const res = await fetch(apiUrl('/api/self-update'), { method: 'POST' });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
           const message = typeof body?.error === 'string' ? body.error : `更新触发失败（${res.status}）`;
@@ -194,7 +196,7 @@ export function useUpdateCheck(options?: UpdateCheckOptions) {
       while (Date.now() < deadline) {
         await sleep(pollIntervalMs);
         try {
-          const res = await fetch('/api/dashboard-build');
+          const res = await fetch(apiUrl('/api/dashboard-build'));
           if (res.ok) {
             const data = (await res.json().catch(() => null)) as { version?: unknown } | null;
             const version = typeof data?.version === 'string' ? data.version : '';

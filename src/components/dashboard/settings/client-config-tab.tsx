@@ -93,7 +93,7 @@ export function ClientConfigTab() {
       // canonical clear also invalidates in-flight /sync loops) and go back
       // to the entry page (stateless login).
       matrix.logout();
-      window.location.replace('/');
+      window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
     } catch (err: unknown) {
       setRevokeError(err instanceof Error ? err.message : '撤销失败');
     } finally {

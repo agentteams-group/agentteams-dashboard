@@ -5,6 +5,33 @@ import {
 } from './intervention-heuristic';
 
 describe('parseInterventionHeuristic（F2.1 降级完整形态）', () => {
+  it('keeps a numbered acceptance acknowledgement as a report, not choices', () => {
+    expect(parseInterventionHeuristic('收到，确认任务 -02 验收闭环，我转入待命：\n1. 任务 -02 已完结：交付物冻结，不再编辑。\n2. 给 -03 的衔接记录与报告一致，无异议。\n3. 待命期间：如有疑问，随时 @我。')).toBeNull();
+    expect(parseInterventionHeuristic('请确认本次交付方式：\n1. 只评审\n2. 实现修复')?.options).toHaveLength(2);
+  });
+  it('does not turn a list of clarification questions into answer options', () => {
+    const body = '开工前需要您确认三点：\n1. 需求对象：本次以哪个为准？\n2. 任务边界：是否只验证已有 PR？\n3. 建单授权：确认后建单。';
+    expect(parseInterventionHeuristic(body)).toBeNull();
+  });
+
+  it('extracts nested a/b/c choices without submitting the surrounding question as an answer', () => {
+    const body = [
+      '已读取 Issue #1636。',
+      '**开工前需要您确认三点**：',
+      '1. **需求对象**：本次交付以哪个为准？还是这是新任务？',
+      '2. **任务边界**：该 issue 已有开放的 PR #1637。我们要 (a) 独立实现修复，(b) 只评审/验证该 PR，还是 (c) 其他？',
+      '3. **建单授权**：确认后创建 Project。',
+    ].join('\n');
+    const result = parseInterventionHeuristic(body);
+    expect(result?.options).toEqual([
+      { id: 'opt-A', label: '独立实现修复' },
+      { id: 'opt-B', label: '只评审/验证该 PR' },
+      { id: 'opt-C', label: '其他' },
+    ]);
+    expect(result?.question).toContain('任务边界');
+    expect(result?.before).toContain('需求对象');
+    expect(result?.after).toContain('建单授权');
+  });
   it('问句 + 编号选项 → 升格为干预 payload（Manager 真实回复形态）', () => {
     const body = [
       '收到，先确认一个前提：',

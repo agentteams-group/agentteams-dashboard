@@ -95,7 +95,8 @@ describe('WorkerTable', () => {
         />
       </TooltipProvider>,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级 worker-a 到 QwenPaw' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'worker-a 更多操作' }), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByRole('menuitem', { name: '升级到 QwenPaw' }));
     expect(onUpgradeToQwenPaw).toHaveBeenCalledTimes(1);
   });
 });

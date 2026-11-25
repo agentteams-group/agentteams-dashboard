@@ -32,7 +32,7 @@
 import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { getControllerUrl } from '../app/api/agentteams/proxy-helper';
-import { pickBackendUrl } from './backend-config';
+import { backendAuthHeader, pickBackendUrl } from './backend-config';
 import { validateHomeserverUrl, HomeserverValidationError } from './homeserver-allowlist';
 
 export interface StaticIdentity {
@@ -72,10 +72,13 @@ function cacheKey(token: string): string {
 async function probe(
   url: string,
   token: string,
+  authHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: () => Promise<unknown> } | { networkError: true }> {
   try {
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      // 逐地址覆盖凭据（公网网关 Basic / API key 门）优先于 Bearer：
+      // 网关门在前，Bearer 只会被门拒掉。
+      headers: { ...authHeaders, Authorization: authHeaders.Authorization ?? `Bearer ${token}` },
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     return {
@@ -176,7 +179,11 @@ async function resolveName(
   token: string,
 ): Promise<string> {
   for (const homeserver of homeserverCandidates(request)) {
-    const result = await probe(`${homeserver}/_matrix/client/v3/account/whoami`, token);
+    const result = await probe(
+      `${homeserver}/_matrix/client/v3/account/whoami`,
+      token,
+      backendAuthHeader('matrix', homeserver),
+    );
     if ('networkError' in result) continue; // failover: try the next address
     if (result.status === 200) {
       const data = (await result.json()) as { user_id?: string } | null;
@@ -213,6 +220,18 @@ export async function resolveStaticIdentity(
   let allNetworkErrors = true;
 
   for (const base of bases) {
+    const me = await probe(`${base}/api/v1/me`, token);
+    if ('networkError' in me) continue;
+    allNetworkErrors = false;
+    if (me.status === 200) {
+      const human = await me.json() as { name?: string; permissionLevel?: number; accessibleTeams?: string[] } | null;
+      if (human?.name && (human.permissionLevel === 1 || human.permissionLevel === 2 || human.permissionLevel === 3)) {
+        const identity: StaticIdentity = { name: human.name, level: human.permissionLevel === 1 ? 3 : human.permissionLevel === 2 ? 2 : 1, teams: human.accessibleTeams ?? [] };
+        remember(key, identity);
+        return { ok: true, identity };
+      }
+      return { ok: 'invalid', detail: 'Controller 返回了无效的 Human 身份' };
+    }
     // 1) admin-grade probe (list humans: L2/L3 tokens are 403 by the
     //    authorizer — the same discriminator login uses).
     const humans = await probe(`${base}/api/v1/humans`, token);

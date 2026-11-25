@@ -10,6 +10,8 @@ import {
   type ProjectSummary,
   type WorkflowResponse,
 } from '@/lib/agentteams-projects-api';
+import { apiUrl, requestJson } from '@/lib/api-base';
+import { ApiError } from '@/lib/api-error';
 import type { BoardProject, BoardTask, TaskStatus } from '@/hooks/use-task-board';
 
 /** Sortable timestamp for an API project. The current controller
@@ -46,11 +48,12 @@ function projectActivityTs(p: ProjectSummary): number {
  * returned so callers can distinguish a real empty list from a degraded
  * controller (`degraded` / `degradedReason` / `error`).
  */
-export function useProjects() {
+export function useProjects(enabled = true) {
   return useQuery({
     queryKey: ['agentteams-projects'],
     queryFn: () => listProjects(),
-    refetchInterval: 15000,
+    enabled,
+    refetchInterval: 5000,
     retry: 1,
     placeholderData: (previousData) => previousData,
     // Don't take the whole overview / task board down with the section
@@ -77,7 +80,7 @@ export function useProjectWorkflow(projectId: string | null, teamId?: string) {
     // Keep the detail fresh while a project is selected — mutations elsewhere
     // (e.g. an agent completing tasks) would otherwise never show up without
     // a manual refresh.
-    refetchInterval: 15000,
+    refetchInterval: 5000,
     retry: 1,
     // Same defensive contract as useProjects: a single detail-fetch failure
     // (404 on a deleted project, 500 on a controller hiccup) used to trip
@@ -197,8 +200,9 @@ function workflowStatusToTaskStatus(status?: string): TaskStatus {
       return 'assigned';
     case 'in-progress':
     case 'in_progress':
-    case 'submitted':
       return 'in_progress';
+    case 'submitted':
+      return 'submitted';
     case 'revision':
       return 'revision';
     case 'completed':
@@ -280,11 +284,15 @@ export function workflowToBoard(
       const detail = detailByTask.get(node.id);
       boardTasks.push({
         runId: node.id,
+        parentTaskId: node.parent_task_id || detail?.parent_task_id || undefined,
         title: node.name || node.id,
-        status: workflowStatusToTaskStatus(node.status),
+        // Worker metadata remains submitted after Leader acceptance.
+        status: workflowStatusToTaskStatus(node.status === 'completed' ? node.status : detail?.status ?? node.status),
         assignedTo: node.assignee ?? '',
         projectId: proj.project_id,
-        roomId: wf.source_room_id ?? '',
+        teamId: proj.team_id,
+        roomId: (detail?.source_room_id ?? wf.source_room_id ?? '').replace(/^room:/, ''),
+        executionRoomId: detail?.room_id?.replace(/^room:/, ''),
         dependsOn: dependsOf.get(node.id) ?? [],
         createdAt: 0,
         // The workflow API does not expose per-task timestamps; completedAt
@@ -300,11 +308,97 @@ export function workflowToBoard(
   return { tasks: boardTasks, projects: boardProjects };
 }
 
+/** Legacy projects store only execution nodes. Use the project as their board root. */
+export function groupLegacyProjectTasks(tasks: BoardTask[], projects: BoardProject[]): BoardTask[] {
+  const grouped = [...tasks];
+  for (const project of projects) {
+    const children = tasks.filter(task => task.projectId === project.runId && task.teamId === project.teamId);
+    if (!children.length || children.some(task => task.kind === 'main' || task.parentTaskId || task.runId === project.runId)) continue;
+    const rooms = new Set(children.map(task => task.executionRoomId).filter(Boolean));
+    const status: TaskStatus = project.status === 'completed' ? 'completed'
+      : project.status === 'paused' ? 'blocked'
+      : project.status === 'active' ? 'in_progress'
+      : project.status === 'planning' ? 'pending' : 'unknown';
+    grouped.push({
+      runId: project.runId,
+      kind: 'project-summary',
+      title: project.name,
+      assignedTo: project.leader ?? '',
+      projectId: project.runId,
+      teamId: project.teamId,
+      status,
+      roomId: project.roomId,
+      executionRoomId: rooms.size === 1 ? children.find(task => task.executionRoomId)?.executionRoomId : undefined,
+      dependsOn: [],
+      createdAt: project.createdAt,
+      completedAt: project.completedAt,
+      outcome: null,
+      source: project.source,
+    });
+    for (const child of children) {
+      grouped[tasks.indexOf(child)] = { ...child, parentTaskId: project.runId };
+    }
+  }
+  return grouped;
+}
+
+export interface IndexedTask {
+  task_id: string;
+  main_task_id?: string;
+  parent_task_id?: string;
+  project_id?: string;
+  team_id?: string;
+  title: string;
+  assigned_to?: string;
+  status: string;
+  depends_on?: string[];
+  room_id?: string;
+  source_room_id?: string;
+  created_at?: string;
+}
+
+/** Main Task records override their legacy Project aggregation, with no fake Project. */
+export function mergeMainTaskIndex(tasks: BoardTask[], index: IndexedTask[]): BoardTask[] {
+  const merged = new Map(tasks.map(task => [`${task.teamId ?? ''}/${task.runId}`, task]));
+  for (const task of index) {
+    if (!task.main_task_id) continue;
+    merged.set(`${task.team_id ?? ''}/${task.task_id}`, {
+      runId: task.task_id,
+      kind: task.main_task_id === task.task_id ? 'main' : undefined,
+      parentTaskId: task.parent_task_id || (task.main_task_id !== task.task_id ? task.main_task_id : undefined),
+      projectId: task.project_id || undefined,
+      teamId: task.team_id,
+      title: task.title || task.task_id,
+      assignedTo: task.assigned_to ?? '',
+      status: workflowStatusToTaskStatus(task.status),
+      dependsOn: task.depends_on ?? [],
+      roomId: (task.source_room_id ?? '').replace(/^room:/, ''),
+      executionRoomId: task.room_id?.replace(/^room:/, ''),
+      createdAt: Date.parse(task.created_at ?? '') || 0,
+      outcome: null,
+      source: 'api',
+    });
+  }
+  return [...merged.values()];
+}
+
+export function useTaskIndex({ enabled = true, refetchInterval = 5000 }: { enabled?: boolean; refetchInterval?: number | false } = {}) {
+  return useQuery({
+    queryKey: ['agentteams-task-index'],
+    queryFn: () => requestJson<{ tasks: IndexedTask[] }>(apiUrl('/api/agentteams/tasks')),
+    enabled,
+    refetchInterval,
+    retry: 1,
+    throwOnError: false,
+  });
+}
+
 /** Primary task-board source: Controller projects + per-project workflow
  * (cap 20), mapped to the board shapes. Falls back to the MinIO board when
  * the API is degraded (list 404 = not deployed / 500 = controller error). */
 export function useApiTaskBoard() {
   const listQuery = useProjects();
+  const taskIndex = useTaskIndex();
   const queryClient = useQueryClient();
 
   const projects = useMemo(
@@ -316,7 +410,8 @@ export function useApiTaskBoard() {
   // deployed / 500 controller error) OR the request failed entirely (network
   // / proxy down). In both cases the caller falls back to the MinIO board —
   // otherwise the board would render blank on a proxy outage.
-  const degraded = listQuery.data?.degraded === true || listQuery.isError === true;
+  const taskIndexUnavailable = taskIndex.isError && !(taskIndex.error instanceof ApiError && taskIndex.error.status === 404);
+  const degraded = listQuery.data?.degraded === true || listQuery.isError === true || taskIndexUnavailable;
 
   const workflowQueries = useQueries({
     queries: projects.map((p) => ({
@@ -325,7 +420,8 @@ export function useApiTaskBoard() {
         getProjectWorkflow(p.project_id, { includeTasks: true, teamId: p.team_id }),
       enabled: !degraded,
       retry: 1,
-      staleTime: 15000,
+      staleTime: 5000,
+      refetchInterval: 5000,
       // Per-project workflow fetches failing (one stale runId, one
       // proxy hiccup, …) used to bubble up through useQueries and trip
       // the section error boundary — the whole overview / task board
@@ -347,9 +443,10 @@ export function useApiTaskBoard() {
     if (q.data && projects[i]) workflows.set(projects[i].project_id, q.data);
   });
   const board = workflowToBoard(projects, workflows);
+  board.tasks = groupLegacyProjectTasks(mergeMainTaskIndex(board.tasks, taskIndex.data?.tasks ?? []), board.projects);
 
   // Refresh must re-pull the per-project workflows too — the list query
-  // alone would leave stale workflow data behind (staleTime 15s).
+  // alone would leave stale workflow data behind (staleTime 5s).
   // Stable identity: re-creating the refetch arrow on every render made
   // the consumer's useMemo chain re-evaluate every parent re-render,
   // which combined with the render-time setState in the dashboard shell
@@ -359,7 +456,8 @@ export function useApiTaskBoard() {
       queryKey: ['agentteams-project-workflow'],
     });
     void listQuery.refetch();
-  }, [queryClient, listQuery]);
+    void taskIndex.refetch();
+  }, [queryClient, listQuery, taskIndex]);
 
   // Memoize the consumer-facing object so a parent re-render with the
   // same source data returns the same reference (OverviewSection
@@ -369,13 +467,13 @@ export function useApiTaskBoard() {
       ...board,
       degraded,
       degradedReason: listQuery.data?.degradedReason,
-      isLoading: listQuery.isLoading,
-      isRefetching: listQuery.isRefetching,
+      isLoading: listQuery.isLoading || taskIndex.isLoading,
+      isRefetching: listQuery.isRefetching || taskIndex.isRefetching,
       refetch,
     }),
     // `board` is a pure projection of `projects` and `workflowQueries`;
     // depending on them keeps the memo stable across renders where neither
     // changed.
-    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, refetch]
+    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, taskIndex.isLoading, taskIndex.isRefetching, refetch]
   );
 }

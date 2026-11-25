@@ -3,6 +3,14 @@ import { matrixApi, MatrixRequestError, getRateLimitRetryDelay } from '@/lib/mat
 
 const originalFetch = globalThis.fetch;
 
+it('sends the execution target through the actual Matrix client', async () => {
+  const control = { action: 'steer' as const, run_id: '$run', agent_id: '@agent:test' };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ event_id: '$sent' })));
+  globalThis.fetch = fetch;
+  await matrixApi.sendMessage('https://hs.test', 'token', '!room:test', '只看杭州', { 'com.agentteams.control': control });
+  expect(JSON.parse(fetch.mock.calls[0][1].body)['com.agentteams.control']).toEqual(control);
+});
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -103,4 +111,12 @@ describe('sendReadReceipt', () => {
     expect(err).toBeInstanceOf(MatrixRequestError);
     expect(err.status).toBe(403);
   });
+});
+
+it('preserves reference metadata in the actual serialized Matrix request', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ event_id: '$ref' }), { status: 200 }));
+  globalThis.fetch = fetchMock;
+  const refs = [{ name: '报告.pptx', key: 'default/docs/报告.pptx', workspace: { kind: 'worker' as const, ownerName: 'default' } }];
+  await matrixApi.sendMessage('https://hs.test', 'token', '!room:test', '分析下这个文档', { 'com.agentteams.file_refs': { refs } });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)['com.agentteams.file_refs']).toEqual({ refs });
 });

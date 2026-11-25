@@ -74,6 +74,21 @@ function isPrivateIpv6(hostname: string): boolean {
   return false;
 }
 
+/**
+ * Operator opt-in for self-hosted LAN deployments whose homeserver lives on a
+ * private address (10/172.16/192.168/127 …) or an internal DNS name.
+ *
+ * Off by default: on a shared, multi-tenant deployment the proxy routes must
+ * not be usable to reach the host's internal network, and the fallback is to
+ * stay on loopback/allowlisted hosts. Single-operator LAN setups enable this
+ * through MATRIX_ALLOW_PRIVATE_NETWORK=1. The cloud-metadata link-local range
+ * (169.254.0.0/16) stays rejected either way.
+ */
+export function allowPrivateNetworkFromEnv(): boolean {
+  const raw = process.env.MATRIX_ALLOW_PRIVATE_NETWORK?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 export interface ValidateHomeserverOptions {
   allowPrivateNetwork?: boolean;
   // When true the URL must match the allowlist (configured or built-in) even
@@ -111,7 +126,9 @@ export function validateHomeserverUrl(
   // allowlist and private-range checks below see the bare address.
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
 
-  if (options.allowPrivateNetwork) {
+  const allowPrivateNetwork = options.allowPrivateNetwork || allowPrivateNetworkFromEnv();
+
+  if (allowPrivateNetwork) {
     // SSRF sentinel: the cloud-metadata range is NEVER allowed, even with
     // allowPrivateNetwork — a LAN deployment needs 10/172.16/192.168, and
     // no legitimate homeserver lives on the link-local range. An explicit

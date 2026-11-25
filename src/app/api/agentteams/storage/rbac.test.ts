@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 const mockStatObject = vi.fn();
 const mockGetObject = vi.fn();
 const mockPresignedGetObject = vi.fn();
+const mockPresignedPutObject = vi.fn();
 const mockListBuckets = vi.fn();
 
 vi.mock('@/lib/minio-client', () => ({
@@ -13,6 +14,7 @@ vi.mock('@/lib/minio-client', () => ({
     statObject: mockStatObject,
     getObject: mockGetObject,
     presignedGetObject: mockPresignedGetObject,
+    presignedPutObject: mockPresignedPutObject,
     listBuckets: mockListBuckets,
     listObjects: mockListObjects,
     putObject: vi.fn().mockResolvedValue(undefined),
@@ -59,13 +61,17 @@ const objectsMod = () => import('./buckets/[bucket]/objects/route');
 
 const { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } = await import('@/lib/server-auth');
 
-function buildRequest(url: string, level?: number): NextRequest {
+function buildRequest(url: string, level?: number, body?: unknown): NextRequest {
   const headers: Record<string, string> = {};
   if (level !== undefined) {
     headers[SERVER_USER_HEADER] = `user-${level}`;
     headers[SERVER_USER_LEVEL_HEADER] = String(level);
   }
-  return new NextRequest(url, { headers });
+  return new NextRequest(url, {
+    method: body === undefined ? 'GET' : 'POST',
+    body: body === undefined ? undefined : JSON.stringify(body),
+    headers,
+  });
 }
 
 describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
@@ -79,6 +85,7 @@ describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
       Promise.resolve(makeNodeStream(Buffer.from('file-content'))),
     );
     mockPresignedGetObject.mockResolvedValue('https://minio.local/signed-url');
+    mockPresignedPutObject.mockResolvedValue('https://minio.local/signed-url');
     mockListBuckets.mockResolvedValue([{ name: 'agentteams-fs' }]);
     mockListObjects.mockImplementation(() => makeListStream([]));
   });
@@ -156,6 +163,63 @@ describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
       );
       expect(res.status).toBe(404);
       expect(mockPresignedGetObject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/agentteams/storage/presign', () => {
+    it('level 1 观察者会话无写入预签名权限（create 门拒绝 → 403）', async () => {
+      const { POST } = await presignMod();
+      const res = await POST(
+        buildRequest('http://localhost/api/agentteams/storage/presign', 1, {
+          bucket: 'agentteams-fs',
+          key: 'workers/demo/README.md',
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect(mockPresignedPutObject).not.toHaveBeenCalled();
+    });
+
+    it('level 1 身份把 bucket/key 放在 query 上同样被拒（create 门先于参数解析 → 403）', async () => {
+      const { POST } = await presignMod();
+      const res = await POST(
+        buildRequest(
+          'http://localhost/api/agentteams/storage/presign?bucket=agentteams-fs&key=workers%2Fdemo%2FREADME.md',
+          1,
+          {},
+        ),
+      );
+      expect(res.status).toBe(403);
+      expect(mockPresignedPutObject).not.toHaveBeenCalled();
+    });
+
+    it('level 3 管理员会话可获取写 URL（返回 url，使用解码后的 bucket/key）', async () => {
+      const { POST } = await presignMod();
+      const res = await POST(
+        buildRequest('http://localhost/api/agentteams/storage/presign', 3, {
+          bucket: 'agentteams-fs',
+          key: 'workers%2Fdemo%2FREADME.md',
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.url).toBe('https://minio.local/signed-url');
+      expect(mockPresignedPutObject).toHaveBeenCalledWith(
+        'agentteams-fs',
+        'workers/demo/README.md',
+        15 * 60,
+      );
+    });
+
+    it('敏感文件（credentials.yaml）不签发写 URL（统一 404）', async () => {
+      const { POST } = await presignMod();
+      const res = await POST(
+        buildRequest('http://localhost/api/agentteams/storage/presign', 3, {
+          bucket: 'agentteams-fs',
+          key: 'workers%2Fdemo%2Fcredentials.yaml',
+        }),
+      );
+      expect(res.status).toBe(404);
+      expect(mockPresignedPutObject).not.toHaveBeenCalled();
     });
   });
 

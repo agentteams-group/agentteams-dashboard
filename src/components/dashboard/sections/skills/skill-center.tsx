@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Pencil, Trash2, RefreshCw, Info, AlertCircle, Send } from 'lucide-react';
+import { NativeSelect } from '@/components/ui/native-select';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { currentHashParams, hashForSection } from '@/lib/nav-hash';
+import { AlertCircle } from 'lucide-react';
+import { SectionHeader } from '@/components/dashboard/section-header';
+import { OverflowText } from '@/components/dashboard/overflow-text';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import { Card, CardContent } from '@/components/ui/card';
+import { SectionEmptyState } from '@/components/dashboard/section-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -47,6 +53,17 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const deleteMutation = useDeleteSkill();
 
+  useEffect(() => {
+    const syncSearch = () => {
+      if (window.location.hash.split('?')[0] !== `#${hashForSection('skills')}`) return;
+      setSearch(currentHashParams()?.get('q') ?? '');
+      setPage(1);
+    };
+    syncSearch();
+    window.addEventListener('hashchange', syncSearch);
+    return () => window.removeEventListener('hashchange', syncSearch);
+  }, []);
+
   const handleRefresh = useCallback(() => {
     refetch();
     onRefresh?.();
@@ -80,43 +97,14 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefetching}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
-            刷新
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>
-            配置 Nacos
-          </Button>
-        </div>
-        <Button onClick={() => setUploadOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          上传技能
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="搜索技能..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="pl-9"
-          />
-        </div>
-        <select
-          value={sourceFilter}
-          onChange={(e) => { setSourceFilter(e.target.value as 'all' | 'custom' | 'nacos' | 'builtin'); setPage(1); }}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="all">全部</option>
-          <option value="builtin">内置</option>
-          <option value="custom">自定义</option>
-          <option value="nacos">Nacos</option>
-        </select>
-      </div>
+      <SectionHeader title={`技能 · ${total}`} onRefresh={handleRefresh} isRefreshing={isRefetching}
+        meta={<div className="flex flex-wrap items-center gap-2">
+          <Input aria-label="搜索技能" placeholder="搜索技能..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-9 w-64" />
+          <NativeSelect aria-label="技能来源" value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value as typeof sourceFilter); setPage(1); }} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="all">全部来源</option><option value="builtin">内置</option><option value="custom">自定义</option><option value="nacos">Nacos</option>
+          </NativeSelect>
+        </div>}
+        actions={<><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></>} />
 
       {isError && (
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
@@ -130,31 +118,41 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
 
       {!isError && filteredSkills.length === 0 && filteredMcp.length === 0 && (
         <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              {skills.length === 0 && mcpServers.length === 0 ? '暂无技能，点击"上传技能"添加' : '没有匹配的技能'}
-            </p>
+          <CardContent className="p-0">
+            <SectionEmptyState
+              title={skills.length === 0 && mcpServers.length === 0 ? '暂无技能' : '没有匹配的技能'}
+              description={
+                skills.length === 0 && mcpServers.length === 0
+                  ? '技能可以从本地包上传，也可以下发给 Worker'
+                  : undefined
+              }
+              action={
+                skills.length === 0 && mcpServers.length === 0
+                  ? { label: '上传技能', onClick: () => setUploadOpen(true) }
+                  : undefined
+              }
+            />
           </CardContent>
         </Card>
       )}
 
       {!isError && (filteredSkills.length > 0 || filteredMcp.length > 0) && (
-        <div className="border rounded-md">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full min-w-[800px] table-fixed text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="text-left p-3 font-medium">技能名称</th>
-                <th className="text-left p-3 font-medium">描述</th>
+                <th className="w-[30%] text-left p-3 font-medium">描述</th>
                 <th className="text-left p-3 font-medium">来源</th>
-                <th className="text-left p-3 font-medium">文件数</th>
-                <th className="text-right p-3 font-medium">操作</th>
+                <th className="w-20 text-left p-3 font-medium">文件数</th>
+                <th className="w-[240px] text-right p-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredSkills.map((skill) => (
                 <tr key={skill.name} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="p-3 font-mono font-medium">{skill.name}</td>
-                  <td className="p-3 max-w-xs truncate">{skill.description}</td>
+                  <td className="p-3 font-mono font-medium"><OverflowText text={skill.name} /></td>
+                  <td className="p-3"><OverflowText text={skill.description || ''} /></td>
                   <td className="p-3">
                     {skill.source === 'nacos' ? (
                       <Badge variant="outline" className="text-xs max-w-[120px] truncate" title={skill.sourceAlias}>
@@ -173,43 +171,11 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                   <td className="p-3">{skill.fileCount}</td>
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        title="分发到 Worker"
-                        onClick={() => setDistributeSkill(skill)}
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => setDetailSkill(skill)}
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </Button>
-                      {skill.source === 'custom' && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => setEditingSkill(skill)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                            onClick={() => setDeleteTarget(skill)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </>
-                      )}
+                      <Button variant="ghost" size="sm" onClick={() => setDetailSkill(skill)}>详情</Button>
+                      {skill.source === 'custom' && <Button variant="ghost" size="sm" onClick={() => setEditingSkill(skill)}>编辑</Button>}
+                      <Button variant="ghost" size="sm" onClick={() => setDistributeSkill(skill)}>分发</Button>
+                      {skill.source === 'custom' && <ResourceListMenu label={`更多操作 ${skill.name}`} items={[{ label: '删除技能', onSelect: () => setDeleteTarget(skill) }]} />}
+
                     </div>
                   </td>
                 </tr>
@@ -270,6 +236,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
       />
 
       <SkillEditDialog
+        key={editingSkill?.name ?? 'closed'}
         skill={editingSkill}
         open={!!editingSkill}
         onOpenChange={(open) => !open && setEditingSkill(null)}

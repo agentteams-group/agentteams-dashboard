@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { workflowToBoard } from './use-projects';
+import { workflowToBoard, mergeMainTaskIndex, groupLegacyProjectTasks } from './use-projects';
+import { mainTasks, subtaskProgress } from '@/lib/task-hierarchy';
 import type { WorkflowResponse, ProjectSummary, WorkflowNodeStatus } from '@/lib/agentteams-projects-api';
 
 function proj(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
@@ -27,6 +28,27 @@ function wf(overrides: Partial<WorkflowResponse> = {}): WorkflowResponse {
 }
 
 describe('workflowToBoard (D5 API primary mapping)', () => {
+  it('keeps Leader acceptance authoritative over the Worker submission snapshot', () => {
+    const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+      nodes: [{ id: 'analysis', name: '需求分析', status: 'completed' }],
+      tasks_detail: [{ task_id: 'analysis', status: 'submitted', result_status: 'SUCCESS' }],
+    })]]));
+    expect(tasks[0]).toMatchObject({ status: 'completed', outcome: 'SUCCESS' });
+  });
+  it('preserves parent tasks independently of the dependency graph', () => {
+    const {tasks}=workflowToBoard([proj()],new Map([['p1',wf({nodes:[{id:'main',name:'主任务',status:'pending'},{id:'child',name:'执行任务',status:'pending',parent_task_id:'main'}],edges:[]})]]));
+    expect(tasks.find(t=>t.runId==='child')).toMatchObject({parentTaskId:'main',dependsOn:[]});
+  });
+  it('keeps the execution room separate from the task source conversation', () => {
+    const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+      source_room_id: '!project-source:test',
+      nodes: [{ id: 't1', name: '执行分析', status: 'in-progress' }],
+      tasks_detail: [{ task_id: 't1', room_id: 'room:!execution:test', source_room_id: '!task-source:test' }],
+    })]]));
+    expect(tasks[0]).toMatchObject({ roomId: '!task-source:test', executionRoomId: '!execution:test', teamId: 't1' });
+    const legacy = workflowToBoard([proj()], new Map([['p1', wf({ source_room_id: '!source:test', nodes: [{ id: 't1', name: '执行分析', status: 'pending' }] })]]));
+    expect(legacy.tasks[0].executionRoomId).toBeUndefined();
+  });
   it('maps projects to BoardProject shape', () => {
     const wfs = new Map([['p1', wf()]]);
     const { projects } = workflowToBoard([proj()], wfs);
@@ -115,4 +137,44 @@ describe('workflowToBoard (D5 API primary mapping)', () => {
     const { projects } = workflowToBoard([proj()], wfs);
     expect(projects[0].leader).toBe('@manager:hs');
   });
+});
+
+it('preserves submitted detail status when workflow nodes normalize it to in-progress', () => {
+  const { tasks } = workflowToBoard([proj()], new Map([['p1', wf({
+    nodes: [{ id: 'review', name: 'Report', status: 'in-progress' }],
+    tasks_detail: [{ task_id: 'review', status: 'submitted' }],
+  })]]));
+  expect(tasks[0].status).toBe('submitted');
+});
+
+
+describe('main Task index', () => {
+  it('shows a no-Project main task and its children without synthesizing a Project', () => {
+    const tasks = mergeMainTaskIndex([], [
+      { task_id: 'main', main_task_id: 'main', title: 'Main', team_id: 'alpha', status: 'in_progress', room_id: '!work:test', source_room_id: '!source:test' },
+      { task_id: 'child', main_task_id: 'main', parent_task_id: 'main', title: 'Child', team_id: 'alpha', status: 'planned', depends_on: [] },
+    ]);
+    expect(tasks[0]).toMatchObject({ runId: 'main', projectId: undefined, status: 'in_progress', executionRoomId: '!work:test', roomId: '!source:test' });
+    expect(tasks[1]).toMatchObject({ parentTaskId: 'main', status: 'pending' });
+  });
+  it('keeps same-named tasks in different teams separate', () => {
+    const rows = ['alpha', 'beta'].map(team_id => ({ task_id: 'main', main_task_id: 'main', title: 'Main', team_id, status: 'completed' }));
+    expect(mergeMainTaskIndex([], rows)).toHaveLength(2);
+  });
+});
+
+
+it('shows one completed board card for a legacy project and keeps its execution nodes in the hierarchy', () => {
+  const { tasks, projects } = workflowToBoard([proj({ status: 'completed' })], new Map([['p1', wf({
+    status: 'completed',
+    nodes: [{ id: 'plan', name: 'Plan', status: 'completed' }, { id: 'review', name: 'Review', status: 'completed' }],
+    edges: [{ source: 'plan', target: 'review' }],
+    tasks_detail: [{ task_id: 'plan', room_id: 'room:!task:test' }, { task_id: 'review', room_id: 'room:!task:test' }],
+  })]]));
+  const grouped = groupLegacyProjectTasks(tasks, projects);
+  const roots = mainTasks(grouped);
+  expect(roots).toHaveLength(1);
+  expect(roots[0]).toMatchObject({ runId: 'p1', status: 'completed', executionRoomId: '!task:test' });
+  expect(subtaskProgress(roots[0], grouped)).toEqual({ completed: 2, total: 2, percent: 100 });
+  expect(grouped.find(task => task.runId === 'review')).toMatchObject({ parentTaskId: 'p1', dependsOn: ['plan'] });
 });

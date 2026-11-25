@@ -1,5 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MessageBubble } from './MessageBubble';
@@ -32,14 +33,21 @@ function makeMessage(overrides: Partial<DisplayMessage>): DisplayMessage {
 
 function renderBubble(message: DisplayMessage) {
   return render(
-    <TooltipProvider>
-      <MessageBubble message={message} showSender={false} isContinuation={false} />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <MessageBubble message={message} showSender={false} isContinuation={false} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 
-describe('MessageBubble runtime badges (AC-C7)', () => {
-  it('badges a qwenpaw thinking card with the runtime and titles it', () => {
+/** Finished runs start folded; open the process disclosure before inner assertions. */
+function expandProcess() {
+  fireEvent.click(screen.getByRole('button', { name: /^过程/ }));
+}
+
+describe('MessageBubble runtime chrome (AC-C7)', () => {
+  it('titles a qwenpaw thinking step without a runtime badge', () => {
     renderBubble(
       makeMessage({
         content: 'Thinking:\n\n先拆解需求',
@@ -47,24 +55,31 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         rawContent: { msgtype: 'm.notice' },
       }),
     );
-    expect(screen.getByRole('button', { name: /QwenPaw · 思考过程/ })).toBeInTheDocument();
-    expect(screen.getByText('QwenPaw')).toBeInTheDocument();
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    // Runtime badges were removed from the chat timeline (visual noise).
+    expect(screen.queryByText('QwenPaw')).toBeNull();
   });
 
   it('keeps the plain title when runtime is unknown', () => {
     renderBubble(makeMessage({ content: 'Thinking:\n\n先拆解需求', rawContent: { msgtype: 'm.notice' } }));
-    expect(screen.getByRole('button', { name: /思考过程/ })).toBeInTheDocument();
+    expandProcess();
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('QwenPaw')).toBeNull();
   });
 
-  it('badges tool_call cards with the runtime', () => {
+  it('renders tool_call cards without a runtime badge', () => {
     renderBubble(
       makeMessage({
         content: '🔧 **web_search**\n```json\n{"query":"状态"}\n```',
         runtime: 'hermes',
       }),
     );
-    expect(screen.getByText('Hermes')).toBeInTheDocument();
+    expandProcess();
+    const card = screen.getByRole('button', { name: /网页搜索/ });
+    expect(card).toHaveTextContent('等待中');
+    expect(card).not.toHaveTextContent('Hermes');
   });
 
   it('marks keyword-heuristic tool calls as low confidence', () => {
@@ -75,6 +90,9 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         rawContent: { msgtype: 'm.notice' },
       }),
     );
+    // A heuristic `running` guess must not force the finished fold open.
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
     expect(screen.getByLabelText('识别置信度低')).toBeInTheDocument();
   });
 
@@ -88,15 +106,105 @@ describe('MessageBubble runtime badges (AC-C7)', () => {
         revisionCount: 2,
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+    expandProcess();
     expect(screen.queryByTestId('event-chain-info')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('event-debug-trigger'));
+    fireEvent.click(screen.getByRole('button', { name: '查看消息详情' }));
     expect(screen.getByTestId('event-chain-info')).toHaveTextContent('$root-event-id-1234567890');
     expect(screen.getByText('编辑 2 次')).toBeInTheDocument();
   });
 });
 
+describe('MessageBubble live run progress', () => {
+  it('opens the process fold while the turn is still pending', () => {
+    renderBubble(
+      makeMessage({
+        content: '',
+        runtime: 'qwenpaw',
+        turnState: 'pending',
+        precomputedBlocks: [
+          { type: 'thinking', content: '先拆解需求' },
+          { type: 'tool_call', payload: { tool_name: 'execute_shell_command' } },
+        ],
+      }),
+    );
+    const fold = screen.getByTestId('run-process');
+    expect(fold).toHaveAttribute('data-state', 'open');
+    expect(screen.getByText('正在处理')).toBeInTheDocument();
+    expect(screen.getByText('先拆解需求')).toBeInTheDocument();
+  });
+
+  it('folds a long-message attachment into the process panel', () => {
+    renderBubble(
+      makeMessage({
+        runtime: 'qwenpaw',
+        turnState: 'finalized',
+        precomputedBlocks: [
+          { type: 'text', text: '长消息叙述', inProcess: true },
+          {
+            type: 'attachment',
+            inProcess: true,
+            payload: { url: 'mxc://server/log', filename: 'log.txt', mimetype: 'text/plain' },
+          },
+          { type: 'text', text: '已完成' },
+        ],
+      }),
+    );
+    expect(screen.getByTestId('run-process')).toHaveAttribute('data-state', 'closed');
+    expandProcess();
+    const process = within(screen.getByTestId('run-process-preview'));
+    expect(process.getByText('长消息叙述')).toBeInTheDocument();
+    expect(process.getByText('log.txt')).toBeInTheDocument();
+    expect(process.getByRole('link', { name: '下载 log.txt' })).toBeInTheDocument();
+    expect(process.getByRole('button', { name: '查看 log.txt' })).toBeInTheDocument();
+  });
+
+  it('scrolls an over-long narration inside a bounded process panel', () => {
+    renderBubble(
+      makeMessage({
+        runtime: 'qwenpaw',
+        turnState: 'finalized',
+        precomputedBlocks: [
+          { type: 'text', text: '长'.repeat(2_000), inProcess: true },
+          { type: 'text', text: '已完成' },
+        ],
+      }),
+    );
+    expandProcess();
+    expect(screen.getByTestId('run-process-preview')).toHaveClass('max-h-60', 'overflow-y-auto');
+  });
+
+  it('keeps the sender row free of runtime and status chips', () => {
+    render(
+      <TooltipProvider>
+        <MessageBubble
+          message={makeMessage({
+            senderShort: 'ceshi',
+            runtime: 'qwenpaw',
+            workerName: 'ceshi',
+            agentStatus: 'success',
+            isStreaming: true,
+            content: '结果',
+          })}
+          showSender
+          isContinuation={false}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText('ceshi')).toBeInTheDocument();
+    expect(screen.queryByText('QwenPaw')).toBeNull();
+    expect(screen.queryByText('streaming')).toBeNull();
+    expect(screen.queryByText('已完成')).toBeNull();
+  });
+});
+
 describe('MessageBubble run-ending states (AC-C6)', () => {
+  it('shows confirmed stopped status while preserving the partial response', () => {
+    renderBubble(makeMessage({ content: '已经完成第一步', turnState: 'stopped', isStreaming: false }));
+    expect(screen.getByText('已经完成第一步')).toBeInTheDocument();
+    expect(screen.getByText('已停止')).toBeInTheDocument();
+    expect(screen.queryByText('正在处理')).toBeNull();
+  });
+
   it('renders 已取消 as a warning strip', () => {
     renderBubble(makeMessage({ content: '已取消' }));
     expect(screen.getByTestId('run-ending-cancelled')).toHaveTextContent('任务已取消');

@@ -1,0 +1,56 @@
+.home { display: grid; gap: 16px; }
+.hero { position: relative; isolation: isolate; overflow: hidden; min-height: 390px; border: 1px solid var(--border); border-radius: 25px; padding: 34px clamp(18px, 2.6vw, 36px); display: flex; align-items: center; background: var(--background); }
+.hero::before { content: ''; position: absolute; z-index: -1; inset: 10px 10px 10px auto; width: 51%; border-radius: 20px; background: url('../../../../public/images/workspace-night.webp') 82% 57% / cover; }
+.copy { width: 47%; container-type: inline-size; }
+.copy h1 { font-size: clamp(28px, 11.4cqi, 58px); font-weight: 650; line-height: 1.16; letter-spacing: -.045em; }
+.copy h1 > span { display: block; }
+.headlineDetail { margin-top: 4px; font-size: .8em; letter-spacing: -.025em; }
+.clock { display: block; margin: 16px 0 22px; color: var(--muted-foreground); font-size: clamp(14px, 3.9cqi, 20px); font-variant-numeric: tabular-nums; }
+.feature { position: absolute; bottom: 24px; right: clamp(18px,2.6vw,28px); width: min(27%,270px); padding: 14px; border-radius: 16px; background: var(--background); }
+.metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.metrics button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 0 22px; border-left: 1px solid var(--border); text-align: left; }
+.metrics button:first-child { border: 0; padding-left: 0; }
+.metrics strong { font-size: 32px; font-weight: 600; line-height: 1.3; letter-spacing: -.05em; }
+.metrics span { color: var(--muted-foreground); font-size: 12px; }
+.lower { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; }
+.lowerMain { display: flex; min-width: 0; flex-direction: column; gap: 22px; }
+.sectionTitle { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.sectionTitle h2 { font-size: clamp(20px,2vw,28px); font-weight: 600; letter-spacing: -.03em; }
+.list { border: 1px solid var(--border); border-radius: 20px; padding: 0 16px; }
+.row { display: flex; min-height: 66px; align-items: center; gap: 8px; padding-block: 10px; }
+.row + .row { border-top: 1px solid var(--border); }
+.composer { display: flex; flex: 1; min-width: 250px; flex-direction: column; gap: 10px; padding: 14px 16px; border: 0; border-radius: 20px; background: var(--background); }
+.composerInput { width: 100%; padding-bottom: 8px; border: 0; border-bottom: 1px solid var(--border); outline: 0; background: transparent; color: var(--foreground); font-size: 15px; }
+/* 卡片不画边框：hover/focus 只控制输入框底边线。workspace 全局 input:hover 特异性 0,5,1、input:focus-visible 为 0,2,1，需用组件内限定 + :not 链（0,6,1）压过，否则仍会画出整框柔环与灰色描边。 */
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):hover,
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible {
+  border-color: var(--border);
+  box-shadow: none;
+  outline: 0;
+}
+.composer .composerInput:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible {
+  border-bottom-color: var(--action-primary);
+}
+.composerInput::placeholder { color: var(--muted-foreground); }
+.composerRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip { height: 26px; flex-shrink: 0; white-space: nowrap; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 12px; }
+.chip[aria-pressed="true"] { border-color: var(--action-primary); color: var(--foreground); }
+.composerSend { display: inline-flex; height: 30px; width: 30px; flex-shrink: 0; align-items: center; justify-content: center; margin-left: auto; border: 0; border-radius: 999px; background: var(--action-primary); color: var(--action-primary-foreground); }
+.composerSend:disabled { cursor: not-allowed; opacity: .5; }
+.recommend .quick { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.empty { padding: 20px 0; color: var(--muted-foreground); font-size: 14px; }
+@media (max-width: 1023px) {
+  .hero { min-height: 350px; }
+  .feature { width: 32%; }
+  .lower { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 767px) {
+  .hero { min-height: 335px; padding: 20px 16px; }
+  .copy { width: 100%; }
+  .hero::before { opacity: .19; width: 59%; }
+  .feature { display: none; }
+  .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+  .metrics button { padding-inline: 12px; }
+  .metrics button:nth-child(3) { padding-left: 0; border: 0; }
+}

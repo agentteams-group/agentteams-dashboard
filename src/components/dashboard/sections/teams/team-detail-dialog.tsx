@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { TeamHealthPanel } from './team-health-panel';
+import { TeamAttentionPanel } from './team-attention-panel';
 import type { TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import { getWorkersForTeam } from './team-selectors';
 
@@ -15,10 +16,9 @@ const DETAIL_FIELDS: Array<[string, (_t: TeamResponse) => string]> = [
   ['Leader', (t) => t.leaderName || '-'],
   ['Leader 就绪', (t) => (t.leaderReady ? '是' : '否')],
   ['Workers', (t) => `${t.readyWorkers}/${t.totalWorkers}`],
-  ['人类成员', (t) => (t.humanMembers || []).join(', ') || '-'],
+  ['人类成员', (t) => (t.humanMembers || []).map((member) => typeof member === 'string' ? member : member.name).join(', ') || '-'],
   ['Worker 列表', (t) => (t.workerNames || []).join(', ') || '-'],
   ['团队房间', (t) => t.teamRoomID || '-'],
-  ['Leader DM 房间', (t) => t.leaderDMRoomID || '-'],
   ['空闲超时', (t) => t.workerIdleTimeout || '-'],
   ['消息', (t) => t.message || '-'],
 ];
@@ -47,7 +47,7 @@ function TeamWorkersList({
             <StatusDot phase={w.phase} />
             <Bot className="w-4 h-4 text-emerald-500" aria-hidden="true" />
             <span className="text-xs font-medium">{w.name}</span>
-            <PhaseBadge kind="worker" phase={w.phase} className="text-[10px] ml-auto" />
+            <PhaseBadge kind="worker" phase={w.phase} className="text-xs ml-auto" />
           </div>
         ))}
       </div>
@@ -98,6 +98,7 @@ export function TeamDetailDialog({
               </div>
             )}
             <TeamWorkersList teamName={team.name} workers={workers} />
+            <TeamAttentionPanel teamName={team.name} />
           </div>
         )}
       </DialogContent>

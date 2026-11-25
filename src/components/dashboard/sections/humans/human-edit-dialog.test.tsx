@@ -8,6 +8,7 @@ import {
 } from './human-edit-dialog';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { TeamCandidateSource } from './team-access-field';
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
@@ -68,6 +69,7 @@ const renderDialog = (props?: {
   human?: HumanResponse | null;
   teams?: string[];
   workers?: string[];
+  teamSource?: TeamCandidateSource;
   isPending?: boolean;
 }) => {
   const onSubmit = vi.fn((_payload?: unknown) => {});
@@ -81,6 +83,7 @@ const renderDialog = (props?: {
         human={human}
         teams={teams}
         workers={workers}
+        teamSource={props?.teamSource}
         isPending={isPending}
         onOpenChange={() => {}}
         onSubmit={onSubmit}
@@ -216,5 +219,47 @@ describe('HumanEditDialog', () => {
         expect(option.value).not.toBe('ghost');
       }
     }
+  });
+
+  it('消除悬空团队：移除不可用团队 → chip 清除，保存发空列表（显式清空）', () => {
+    const { onSubmit } = renderDialog({
+      human: { ...baseHuman, accessibleTeams: ['ghost-team'], accessibleWorkers: [] },
+      teams: ['biz-team'],
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('ghost-team');
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除不可用团队' }));
+    expect(screen.queryByRole('button', { name: '移除 ghost-team' })).toBeNull();
+    expect(screen.queryByText(/以下团队不存在/)).toBeNull();
+
+    const save = screen.getByRole('button', { name: '保存' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(onSubmit).toHaveBeenCalledWith({ accessibleTeams: [] });
+  });
+
+  it('团队列表加载失败 → 保留已有 chip、不误判悬空、可重试', () => {
+    const onRetry = vi.fn();
+    const { onSubmit } = renderDialog({
+      human: { ...baseHuman, accessibleTeams: ['ghost-team'], accessibleWorkers: [] },
+      teams: [],
+      teamSource: { names: [], isError: true, onRetry },
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/团队列表加载失败/);
+    expect(screen.getByRole('button', { name: '移除 ghost-team' })).toBeInTheDocument();
+    expect(screen.queryByText(/以下团队不存在/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /重试加载团队/ }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    // 列表不可读期间不做悬空拦截：改档位即可保存，团队字段原样不动。
+    fireEvent.change(document.querySelectorAll('select')[0], { target: { value: '3' } });
+    const save = screen.getByRole('button', { name: '保存' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(onSubmit).toHaveBeenCalledWith({ permissionLevel: 3 });
   });
 });

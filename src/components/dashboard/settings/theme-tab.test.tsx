@@ -44,8 +44,9 @@ describe('ThemeTab (settings → 外观)', () => {
   it('lists the built-in themes and the system option', () => {
     renderTab();
     expect(screen.getByText('跟随系统')).toBeInTheDocument();
-    expect(screen.getByText('亮色')).toBeInTheDocument();
-    expect(screen.getByText('暗色')).toBeInTheDocument();
+    expect(screen.getByText('冷灰白')).toBeInTheDocument();
+    expect(screen.getByText('深石墨')).toBeInTheDocument();
+    expect(screen.getByText('暖白')).toBeInTheDocument();
     expect(screen.getByText('高对比度')).toBeInTheDocument();
   });
 
@@ -95,10 +96,22 @@ describe('ThemeTab (settings → 外观)', () => {
 
   it('switching theme updates the document', async () => {
     renderTab();
-    fireEvent.click(screen.getByText('亮色'));
+    fireEvent.click(screen.getByText('冷灰白'));
     await waitFor(() => {
       expect(document.documentElement.classList.contains('dark')).toBe(false);
     });
+  });
+
+  it('does not offer the retired automatic schedule controls', () => {
+    renderTab();
+    expect(screen.queryByRole('switch', { name: '按时间自动切换' })).toBeNull();
+    expect(screen.queryByLabelText('夜间开始')).toBeNull();
+  });
+
+  it('supports manual warm-white selection', () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: /^暖白/ }));
+    expect(useThemeStore.getState().themeId).toBe('warm');
   });
 
   it('offers export/import actions for custom themes', async () => {

@@ -16,13 +16,28 @@ function resetStore() {
 }
 
 describe('theme store', () => {
+  it('migrates the retired scheduled preference to fixed light', async () => {
+    localStorage.setItem('agentteams-theme', JSON.stringify({ state: { themeId: 'scheduled', themeSchedule: { lightStart: '07:00', darkStart: '19:00' } }, version: 0 }));
+    await useThemeStore.persist.rehydrate();
+    expect(useThemeStore.getState().themeId).toBe('light');
+  });
   beforeEach(() => {
     resetStore();
     localStorage.clear();
   });
 
-  it('defaults to following the system preference', () => {
+  it('retains explicit following of the system preference', () => {
     expect(useThemeStore.getState().themeId).toBe(SYSTEM_THEME_ID);
+  });
+
+  it('defaults new browser profiles to fixed light', () => {
+    expect(useThemeStore.getInitialState().themeId).toBe('light');
+  });
+
+  it('restores a legacy explicit choice', async () => {
+    localStorage.setItem('agentteams-theme', JSON.stringify({ state: { themeId: 'dark', customThemes: [] }, version: 0 }));
+    await useThemeStore.persist.rehydrate();
+    expect(useThemeStore.getState().themeId).toBe('dark');
   });
 
   it('setThemeId switches the selection', () => {

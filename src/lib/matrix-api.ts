@@ -1,7 +1,38 @@
 // Matrix Client-Server API Client
 // All requests go through Next.js API proxy routes to the Matrix homeserver
 
+import { FILE_REFS_CONTENT_KEY, type FileRefsPayload } from '@/lib/file-refs';
 import { apiUrl } from '@/lib/api-base';
+import { CONTROL_KEY, type DirectControl } from './direct-execution';
+import type { ConfirmationAnswerField } from '@/components/dashboard/sections/chat/confirmation-reply';
+import {
+  detectSearchUnsupported,
+  parseRoomSearchResponse,
+  searchErrorMessage,
+  type RoomSearchResult,
+} from '@/lib/matrix-search';
+
+export interface ArchivedRoom {
+  room_id: string;
+  name: string | null;
+  joined_member_count: number;
+  can_archive: boolean;
+  can_delete: boolean;
+  room_meta: { teamName?: string; teamAdmin?: { userId?: string }; humanMembers?: { userId?: string }[]; roomKind?: string } | null;
+}
+
+export interface ArchivedRoomFilters {
+  team?: string;
+  team_admin?: string;
+  human_member?: string;
+}
+
+export interface RoomArchiveStatus {
+  is_task_room: boolean;
+  archived: boolean;
+  can_archive: boolean;
+  can_delete: boolean;
+}
 
 export interface MatrixLoginResponse {
   access_token: string;
@@ -29,6 +60,11 @@ export interface MatrixEvent {
   } & Record<string, unknown>;
   type: string;
   origin_server_ts: number;
+  /**
+   * 只有 `/search` 返回的事件（和服务端推送）带这个字段；时间线接口不返，因为房间
+   * 已经在请求路径里了。跨房间检索要靠它把命中定位回具体会话。
+   */
+  room_id?: string;
   state_key?: string;
   unsigned?: Record<string, unknown>;
 }
@@ -133,7 +169,7 @@ async function throwIfNotOk(res: Response, fallback: string): Promise<void> {
   if (res.ok) return;
   const data = await res.json().catch(() => ({}));
   const errcode = typeof data.errcode === 'string' ? data.errcode : undefined;
-  const error = typeof data.error === 'string' ? data.error : fallback;
+  const error = typeof data.error === 'string' ? data.error : typeof data.message === 'string' ? data.message : fallback;
   const retryAfterMs =
     typeof data.retry_after_ms === 'number'
       ? data.retry_after_ms
@@ -209,6 +245,28 @@ export const matrixApi = {
     return res.json();
   },
 
+  getArchivedRooms: async (homeserver: string, accessToken: string, filters: ArchivedRoomFilters = {}): Promise<{ rooms: ArchivedRoom[] }> => {
+    const res = await fetch(buildMatrixUrl('/api/matrix/archived-rooms', { homeserver, ...filters }), { headers: buildHeaders(accessToken), cache: 'no-store' });
+    await throwIfNotOk(res, '无法加载归档房间');
+    return res.json();
+  },
+
+  getRoomArchiveStatus: async (homeserver: string, accessToken: string, roomId: string): Promise<RoomArchiveStatus> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/archive`, { homeserver }), { headers: buildHeaders(accessToken), cache: 'no-store' });
+    await throwIfNotOk(res, '无法加载任务房间权限');
+    return res.json();
+  },
+
+  setRoomArchived: async (homeserver: string, accessToken: string, roomId: string, archived: boolean): Promise<void> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/${archived ? 'archive' : 'unarchive'}`, { homeserver }), { method: 'POST', headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, archived ? '归档失败' : '取消归档失败');
+  },
+
+  deleteArchivedRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<void> => {
+    const res = await fetch(buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/delete`, { homeserver }), { method: 'POST', headers: buildHeaders(accessToken) });
+    await throwIfNotOk(res, '删除归档房间失败');
+  },
+
   joinRoom: async (homeserver: string, accessToken: string, roomId: string): Promise<MatrixJoinedRoom> => {
     // F-6 / 需求 4.5: this goes through the dashboard server-side proxy
     // so the homeserver allowlist + audit log stay on the server. Client-Server
@@ -253,6 +311,54 @@ export const matrixApi = {
     const res = await fetch(url, { headers: buildHeaders(accessToken) });
     await throwIfNotOk(res, 'Failed to get messages');
     return res.json();
+  },
+
+  /**
+   * 房间内容全文检索（方案 v3 B-1）。走 `/api/matrix/search` 代理到上游
+   * `/_matrix/client/v3/search`。
+   *
+   * 与同文件其它方法不同，这里**不**对 4xx 抛错：Synapse 的搜索索引可以被运营者
+   * 关掉，那是一种能力缺失而不是调用失败，返回 `unsupported: true` 让 UI 显示降级
+   * 提示并退回本地匹配。登录失效（401/403）与上游故障仍照常抛错，不能伪装成降级。
+   */
+  searchRoomMessages: async (
+    homeserver: string,
+    accessToken: string,
+    roomId: string | null,
+    term: string,
+    options: { limit?: number; from?: string } = {}
+  ): Promise<RoomSearchResult> => {
+    // filter JSON 由 /api/matrix/search 代理按白名单参数拼装（见 buildRoomSearchFilter），
+    // 客户端这边不碰上游查询语法。roomId 为 null 就是不限制房间（跨房间检索）。
+    const url = buildMatrixUrl('/api/matrix/search', {
+      homeserver,
+      room_id: roomId ?? undefined,
+      search_term: term,
+      limit: options.limit ?? 50,
+      next_batch: options.from,
+    });
+    const res = await fetch(url, { headers: buildHeaders(accessToken) });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+
+    if (detectSearchUnsupported(res.status, body)) {
+      return { hits: [], unsupported: true, reason: searchErrorMessage(body) };
+    }
+    if (!res.ok) {
+      throw new Error(`Room search failed (${res.status})`);
+    }
+    return parseRoomSearchResponse(body);
+  },
+
+  getRoomEvent: async (homeserver: string, accessToken: string, roomId: string, eventId: string): Promise<MatrixEvent> => {
+    const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/event/${encodeURIComponent(eventId)}`, { homeserver });
+    const response = await fetch(url, { headers: buildHeaders(accessToken) });
+    await throwIfNotOk(response, 'Failed to get event');
+    return response.json();
   },
 
   getRoomRelations: async (
@@ -389,17 +495,25 @@ export const matrixApi = {
     accessToken: string,
     roomId: string,
     body: string,
-    options: { msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown> } = {}
+    options: { 'com.agentteams.answer'?: ConfirmationAnswerField; [CONTROL_KEY]?: DirectControl; [FILE_REFS_CONTENT_KEY]?: FileRefsPayload; msgtype?: string; format?: string; formattedBody?: string; url?: string; info?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } }; newContent?: Record<string, unknown>; trackReadStatus?: boolean; agentUserIds?: string[]; humanUserIds?: string[] } = {}
   ): Promise<{ event_id: string }> => {
     const url = buildMatrixUrl(`/api/matrix/rooms/${encodeURIComponent(roomId)}/send`, { homeserver });
     const messageBody: Record<string, unknown> = {
       msgtype: options.msgtype || 'm.text',
       body,
     };
+    if (options.trackReadStatus) {
+      messageBody.track_read_status = true;
+      messageBody.agent_user_ids = options.agentUserIds || [];
+      messageBody.human_user_ids = options.humanUserIds || [];
+    }
     if (options.format) messageBody.format = options.format;
     if (options.formattedBody) messageBody.formatted_body = options.formattedBody;
     if (options.url) messageBody.url = options.url;
     if (options.info) messageBody.info = options.info;
+    if (options[CONTROL_KEY]) messageBody[CONTROL_KEY] = options[CONTROL_KEY];
+    if (options['com.agentteams.answer']) messageBody['com.agentteams.answer'] = options['com.agentteams.answer'];
+    if (options[FILE_REFS_CONTENT_KEY]) messageBody[FILE_REFS_CONTENT_KEY] = options[FILE_REFS_CONTENT_KEY];
     if (options.mentions) messageBody['m.mentions'] = options.mentions;
     // Thread replies carry an m.thread relation pointing at the root event.
     if (options.relatesTo) messageBody['m.relates_to'] = options.relatesTo;

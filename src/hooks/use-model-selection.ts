@@ -20,6 +20,21 @@ import {
 } from '@/lib/model-catalog';
 import type { AiRoute, LlmProviderResponse } from '@/lib/higress-api';
 
+// 401/403 from the Console track mean the admin Console session is missing or
+// expired (it is validated per request). Surface that as an actionable login
+// hint instead of the raw upstream sentence — a bare 502/401 leaves the user
+// with a builtins-only selector and no way out.
+const CONSOLE_SESSION_ISSUE = '需要管理员 Console 登录（Higress Console 会话缺失或已失效）';
+
+const SESSION_ERROR_PATTERN =
+  /login required|session is required|higress console session|unauthorized|not authenticated|console 登录|会话.*(?:失效|缺失)/i;
+
+function describeSelectionIssue(error: Error): string {
+  const message = error.message?.trim() ?? '';
+  if (SESSION_ERROR_PATTERN.test(message)) return CONSOLE_SESSION_ISSUE;
+  return message || '加载 Higress 模型数据失败';
+}
+
 export interface ModelSelection {
   options: ModelSelectionOption[];
   // Raw data for callers that also need binding-level checks
@@ -52,6 +67,6 @@ export function useModelSelection(): ModelSelection {
     providers,
     aiRoutes,
     isLoading: models.isLoading || routes.isLoading,
-    sessionIssue: error ? error.message || '加载 Higress 模型数据失败' : null,
+    sessionIssue: error ? describeSelectionIssue(error) : null,
   };
 }

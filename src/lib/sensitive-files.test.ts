@@ -17,6 +17,8 @@ describe('sensitive-files（对齐 workbench 插件 _kb_is_sensitive）', () => 
     ['credentials.yaml', 'credentials.yaml'],
     ['credentials.yml', 'credentials.yml'],
     ['credentials.yaml', 'secrets/credentials.yaml'],
+    ['worker.token', 'worker.token'],
+    ['service-account.token', 'workers/demo/service-account.token'],
   ])('敏感：name=%s rel=%s → true', (name, rel) => {
     expect(isSensitiveFileName(name, rel)).toBe(true);
   });
@@ -38,6 +40,8 @@ describe('isSensitiveObjectKey（bucket 键，含任意前缀）', () => {
   it.each([
     // basename 命中：任意前缀下的独立凭证文件
     'workers/demo/credentials.yaml',
+    'workers/demo/worker.token',
+    'workers/demo/service-account.token',
     'teams/t1/shared/credentials.yml',
     // 嵌套前缀下的敏感目录（isSensitiveFileName 顶层规则测不到的场景）
     'workers/demo/.ssh/id_rsa',

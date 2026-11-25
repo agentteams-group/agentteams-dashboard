@@ -1,8 +1,9 @@
 'use client';
 
-import { Bot, Eye, Pencil, Trash2, UserCheck, UserPlus } from 'lucide-react';
+import { Bot, Eye, UserPlus } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ResourceListMenu } from '@/components/dashboard/resource-list-menu';
 import {
   Popover,
   PopoverContent,
@@ -15,7 +16,6 @@ import {
 } from '@/components/ui/tooltip';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
-import { CopyButton } from '@/components/dashboard/copy-button';
 import {
   Table,
   TableHeader,
@@ -56,10 +56,8 @@ export function TeamTable({
           <TableRow>
             <TableHead>名称</TableHead>
             <TableHead>阶段</TableHead>
-            <TableHead>任务</TableHead>
             <TableHead>Leader</TableHead>
-            <TableHead>Workers</TableHead>
-            <TableHead>房间</TableHead>
+            <TableHead>成员就绪</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -67,25 +65,32 @@ export function TeamTable({
           {teams.map((team) => {
             const isDeleting = deletingTeamNames.has(team.name);
             return (
-              <TableRow key={team.name}>
+              // 整行点击打开团队设置抽屉（右侧 Sheet）；操作列自行阻断冒泡。
+              <TableRow
+                key={team.name}
+                className="cursor-pointer"
+                data-testid={`team-row-${team.name}`}
+                onClick={() => onView(team)}
+              >
               <TableCell>
                 <div className="flex items-center gap-2">
                   <StatusDot phase={team.phase} />
                   <Bot className="w-4 h-4 text-emerald-500 shrink-0" aria-hidden="true" />
-                  <span className="font-medium truncate max-w-[180px]">{team.name}</span>
+                  <button
+                    type="button"
+                    className="font-medium truncate max-w-[180px] text-left hover:underline"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onView(team);
+                    }}
+                  >
+                    {team.name}
+                  </button>
                 </div>
               </TableCell>
               <TableCell>
                 <PhaseBadge kind="team" phase={team.phase} />
-              </TableCell>
-              <TableCell>
-                {isDeleting ? (
-                  <span role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                    删除中
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">-</span>
-                )}
+                {isDeleting && <span role="status" className="ml-2 text-xs text-amber-600">删除中</span>}
               </TableCell>
               <TableCell>
                 <Tooltip>
@@ -106,19 +111,10 @@ export function TeamTable({
                 </span>
               </TableCell>
               <TableCell>
-                {team.teamRoomID ? (
-                  <div className="flex items-center gap-1">
-                    <span className="font-mono text-xs truncate max-w-[120px]">
-                      {team.teamRoomID}
-                    </span>
-                    <CopyButton text={team.teamRoomID} disabled={isDeleting} />
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center justify-end gap-1">
+                <div
+                  className="flex items-center justify-end gap-1"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -175,39 +171,11 @@ export function TeamTable({
                       </div>
                     </PopoverContent>
                   </Popover>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onShowTopology(team)}
-                    title="查看拓扑"
-                    aria-label={`查看 ${team.name} 拓扑`}
-                    disabled={isDeleting}
-                  >
-                    <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onEdit(team)}
-                    title="编辑"
-                    aria-label={`编辑 ${team.name}`}
-                    disabled={isDeleting}
-                  >
-                    <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                    onClick={() => onDelete(team.name)}
-                    title="删除"
-                    aria-label={`删除 ${team.name}`}
-                    disabled={isDeleting}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  </Button>
+                  <ResourceListMenu label={`${team.name} 更多操作`} disabled={isDeleting} items={[
+                    { label: '查看拓扑', onSelect: () => onShowTopology(team) },
+                    { label: '编辑', onSelect: () => onEdit(team) },
+                    { label: '删除', onSelect: () => onDelete(team.name), destructive: true },
+                  ]} />
                 </div>
               </TableCell>
               </TableRow>

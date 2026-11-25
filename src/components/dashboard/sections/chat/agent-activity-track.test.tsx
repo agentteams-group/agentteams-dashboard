@@ -8,7 +8,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 afterEach(() => {
   cleanup();
   useTaskStore.getState().clearTasks();
-  useHitlInboxStore.getState().clearConfirmations();
+  useHitlInboxStore.setState({ confirmations: {}, resolutions: {} });
 });
 
 describe('AgentActivityTrack', () => {
@@ -35,30 +35,13 @@ describe('AgentActivityTrack', () => {
     expect(screen.getByText('running')).toBeInTheDocument();
   });
 
-  it('prefers a pending HITL confirmation over the task', () => {
-    useTaskStore.getState().upsertTask({
-      runId: 'run-1',
-      title: '巡检日志',
-      status: 'running',
-      roomId: '!room:test',
-      senderMatrixUserId: '@mgr:test',
-      subagents: [],
-      steps: [],
-    });
+  it.each(['ask_human', 'shell'])('does not duplicate a %s request above the composer', (toolName) => {
     useHitlInboxStore.getState().upsertConfirmation({
-      id: 'c1',
-      roomId: '!room:test',
-      eventId: '$e1',
-      sender: '@agent:test',
-      toolName: 'shell',
-      triggeredBy: 'worker-a',
-      approveReply: '/approve',
-      rejectReply: '拒绝',
-      timestamp: Date.now(),
+      id: 'c1', roomId: '!room:test', eventId: '$e1', sender: '@agent:test',
+      toolName, ...(toolName === 'ask_human' ? { question: '先运行测试吗？' } : {}),
+      approveReply: '/approve', rejectReply: '拒绝', timestamp: Date.now(),
     });
-    render(<AgentActivityTrack roomId="!room:test" />);
-    expect(screen.getByText(/待确认 shell/)).toBeInTheDocument();
-    expect(screen.getByText('HITL')).toBeInTheDocument();
-    expect(screen.queryByText('巡检日志')).toBeNull();
+    const { container } = render(<AgentActivityTrack roomId="!room:test" />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

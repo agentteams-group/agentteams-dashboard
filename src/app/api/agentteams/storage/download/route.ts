@@ -38,6 +38,9 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(webStream, { headers: responseHeaders });
   } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err.code === 'NoSuchKey' || err.code === 'NotFound')) {
+      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+    }
     const message = err instanceof Error ? err.message : 'Unknown storage error';
     return NextResponse.json({ error: message }, { status: 502 });
   }

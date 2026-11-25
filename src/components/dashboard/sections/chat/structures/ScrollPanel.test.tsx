@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createRef, forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef, ReactNode } from 'react';
@@ -80,6 +80,60 @@ describe('ScrollPanel', () => {
 
     act(() => vi.advanceTimersByTime(1800));
     expect(screen.getByText('second').parentElement).not.toHaveClass('bg-primary/10');
+  });
+
+  it('keeps an in-flight jump from being re-pinned to the latest message', () => {
+    vi.useFakeTimers();
+    const onAtBottomChange = vi.fn();
+    const ref = createRef<ScrollPanelHandle>();
+    render(
+      <ScrollPanel
+        ref={ref}
+        items={[message('first'), message('second')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+        onAtBottomChange={onAtBottomChange}
+      />
+    );
+
+    const props = virtuosoMock.props as {
+      followOutput: (_atBottom: boolean) => 'auto' | false;
+    };
+    expect(props.followOutput(true)).toBe('auto');
+
+    act(() => ref.current?.scrollToIndex(0));
+
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(props.followOutput(true)).toBe(false);
+
+    act(() => vi.advanceTimersByTime(900));
+    expect(props.followOutput(true)).toBe('auto');
+  });
+
+  it('resumes bottom following as soon as the user returns to the latest message', () => {
+    vi.useFakeTimers();
+    const ref = createRef<ScrollPanelHandle>();
+    render(
+      <ScrollPanel
+        ref={ref}
+        items={[message('first'), message('second')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    const props = virtuosoMock.props as {
+      followOutput: (_atBottom: boolean) => 'auto' | false;
+    };
+    act(() => ref.current?.scrollToIndex(0));
+    expect(props.followOutput(true)).toBe(false);
+
+    act(() => ref.current?.scrollToBottom({ smooth: false }));
+    expect(props.followOutput(true)).toBe('auto');
   });
 
   it('requests older messages from the top edge and reports bottom state changes', () => {
@@ -167,6 +221,7 @@ describe('ScrollPanel', () => {
   });
 
   it('follows new messages only while the scroller is at the bottom', () => {
+
     render(
       <ScrollPanel
         items={[message('only')]}
@@ -183,5 +238,47 @@ describe('ScrollPanel', () => {
 
     expect(followOutput(true)).toBe('auto');
     expect(followOutput(false)).toBe(false);
+  });
+
+  it('hides the jump rail for a short conversation', () => {
+    render(
+      <ScrollPanel
+        items={[message('a'), message('b'), message('c')]}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    expect(screen.queryByTestId('timeline-rail')).toBeNull();
+  });
+
+  it('widens the rail dashes for the reported range and jumps on click', () => {
+    render(
+      <ScrollPanel
+        items={Array.from({ length: 8 }, (_e, i) => message(`$${i}`))}
+        itemContent={(_index, item) => <span>{item.message.content}</span>}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => {}}
+      />
+    );
+
+    const firstItemIndex = (virtuosoMock.props as { firstItemIndex: number }).firstItemIndex;
+    const props = virtuosoMock.props as {
+      rangeChanged: (_range: { startIndex: number; endIndex: number }) => void;
+    };
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-2');
+
+    act(() => props.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 }));
+    expect(screen.getByTestId('rail-tick-5')).toHaveClass('w-3.5');
+
+    fireEvent.click(screen.getByTestId('rail-tick-2'));
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: 2,
+      align: 'center',
+      behavior: 'smooth',
+    });
   });
 });

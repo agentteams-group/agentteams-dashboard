@@ -7,8 +7,13 @@ import { isWorkflowPayload, type WorkflowPayload } from '@/lib/a2ui/workflow';
 import type { FileRef } from '@/lib/file-refs';
 import { parseAgentRunBlocks, type ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import type { WorkerRuntime } from '@/lib/agentteams-api';
+import type { ChatTurnState } from '@/lib/chat-ir/types';
 import { create } from 'zustand';
 import { consumeBufferedEvents } from '@/lib/matrix-sync-buffer';
+import { recordSearchProbe } from '@/lib/matrix-capabilities';
+import { useRuntimeMap, useHumanMatrixIds } from '@/components/dashboard/sections/chat/runtime-map-context';
+import { READ_AUDIENCE_KEY, SESSION_RECEIPT_TYPE } from '@/lib/message-read-status';
+import { isAssistantControlEvent } from '@/lib/assistant-control';
 
 // Helper to get Matrix connection params
 function useMatrixParams() {
@@ -60,6 +65,8 @@ export const useTypingStore = create<TypingStore>()((set, get) => ({
 export interface ReadReceiptEntry {
   eventId: string;
   ts: number;
+  eventTimestamp?: number;
+  threadId?: string;
 }
 
 interface ReceiptStore {
@@ -265,6 +272,78 @@ export function mergeRawEventsInto(
   return chunk;
 }
 
+/**
+ * 房间内容全文检索（方案 v3 B-1）。
+ *
+ * 与消息分页不共用 queryKey：检索词变了不能把已加载的时间线刷掉。
+ * `limit` 取 100 是给「命中很多但只想跳过去」的场景一次性多拿一些；再多靠 nextBatch。
+ * 最少 2 个字符才发请求：单字在中文房间里几乎必然命中几十条，既慢又没用。
+ */
+export function useMatrixRoomSearch(
+  roomId: string | null,
+  term: string,
+  options: { enabled?: boolean } = {},
+) {
+  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+  const trimmed = term.trim();
+
+  return useQuery({
+    queryKey: ['matrix-room-search', roomId, trimmed],
+    queryFn: async () => {
+      if (!homeserver || !accessToken || !roomId) return { hits: [], unsupported: false };
+      const result = await matrixApi.searchRoomMessages(homeserver, accessToken, roomId, trimmed, {
+        limit: 100,
+      });
+      // /search 关掉索引时返回的是错误码而不是空结果，所以只有真发过一次请求
+      // 才拿得到确定答案；记下来给能力弹层（B-6）显示「已实测」。
+      recordSearchProbe(result.unsupported, result.reason);
+      return result;
+    },
+    enabled:
+      options.enabled !== false &&
+      isLoggedIn &&
+      !!roomId &&
+      !!homeserver &&
+      !!accessToken &&
+      trimmed.length >= 2,
+    // 搜索是边打字边触发的，同一个房间同一个词短期内不再打上游。
+    staleTime: 30000,
+  });
+}
+
+/**
+ * 跨房间消息检索（方案 v3 B-1 的延伸：命令面板里的 `message` 实体）。
+ *
+ * 与 useMatrixRoomSearch 的差别只有一处：不带房间约束，服务端在该用户已加入的
+ * 全部房间里搜。命中项的房间从 `hit.event.room_id` 上取——`/search` 返回的事件
+ * 自带这个字段，所以不需要为每条命中再发一次请求。
+ */
+export function useMatrixMessageSearch(term: string, options: { enabled?: boolean } = {}) {
+  const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
+  const trimmed = term.trim();
+
+  return useQuery({
+    queryKey: ['matrix-message-search', trimmed],
+    queryFn: () =>
+      matrixApi
+        .searchRoomMessages(homeserver ?? '', accessToken ?? '', null, trimmed, {
+          limit: 20,
+        })
+        // 与房间内检索同一个口径：跑过一次就记下实测结论（B-6）。
+        .then((result) => {
+          recordSearchProbe(result.unsupported, result.reason);
+          return result;
+        }),
+    enabled:
+      options.enabled !== false &&
+      isLoggedIn &&
+      !!homeserver &&
+      !!accessToken &&
+      trimmed.length >= 2,
+    staleTime: 30000,
+  });
+}
+
 export function useMatrixRoomMessages(roomId: string | null) {
   const { homeserver, accessToken, isLoggedIn } = useMatrixParams();
 
@@ -279,6 +358,7 @@ export function useMatrixRoomMessages(roomId: string | null) {
         limit: 50,
         from: pageParam as string | undefined,
       });
+      data.chunk = data.chunk.filter((event) => event.type !== SESSION_RECEIPT_TYPE);
       // Element-style realtime: replay the /sync events that arrived while
       // this room had no message cache (buffered by useGlobalMatrixSync).
       // Only the first page (latest events) participates — history pages
@@ -335,14 +415,19 @@ export function useMatrixRoomState(roomId: string | null) {
 export function useMatrixSendMessage() {
   const queryClient = useQueryClient();
   const { homeserver, accessToken } = useMatrixParams();
+  const runtimeMap = useRuntimeMap();
+  const humanUserIds = useHumanMatrixIds();
 
   return useMutation({
     mutationFn: async ({ roomId, body, formattedBody, extra, mentions, relatesTo }: { roomId: string; body: string; formattedBody?: string; extra?: Record<string, unknown>; mentions?: { user_ids: string[] }; relatesTo?: { rel_type?: string; event_id?: string; 'm.in_reply_to'?: { event_id: string } } }) => {
       if (!homeserver || !accessToken) throw new Error('Not logged in to Matrix');
       return matrixApi.sendMessage(homeserver, accessToken, roomId, body, {
+        trackReadStatus: true,
+        agentUserIds: Object.keys(runtimeMap),
+        humanUserIds,
         format: formattedBody ? 'org.matrix.custom.html' : undefined,
         formattedBody,
-        mentions,
+        mentions: mentions ?? extra?.['m.mentions'] as { user_ids: string[] } | undefined,
         relatesTo,
         ...extra,
       });
@@ -657,6 +742,14 @@ export interface DisplayMessage {
   workflow?: WorkflowPayload;
   /** Structured blocks for an Agent run, retained across streaming revisions. */
   agentBlocks?: ParsedA2uiBlock[];
+  /**
+   * Display-only blocks aggregated by the worker turn grouper. When present
+   * MessageBubble renders them directly instead of re-normalizing `content`
+   * (the turn spans several Matrix events).
+   */
+  precomputedBlocks?: ParsedA2uiBlock[];
+  /** Matrix event ids folded into this display message (read-marker lookup). */
+  sourceEventIds?: string[];
   /** Original event.content (after m.replace merge), for normalizeToBlocks. */
   rawContent?: Record<string, unknown>;
   /** Root event ID if this message is a reply in a thread. */
@@ -665,6 +758,8 @@ export interface DisplayMessage {
   isThreadReply?: boolean;
   /** Number of replies in thread */
   replyCount?: number;
+  /** Matrix event targeted by a quoted reply in the current room. */
+  replyToEventId?: string;
   /** Whether this message has been edited */
   isEdited?: boolean;
   /** Number of m.replace revisions merged into this message (edit-chain count). */
@@ -675,6 +770,22 @@ export interface DisplayMessage {
   workerName?: string;
   /** Original event ID for edit/delete (for m.room.redaction) */
   eventId?: string;
+  /** ChatIR turn this message belongs to (folded turns carry their root id). */
+  turnId?: string;
+  /** How ChatIR judges the turn at render time (display only, never membership). */
+  turnState?: ChatTurnState;
+  /** Reply anchor: the root event a thread participates in (or own event). */
+  canonicalEventId?: string;
+  /** Latest raw Matrix event of this turn (edit revisions included) — m.fully_read. */
+  latestEventId?: string;
+  /** Latest non-thread raw event of the room — m.read receipt target. */
+  latestTopLevelEventId?: string;
+  /** Thread reply whose root is outside the loaded window. */
+  detached?: boolean;
+  /** MXIDs that participated in this thread (root + replies). */
+  threadParticipants?: string[];
+  /** Optional structured run id (org.agentteams.run.run_id). */
+  runId?: string;
 }
 
 function normalizeMatrixMessageBody(body: unknown): string {
@@ -731,18 +842,37 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
     }
   }
 
+  // Scheduled/Task wakeups are input for the runtime, not unanswered turns.
+  const coordination = content['org.agentteams.coordination'] as {
+    channel_meta?: { sender_id?: string; agent_matrix_user_id?: string;
+      teamharness_coordination?: { kind?: string } };
+  } | undefined;
+  const control = coordination?.channel_meta;
+  if (content.msgtype === 'm.notice'
+    && ['assistant_digest', 'handoff'].includes(control?.teamharness_coordination?.kind ?? '')
+    && control?.sender_id === event.sender
+    && control?.agent_matrix_user_id === event.sender) return null;
+
   // A thread reply carries an m.thread relation pointing at the thread root.
-  const threadRelation = content['m.relates_to'] as { rel_type?: string; event_id?: string } | undefined;
+  const threadRelation = content['m.relates_to'] as {
+    rel_type?: string; event_id?: string; is_falling_back?: boolean; 'm.in_reply_to'?: { event_id?: string };
+  } | undefined;
   const isThreadReply = threadRelation?.rel_type === 'm.thread';
   const threadRootId = isThreadReply ? threadRelation?.event_id : undefined;
+  const target = threadRelation?.['m.in_reply_to']?.event_id;
+  const replyToEventId = typeof target === 'string' && target.startsWith('$') &&
+    (!isThreadReply || !threadRelation?.is_falling_back) ? target : undefined;
+  const body = normalizeMatrixMessageBody(content.body);
+  const replyBody = replyToEventId && body.startsWith('> <@') ? body.replace(/^(?:> [^\r\n]*\r?\n)+\r?\n/, '') : body;
+  const formattedBody = replyToEventId ? content.formatted_body?.replace(/^<mx-reply>[\s\S]*?<\/mx-reply>\s*/i, '') : content.formatted_body;
 
   const isStreaming = isMatrixStreaming(content);
   return {
     id: event.event_id,
     sender: event.sender,
     senderShort,
-    content: normalizeMatrixMessageBody(content.body),
-    formattedContent: content.formatted_body,
+    content: replyBody,
+    formattedContent: formattedBody,
     timestamp: event.origin_server_ts,
     type: content.msgtype || 'm.text',
     isMe: event.sender === currentUserId,
@@ -754,17 +884,38 @@ export function formatMatrixEvent(event: MatrixEvent, currentUserId: string): Di
       ? content['agentteams.workflow']
       : undefined,
     agentBlocks: parseAgentRunBlocks(content['org.agentteams.run'], isStreaming),
-    rawContent: content as Record<string, unknown>,
+    rawContent: replyToEventId ? { ...content, body: replyBody, formatted_body: formattedBody } : content as Record<string, unknown>,
     isEdited,
     eventId: event.event_id,
+    canonicalEventId: threadRootId ?? event.event_id,
+    latestEventId: event.event_id,
+    runId: readAgentRunId(content),
     threadId: isThreadReply ? threadRootId : undefined,
     isThreadReply,
+    replyToEventId,
   };
+}
+
+/** org.agentteams.run.run_id (structured adapter) or a flat run id field. */
+function readAgentRunId(content: MatrixEvent['content']): string | undefined {
+  const run = content['org.agentteams.run'];
+  const nested = run && typeof run === 'object'
+    ? (run as Record<string, unknown>).run_id
+    : undefined;
+  const flat = content['org.agentteams.run_id'];
+  const value = typeof nested === 'string' ? nested : typeof flat === 'string' ? flat : undefined;
+  return value && value.length > 0 ? value : undefined;
 }
 
 function isMatrixStreaming(content: MatrixEvent['content']): boolean {
   const status = content['org.agentteams.status'] ?? content.status;
-  return content['org.agentteams.streaming'] === true
+  // MSC4357 live marker: openclaw rewrites one event once per second and drops
+  // the marker on the final revision. The absence of the marker is the only
+  // deterministic "stream finished" signal it sends, so it must participate in
+  // streaming state instead of relying on a non-existent status field.
+  const live = content['org.matrix.msc4357.live'];
+  return (live !== undefined && live !== null)
+    || content['org.agentteams.streaming'] === true
     || content['m.streaming'] === true
     || content.streaming === true
     || status === 'streaming'
@@ -779,6 +930,83 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
 }
 
 /**
+ * Long answers can arrive as several messages: the first block is streamed
+ * into the placeholder via m.replace, then the remaining blocks are sent as
+ * fresh top-level messages. Without folding them back the answer visually
+ * breaks into disconnected bubbles the moment streaming ends. Each trailing
+ * fragment arrives right after the edited answer, so a short gap plus the
+ * edited-predecessor check separates it from a genuinely new agent turn.
+ */
+const ANSWER_FRAGMENT_MAX_GAP_MS = 10_000;
+
+function isPlainAgentText(message: DisplayMessage): boolean {
+  if (message.isMe || message.type !== 'm.text') return false;
+  if (message.mediaUrl || (message.fileRefs?.length ?? 0) > 0) return false;
+  if (message.workflow || (message.agentBlocks?.length ?? 0) > 0) return false;
+  const content = message.rawContent ?? {};
+  return !content['agentteams.workflow']
+    && !content['org.agentteams.run']
+    && !content['com.agentteams.long_message'];
+}
+
+function joinText(head: string, tail: string): string {
+  const a = head.trimEnd();
+  const b = tail.trimStart();
+  if (!a) return b;
+  if (!b) return a;
+  return `${a}\n\n${b}`;
+}
+
+function joinOptionalText(head: string | undefined, tail: string | undefined): string | undefined {
+  if (!head) return tail;
+  if (!tail) return head;
+  return joinText(head, tail);
+}
+
+function canAppendAnswerFragment(head: DisplayMessage, fragment: DisplayMessage): boolean {
+  // Only an already-edited answer (the streamed first block) absorbs tail
+  // blocks; a fresh message after a non-streamed answer is a new turn.
+  if ((head.revisionCount ?? 0) === 0) return false;
+  // A fragment that was itself revised is another streamed answer, not a tail.
+  if ((fragment.revisionCount ?? 0) > 0) return false;
+  if (head.sender !== fragment.sender) return false;
+  if (head.threadId !== fragment.threadId) return false;
+  if (fragment.replyToEventId) return false;
+  if (fragment.timestamp - head.timestamp > ANSWER_FRAGMENT_MAX_GAP_MS) return false;
+  return isPlainAgentText(head) && isPlainAgentText(fragment);
+}
+
+function appendAnswerFragment(head: DisplayMessage, fragment: DisplayMessage): DisplayMessage {
+  const headText = head.content.trimEnd();
+  const tailText = fragment.content.trim();
+  const timestamp = Math.max(head.timestamp, fragment.timestamp);
+  // Some managers repeat the last block verbatim before finalising; keep the
+  // first copy instead of showing it twice.
+  if (tailText && headText.endsWith(tailText)) {
+    return { ...head, timestamp };
+  }
+  return {
+    ...head,
+    content: joinText(head.content, fragment.content),
+    formattedContent: joinOptionalText(head.formattedContent, fragment.formattedContent),
+    timestamp,
+  };
+}
+
+export function mergeAnswerFragments(messages: DisplayMessage[]): DisplayMessage[] {
+  const merged: DisplayMessage[] = [];
+  for (const message of messages) {
+    const head = merged[merged.length - 1];
+    if (head && canAppendAnswerFragment(head, message)) {
+      merged[merged.length - 1] = appendAnswerFragment(head, message);
+    } else {
+      merged.push(message);
+    }
+  }
+  return merged;
+}
+
+/**
  * Collapses Matrix message revisions into their root event. Agent revisions
  * are sorted by the edit time so the final answer lands after the run's
  * process messages; human edits keep the original position.
@@ -787,10 +1015,15 @@ export function isMatrixAgentStatus(content: MatrixEvent['content']): string | u
  * on demand by the thread panel. Keeping them out of the main timeline
  * prevents runtime replies from appearing as duplicate top-level messages.
  */
-export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string): DisplayMessage[] {
+export function formatMatrixEvents(
+  events: MatrixEvent[],
+  currentUserId: string,
+  { includeThreadReplies = false } = {},
+): DisplayMessage[] {
   const messages = new Map<string, DisplayMessage>();
   const pendingRevisions = new Map<string, { message: DisplayMessage; count: number }>();
   const replyCounts = new Map<string, number>();
+  const orphanReplies = new Map<string, DisplayMessage[]>();
 
   // Collect target ids of redaction events so deleted messages are dropped.
   const redactedIds = new Set<string>();
@@ -804,6 +1037,7 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
   for (const event of [...events].sort((a, b) => a.origin_server_ts - b.origin_server_ts)) {
     if (redactedIds.has(event.event_id)) continue;
     if (event.type === 'm.room.redaction') continue;
+    if (isAssistantControlEvent(event)) continue;
 
     const formatted = formatMatrixEvent(event, currentUserId);
     if (!formatted) continue;
@@ -825,10 +1059,21 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
         // (thinking / tool calls) arrive in between. Sorting the revised root
         // by the edit time places the final answer after those messages.
         // Human edits (typo fixes) keep the original position.
+        //
+        // Receipt policy: the root stays the reply anchor (`canonicalEventId`)
+        // while the edit event is the latest raw event (`latestEventId`).
+        // m.fully_read must point at the edit, otherwise the server still
+        // considers the replacement unread.
+        const editIds = [...(root.sourceEventIds ?? [root.eventId ?? rootId]), event.event_id];
         messages.set(rootId, {
           ...formatted,
           id: rootId,
+          rawContent: { ...formatted.rawContent, [READ_AUDIENCE_KEY]: root.rawContent?.[READ_AUDIENCE_KEY] },
           eventId: rootId,
+          replyToEventId: root.replyToEventId,
+          canonicalEventId: rootId,
+          latestEventId: event.event_id,
+          sourceEventIds: [...new Set(editIds.filter((id): id is string => Boolean(id)))],
           timestamp: root.isMe ? root.timestamp : Math.max(root.timestamp, formatted.timestamp),
           isEdited: true,
           revisionCount: (root.revisionCount ?? 0) + 1,
@@ -836,7 +1081,15 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       } else {
         const pending = pendingRevisions.get(rootId);
         pendingRevisions.set(rootId, {
-          message: formatted,
+          message: {
+            ...formatted,
+            canonicalEventId: rootId,
+            latestEventId: event.event_id,
+            sourceEventIds: [...new Set([
+              ...(pending?.message.sourceEventIds ?? []),
+              event.event_id,
+            ])],
+          },
           count: (pending?.count ?? 0) + 1,
         });
       }
@@ -853,10 +1106,21 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     // 2. When the root is the current user's message and the reply is from an
     //    agent — the agent's final answer should stay in the main timeline,
     //    not be hidden in a sub-thread.
-    if (formatted.isThreadReply && formatted.threadId) {
+    if (!includeThreadReplies && formatted.isThreadReply && formatted.threadId) {
       const rootMessage = messages.get(formatted.threadId);
-      const isUserRoot = rootMessage?.sender === currentUserId;
-      if (!rootMessage || (rootMessage.sender !== formatted.sender && !isUserRoot)) {
+      if (!rootMessage) {
+        // The root is outside the loaded window (pagination / sync gap). The
+        // reply still carries content the user may need (often the only
+        // answer a runtime produced), so keep it as a detached thread turn
+        // instead of counting it into a thread that can never be opened.
+        const orphan = orphanReplies.get(formatted.threadId) ?? [];
+        orphan.push(formatted);
+        orphanReplies.set(formatted.threadId, orphan);
+        replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
+        continue;
+      }
+      const isUserRoot = rootMessage.sender === currentUserId;
+      if (rootMessage.sender !== formatted.sender && !isUserRoot) {
         replyCounts.set(formatted.threadId, (replyCounts.get(formatted.threadId) ?? 0) + 1);
         continue;
       }
@@ -869,7 +1133,9 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
         ? {
             ...revision.message,
             id: event.event_id,
+            rawContent: { ...revision.message.rawContent, [READ_AUDIENCE_KEY]: formatted.rawContent?.[READ_AUDIENCE_KEY] },
             eventId: event.event_id,
+            replyToEventId: formatted.replyToEventId,
             revisionCount: revision.count,
             // Same policy as the in-place merge above: agent answers sort at
             // the edit time, human edits stay at the original position.
@@ -885,8 +1151,57 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
       ...revision.message,
       id: rootId,
       eventId: rootId,
+      canonicalEventId: rootId,
       isEdited: true,
       revisionCount: revision.count,
+    });
+  }
+
+  // Missing thread roots: project the replies as one detached turn anchored on
+  // the thread root id so the thread panel can still request its relations.
+  for (const [rootId, replies] of orphanReplies) {
+    // A revision can recover the root without its placeholder being loaded.
+    // Keep that final answer, applying the normal thread rules to the replies.
+    const recoveredRoot = messages.get(rootId);
+    if (recoveredRoot) {
+      let inlineCount = 0;
+      for (const reply of replies) {
+        if (reply.sender === recoveredRoot.sender || recoveredRoot.sender === currentUserId) {
+          messages.set(reply.id, reply);
+          inlineCount++;
+        }
+      }
+      const count = (replyCounts.get(rootId) ?? 0) - inlineCount;
+      if (count > 0) replyCounts.set(rootId, count);
+      else replyCounts.delete(rootId);
+      continue;
+    }
+    const first = replies[0];
+    const last = replies[replies.length - 1];
+    const sourceEventIds = [...new Set(
+      [
+        rootId,
+        ...replies.flatMap((reply) => [reply.id, reply.eventId, ...(reply.sourceEventIds ?? [])]),
+      ].filter((id): id is string => Boolean(id)),
+    )];
+    messages.set(rootId, {
+      ...first,
+      id: rootId,
+      eventId: first.eventId ?? first.id,
+      canonicalEventId: rootId,
+      latestEventId: last.eventId ?? last.id,
+      sourceEventIds,
+      content: replies.map((reply) => reply.content).filter(Boolean).join('\n\n'),
+      formattedContent: replies.length === 1 ? first.formattedContent : undefined,
+      timestamp: last.timestamp,
+      isStreaming: replies.some((reply) => reply.isStreaming),
+      detached: true,
+      // ChatIR owns the turn; the legacy grouper must not re-fold it.
+      turnId: rootId,
+      threadId: rootId,
+      isThreadReply: false,
+      replyCount: replies.length,
+      revisionCount: undefined,
     });
   }
 
@@ -896,5 +1211,5 @@ export function formatMatrixEvents(events: MatrixEvent[], currentUserId: string)
     if (count) message.replyCount = count;
   }
 
-  return result.sort((a, b) => a.timestamp - b.timestamp);
+  return mergeAnswerFragments(result.sort((a, b) => a.timestamp - b.timestamp));
 }

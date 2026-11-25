@@ -54,6 +54,7 @@ export function ToolCallView({
   runtime,
   eventId,
   revisionCount,
+  embedded,
 }: {
   payload: ToolCallPayload;
   /** Runtime that produced this tool call (drives the corner badge). */
@@ -62,9 +63,11 @@ export function ToolCallView({
   eventId?: string;
   /** Number of m.replace revisions merged into the message. */
   revisionCount?: number;
+  /** Rendered as a step inside the run-process disclosure. */
+  embedded?: boolean;
 }) {
   const renderer = resolveToolCallRenderer(payload);
-  const props: ToolRendererProps = { payload, runtime, eventId, revisionCount };
+  const props: ToolRendererProps = { payload, runtime, eventId, revisionCount, embedded };
   if (renderer === ReadFileToolCall) return <ReadFileToolCall {...props} />;
   if (renderer === WriteFileToolCall) return <WriteFileToolCall {...props} />;
   if (renderer === ApplyPatchToolCall) return <ApplyPatchToolCall {...props} />;

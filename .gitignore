@@ -19,9 +19,13 @@ node_modules
 # next.js
 /.next/
 /out/
+/public/document-preview/
 
 # production
 /build
+
+# Downloaded speech model and matching WASM runtime (npm run prepare:speech)
+/public/speech/
 
 # misc
 .DS_Store
@@ -70,3 +74,6 @@ server.log
 dist/
 
 DASH_QUEUE_TODO.md
+
+# Avatar packs installed for the local deployment
+/public/avatars/local/

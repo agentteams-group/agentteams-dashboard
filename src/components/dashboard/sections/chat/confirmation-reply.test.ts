@@ -1,11 +1,46 @@
 import { describe, expect, it } from 'vitest';
 import { isHitlResolutionReply } from '@/lib/hitl-inbox';
-import { buildConfirmationReply } from './confirmation-reply';
+import {
+  ANSWER_CONTENT_KEY,
+  buildAnswerContent,
+  buildConfirmationReply,
+  interactionActivity,
+} from './confirmation-reply';
 
 const WORKER = '@ceshi:matrix-local.agentteams.io:18080';
 const WORKER_2 = '@other:matrix-local.agentteams.io:18080';
 
+describe('interaction activity presentation', () => {
+  it('shows decisions without leaking transport syntax and preserves ordinary prose', () => {
+    expect(interactionActivity('/approve 0 thread:turn', undefined, true)).toBe('已提交批准');
+    expect(interactionActivity('@worker /approval deny req-1', undefined, true)).toBe('已提交拒绝');
+    expect(interactionActivity('请解释 /approve 0', undefined, true)).toBeUndefined();
+    expect(interactionActivity('/approve 0', undefined, false)).toBeUndefined();
+  });
+  it('distinguishes a submitted choice from an authoritative receipt', () => {
+    expect(interactionActivity('/approve req-1', { [ANSWER_CONTENT_KEY]: { confirmation_id: 'req-1', answer: 'approved' } }, true)).toBe('已提交批准');
+    expect(interactionActivity('raw', { 'org.agentteams.approval': { version: 1, runtime: 'qwenpaw', request_id: 'req-1', status: 'approved' } })).toBe('Agent 已确认批准');
+    expect(interactionActivity('raw', { [ANSWER_CONTENT_KEY]: { confirmation_id: 'choice-1', answer: '【干预答复】\nA1：先运行测试' } }, true)).toBe('已提交选择：先运行测试');
+  });
+});
+
 describe('buildConfirmationReply', () => {
+  it('routes contextual approval feedback to the original owner instead of another projected worker', () => {
+    const reply = buildConfirmationReply('【审批意见】\n审批意见：拒绝本次操作', WORKER_2, [WORKER]);
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+    expect(reply.content).toContain('审批意见：拒绝本次操作');
+  });
+  it('targets a native approval owner when a task room has no Worker projection', () => {
+    const reply = buildConfirmationReply('/approval approve req-1', WORKER_2, undefined);
+    expect(reply.content).toBe('@other /approval approve req-1');
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+  });
+
+  it('never routes a native decision to another projected Worker', () => {
+    const reply = buildConfirmationReply('/approval deny req-1', WORKER_2, [WORKER]);
+    expect(reply.mentions?.[0].userId).toBe(WORKER_2);
+  });
+
   it('Worker 房间默认 @ 发起卡片的 Agent', () => {
     const reply = buildConfirmationReply('1A / 2A', WORKER, [WORKER]);
     expect(reply.content).toBe('@ceshi 1A / 2A');
@@ -41,5 +76,30 @@ describe('buildConfirmationReply', () => {
 
     const answered = buildConfirmationReply('【干预答复】\nA1：落地页', WORKER, [WORKER]);
     expect(isHitlResolutionReply(answered.content)).toBe(true);
+  });
+});
+
+describe('buildAnswerContent（方案 v3 C-3 结构化回写）', () => {
+  it('带上 confirmation_id / answer / actor，可直接并进消息 content', () => {
+    const extra = buildAnswerContent({
+      confirmation_id: 'iv-1',
+      answer: '【干预答复】\nA1：按模块',
+      actor: WORKER,
+      tool_name: 'ask_human',
+    });
+    expect(extra).toEqual({
+      [ANSWER_CONTENT_KEY]: {
+        confirmation_id: 'iv-1',
+        answer: '【干预答复】\nA1：按模块',
+        actor: WORKER,
+        tool_name: 'ask_human',
+      },
+    });
+  });
+
+  it('没有卡片 id 时整个字段省略：不带字段胜过带一个对不上号的 id', () => {
+    expect(buildAnswerContent(undefined)).toBeUndefined();
+    expect(buildAnswerContent({ confirmation_id: '', answer: 'x' })).toBeUndefined();
+    expect(buildAnswerContent({ confirmation_id: '   ', answer: 'x' })).toBeUndefined();
   });
 });

@@ -1,17 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { WorkerEnvEditor } from './worker-env-editor';
 import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { WorkerHeartbeatControl } from './worker-heartbeat-control';
+import { WorkerRuntimeHandoff, type WorkerRuntimeHandoffHandle } from './worker-runtime-handoff';
 import {
   Dialog,
   DialogContent,
@@ -20,13 +15,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { UpdateWorkerRequest, WorkerRuntime } from '@/lib/agentteams-api';
-import type { ModelSelectionOption } from '@/lib/model-catalog';
-import { ModelSelector } from '@/components/dashboard/sections/shared/model-selector';
+import type { UpdateWorkerRequest } from '@/lib/agentteams-api';
+import {
+  buildModelCandidateCatalog,
+  type ModelSelectionOption,
+} from '@/lib/model-catalog';
+import { ModelPicker } from '@/components/dashboard/sections/shared/model-picker';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
-import { CREATABLE_WORKER_RUNTIMES, isLegacyCopaw } from '@/lib/runtime-options';
+import { isLegacyCopaw } from '@/lib/runtime-options';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -41,8 +39,10 @@ export function WorkerEditDialog({
   onOpenChange,
   onSubmit,
   modelOptions,
+  modelProvider,
   sessionIssue,
   envEditable = false,
+  basicOnly = false,
 
 }: {
   open: boolean;
@@ -53,13 +53,48 @@ export function WorkerEditDialog({
   onOpenChange: (_open: boolean) => void;
   onSubmit: () => void;
   modelOptions: ModelSelectionOption[];
+  /** 控制器现值（未改不写回；只在表单里出现真变化的值）。 */
+  modelProvider?: string;
   sessionIssue?: string | null;
   envEditable?: boolean;
+  basicOnly?: boolean;
 
 }) {
   const [envValid, setEnvValid] = useState(true);
+  const runtimeHandoff = useRef<WorkerRuntimeHandoffHandle>(null);
+  const [savingRuntime, setSavingRuntime] = useState(false);
+  const initialProvider = (modelProvider ?? '').trim();
+  const [provider, setProvider] = useState(initialProvider);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setProvider(initialProvider);
+  }
+  const modelCatalog = buildModelCandidateCatalog(modelOptions ?? []);
+  const currentRuntime = value.runtime || '';
+  const handleModelChange = (nextProvider: string, nextModel: string) => {
+    const trimmed = nextProvider.trim();
+    setProvider(nextProvider);
+    const next: WorkerEditForm = { ...value, model: nextModel };
+    // provider 真变化且非空才带；未改（或改回原值）= 不下发，沿用控制器现值。
+    if (trimmed && trimmed !== initialProvider) next.modelProvider = trimmed;
+    else delete next.modelProvider;
+    onChange(next);
+  };
+  const handleSubmit = () => {
+    if (isPending || savingRuntime) return;
+    const pending = runtimeHandoff.current?.submit();
+    if (!pending) {
+      onSubmit();
+      return;
+    }
+    setSavingRuntime(true);
+    void pending.then((success) => {
+      if (success) onSubmit();
+    }).finally(() => setSavingRuntime(false));
+  };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!savingRuntime) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑 Worker - {workerName}</DialogTitle>
@@ -72,49 +107,31 @@ export function WorkerEditDialog({
                 Worker 通过 AI 网关访问模型。已配置别名仅表示存在模型映射，请运行「已保存配置的网关验证」确认授权与调用。
               </InfoTip>
             </div>
-            <ModelSelector
-              value={value.model}
-              onChange={(model) => onChange({ ...value, model })}
-              placeholder="例如 team-chat"
-              options={modelOptions}
-              sessionIssue={sessionIssue}
+            <ModelPicker
+              providers={modelCatalog.providers}
+              provider={provider}
+              model={value.model ?? ''}
+              modelsByProvider={modelCatalog.modelsByProvider}
+              allModels={modelCatalog.models}
+              modelPlaceholder="例如 team-chat"
+              providerPlaceholder="选择或输入 Provider"
+              onChange={handleModelChange}
             />
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-1">
-              <Label>运行时</Label>
-              {isLegacyCopaw(value.runtime) && (
-                <InfoTip label="CoPaw 升级说明">
-                  将运行时改为 QwenPaw 后保存即可升级；升级前请备份持久化数据，并避免在任务执行中切换。
-                </InfoTip>
-              )}
-            </div>
-            <Select
-              value={value.runtime || ''}
-              onValueChange={(v) => onChange({ ...value, runtime: v as WorkerRuntime })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {isLegacyCopaw(value.runtime) && (
-                  <SelectItem value="copaw" disabled>
-                    CoPaw（存量，请升级到 QwenPaw）
-                  </SelectItem>
-                )}
-                {CREATABLE_WORKER_RUNTIMES.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {isLegacyCopaw(value.runtime) && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                CoPaw 已停止新建，保存后升级到 QwenPaw。
+            {sessionIssue ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600 break-words">
+                模型别名组暂不可用：{sessionIssue}。内置模型与自定义输入仍可使用。
               </p>
-            )}
+            ) : null}
           </div>
+          {open && workerName && <WorkerRuntimeHandoff ref={runtimeHandoff} key={workerName} name={workerName} runtime={currentRuntime} />}
+          {isLegacyCopaw(currentRuntime) && <p className="text-xs text-muted-foreground">CoPaw 已停止新建，可选择 QwenPaw 作为目标运行时。</p>}
+          {!basicOnly && currentRuntime === 'openclaw' ? (
+            <WorkerHeartbeatControl
+              enabled={value.llmHeartbeatEnabled}
+              disabled={isPending || !envEditable}
+              onCheckedChange={(checked) => onChange({ ...value, llmHeartbeatEnabled: checked })}
+            />
+          ) : null}
           <div className="space-y-2">
             <Label>镜像</Label>
             <Input
@@ -123,11 +140,12 @@ export function WorkerEditDialog({
               placeholder="容器镜像地址（可选）"
             />
           </div>
+          {!basicOnly && <>
           <div className="space-y-2">
             <Label>技能</Label>
             <SkillSelector
               value={value.skills || []}
-              onChange={(skills) => onChange({ ...value, skills: skills.length ? skills : undefined })}
+              onChange={(skills) => onChange({ ...value, skills })}
             />
           </div>
           <div className="space-y-2">
@@ -150,17 +168,17 @@ export function WorkerEditDialog({
             {envEditable ? <WorkerEnvEditor key={workerName} value={value.env || {}} onChange={(env) => onChange({ ...value, env })} onValidityChange={setEnvValid} /> : <p className="text-xs text-muted-foreground">需要管理员权限及支持环境变量编辑的 Controller。</p>}
           </div>
           {workerName && <WorkerGatewayProbe key={workerName} workerName={workerName} />}
+          </>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={savingRuntime} onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
-            onClick={onSubmit}
-            disabled={isPending || !envValid}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
+            onClick={handleSubmit}
+            disabled={isPending || savingRuntime || !envValid}
           >
-            {isPending ? '保存中...' : '保存'}
+            {isPending || savingRuntime ? '保存中...' : '保存'}
           </Button>
         </DialogFooter>
       </DialogContent>

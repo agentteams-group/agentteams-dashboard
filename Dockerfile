@@ -31,6 +31,8 @@ RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
 # NOTE: If Docker bridge DNS is broken, build with --network=host to use host networking.
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 COPY package.json package-lock.json ./
+# Voice transcription runs in browser WASM; native CPU libraries are bundled by npm.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 RUN npm config set registry "${NPM_REGISTRY}" && \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
@@ -40,6 +42,8 @@ RUN npm config set registry "${NPM_REGISTRY}" && \
 # the build falls back to git sha, unavailable in the docker context.
 ARG DASHBOARD_BUILD_ID=
 ENV DASHBOARD_BUILD_ID=${DASHBOARD_BUILD_ID}
+ARG SPEECH_MODEL_DOWNLOAD_BASE_URL=
+ENV SPEECH_MODEL_DOWNLOAD_BASE_URL=${SPEECH_MODEL_DOWNLOAD_BASE_URL}
 COPY . .
 RUN npm run build
 
@@ -48,6 +52,9 @@ RUN npm run build
 # ============================================================
 FROM node:22-alpine AS runner
 WORKDIR /app
+
+ARG NEXT_PUBLIC_BASE_PATH=
+LABEL io.agentteams.dashboard-base-path=${NEXT_PUBLIC_BASE_PATH}
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -61,8 +68,8 @@ RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
 # Create non-root user and persistent data directory
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
-    mkdir -p /app/db && \
-    chown -R nextjs:nodejs /app
+    mkdir -p /app/db /data/agentteams-dashboard && \
+    chown -R nextjs:nodejs /app /data/agentteams-dashboard
 
 # Copy standalone output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

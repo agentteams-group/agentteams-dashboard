@@ -39,20 +39,48 @@ const options = [
   { alias: 'deepseek-chat', kind: 'builtin' as const },
 ];
 
+function ensureResizeObserver() {
+  if (!('ResizeObserver' in window)) {
+    Object.defineProperty(window, 'ResizeObserver', {
+      value: ResizeObserverStub,
+      configurable: true,
+    });
+  }
+}
+
 describe('ModelSelector', () => {
   afterEach(cleanup);
 
-  it('preserves an existing model value as a request model alias', () => {
-    render(<TooltipProvider><ModelSelector value="legacy-provider" onChange={vi.fn()} /></TooltipProvider>);
+  it('keeps an unknown current value in the select trigger and still lists candidates', () => {
+    ensureResizeObserver();
+    render(
+      <TooltipProvider>
+        <ModelSelector value="legacy-provider" onChange={vi.fn()} options={options} />
+      </TooltipProvider>,
+    );
 
-    expect((screen.getByLabelText('请求模型别名') as HTMLInputElement).value).toBe('legacy-provider');
-    expect(screen.getByLabelText('自定义请求模型别名说明')).toBeTruthy();
-    expect(screen.queryByText(/将由通配符路由或服务端绑定校验处理/)).toBeNull();
+    // 未知当前值不再自动切成输入框；Select 仍在，trigger 显示当前值。
+    const trigger = screen.getByLabelText('请求模型别名');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(trigger.textContent).toContain('legacy-provider');
+    expect(screen.queryByText(/不在候选列表/)).toBeTruthy();
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('option', { name: /team-chat/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^deepseek-chat/ })).toBeTruthy();
   });
 
   it('forwards the entered custom request model alias unchanged', () => {
+    ensureResizeObserver();
     const onChange = vi.fn();
-    render(<TooltipProvider><ModelSelector value="legacy-provider" onChange={onChange} /></TooltipProvider>);
+    render(
+      <TooltipProvider>
+        <ModelSelector value="" onChange={onChange} options={options} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText('请求模型别名'));
+    fireEvent.click(screen.getByRole('option', { name: /自定义别名/ }));
 
     fireEvent.change(screen.getByLabelText('请求模型别名'), {
       target: { value: 'team-chat' },
@@ -102,25 +130,38 @@ describe('ModelSelector', () => {
     expect(onChange).toHaveBeenCalledWith('my-custom-alias');
   });
 
-  it('exits custom alias mode back to the model list', () => {
-    if (!('ResizeObserver' in window)) {
-      Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, configurable: true });
-    }
+  it('exits custom alias input back to the model list', () => {
+    ensureResizeObserver();
     function Controlled() {
       const [value, setValue] = useState('my-unknown-alias');
       return <TooltipProvider><ModelSelector value={value} onChange={setValue} options={options} /></TooltipProvider>;
     }
     render(<Controlled />);
 
-    // Unknown alias value puts the component in custom input mode.
-    expect((screen.getByLabelText('请求模型别名') as HTMLInputElement).value).toBe('my-unknown-alias');
+    // Unknown value stays on the Select; custom input only after explicit choice.
+    expect(screen.getByLabelText('请求模型别名').textContent).toContain('my-unknown-alias');
+    fireEvent.click(screen.getByLabelText('请求模型别名'));
+    fireEvent.click(screen.getByRole('option', { name: /自定义别名/ }));
 
+    const input = screen.getByLabelText('请求模型别名') as HTMLInputElement;
+    expect(input.value).toBe('');
+    fireEvent.change(input, { target: { value: 'my-unknown-alias' } });
     fireEvent.click(screen.getByRole('button', { name: '从列表选择' }));
 
     // Back to the dropdown: the text input is gone, the Select trigger is shown.
     expect(screen.queryByRole('textbox')).toBeNull();
     fireEvent.click(screen.getByRole('combobox'));
     expect(screen.getByRole('option', { name: /team-chat/ })).toBeTruthy();
+  });
+
+  it('renders the select with a no-candidate note when options are empty', () => {
+    ensureResizeObserver();
+    render(<ModelSelector value="" onChange={vi.fn()} options={[]} />);
+
+    expect(screen.getByRole('combobox')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('请求模型别名'));
+    expect(screen.getByRole('option', { name: /自定义别名/ })).toBeTruthy();
+    expect(screen.getByText(/暂无可选模型别名/)).toBeTruthy();
   });
 
   it('marks a SGLang serving model with its source badge and hint', () => {

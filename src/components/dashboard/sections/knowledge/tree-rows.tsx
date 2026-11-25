@@ -7,7 +7,7 @@ import type { TreeEntry } from './types';
 
 export function GroupLabel({ text }: { text: string }) {
   return (
-    <p className="px-1.5 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <p className="px-1.5 pt-1.5 pb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
       {text}
     </p>
   );

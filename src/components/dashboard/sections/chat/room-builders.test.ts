@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import type { HumanResponse, ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
+import type { WorkflowResponse } from '@/lib/agentteams-projects-api';
 import {
   buildRooms,
   extractMessagePreview,
@@ -74,7 +75,38 @@ const human = (overrides: Partial<HumanResponse> = {}): HumanResponse => ({
   ...overrides,
 });
 
+const workflow = (overrides: Partial<WorkflowResponse> = {}): WorkflowResponse => ({
+  project_id: 'project-1',
+  title: '网站改版',
+  status: 'active',
+  nodes: [],
+  edges: [],
+  next: [],
+  interrupts: [],
+  ...overrides,
+});
+
 describe('buildRooms', () => {
+  it('builds the Team Leader DM without access to the global managers list', () => {
+    const rooms = buildRooms([], [team({ name: 'design', teamName: '设计团队', leaderName: 'design-leader', leaderDMRoomID: '!leader:test' })], undefined);
+    expect(rooms.find((room) => room.id === '!leader:test')).toMatchObject({
+      type: 'manager', agentRole: 'leader', parentTeam: 'design', name: '设计团队助手',
+    });
+  });
+
+  it('keeps leader DM unique when the Manager resource references the same conversation', () => {
+    const rooms = buildRooms([], [team({ leaderName: 'm1', leaderDMRoomID: '!leader:test' })], [manager({ leaderDMRoomID: '!leader:test' })]);
+    expect(rooms.filter((room) => room.id === '!leader:test')).toHaveLength(1);
+    expect(rooms.find((room) => room.id === '!leader:test')?.agentRole).toBe('leader');
+  });
+
+  it('resolves a Worker-based Leader identity for mentions, activity and workspace files', () => {
+    const rooms = buildRooms([worker({ name: 'leader', matrixUserID: '@leader:test', runtime: 'qwenpaw' })], [team({ leaderName: 'leader', leaderDMRoomID: '!leader:test' })], undefined);
+    expect(rooms.find((room) => room.id === '!leader:test')).toMatchObject({
+      workerName: 'leader', matrixUserId: '@leader:test', workerMatrixUserIds: ['@leader:test'], runtime: 'qwenpaw',
+    });
+  });
+
   it('returns empty when no data', () => {
     expect(buildRooms(undefined, undefined, undefined)).toEqual([]);
   });
@@ -104,6 +136,15 @@ describe('buildRooms', () => {
     expect(rooms[0].phase).toBe('Running');
   });
 
+  it('uses the identity display name for Worker chats and keeps their original identifiers', () => {
+    const first = worker({ identity: '- **Name:** 月见·研究助手' });
+    const second = worker({ name: 'w2', roomID: '!w2:matrix' });
+    const meta = { [first.roomID]: { roomName: 'w1 房间' }, [second.roomID]: { roomName: 'Existing Matrix room' } };
+    const rooms = buildRooms([first, second], undefined, undefined, meta);
+    expect(rooms[0]).toMatchObject({ name: '月见·研究助手', id: first.roomID, workerName: first.name, matrixUserId: first.matrixUserID });
+    expect(rooms[1]?.name).toBe('Existing Matrix room');
+  });
+
   it('copies lastMessagePreview from room meta', () => {
     const rooms = buildRooms(
       [worker({ roomID: '!w:matrix' })],
@@ -124,7 +165,15 @@ describe('buildRooms', () => {
     const rooms = buildRooms(undefined, undefined, [manager({ name: 'm1' })]);
     expect(rooms).toHaveLength(1);
     expect(rooms[0].type).toBe('manager');
-    expect(rooms[0].name).toBe('Manager: m1');
+    expect(rooms[0].name).toBe('AT助手');
+  });
+
+  it('distinguishes named platform assistants when multiple Managers exist', () => {
+    const rooms = buildRooms([], [], [
+      manager({ name: 'default', roomID: '!default:matrix' }),
+      manager({ name: 'second', roomID: '!second:matrix' }),
+    ]);
+    expect(rooms.map(room => room.name)).toEqual(['AT助手 · default', 'AT助手 · second']);
   });
 
   it('gives manager rooms a workerName so the files sidebar opens the manager workspace (#87)', () => {
@@ -138,7 +187,7 @@ describe('buildRooms', () => {
       manager({ name: 'default', roomID: '!admin-dm:matrix', leaderDMRoomID: '!leader-dm:matrix' }),
     ]);
     expect(rooms.map((r) => r.id)).toEqual(['!admin-dm:matrix', '!leader-dm:matrix']);
-    expect(rooms.map((r) => r.name)).toEqual(['Manager: default', 'default 对话']);
+    expect(rooms.map((r) => r.name)).toEqual(['AT助手', 'default 对话']);
     expect(rooms.every((r) => r.type === 'manager')).toBe(true);
   });
 
@@ -150,14 +199,14 @@ describe('buildRooms', () => {
     expect(rooms[0].id).toBe('!same:matrix');
   });
 
-  it('prefers Matrix roomName for manager rooms when sync meta is present', () => {
+  it('keeps the platform assistant name consistent with the header', () => {
     const rooms = buildRooms(
       undefined,
       undefined,
       [manager({ name: 'default', roomID: '!sv0d:matrix' })],
       { '!sv0d:matrix': { roomName: 'Manager: default' } },
     );
-    expect(rooms[0].name).toBe('Manager: default');
+    expect(rooms[0].name).toBe('AT助手');
   });
 
   it('builds human rooms from human.rooms', () => {
@@ -216,6 +265,89 @@ describe('buildRooms', () => {
     expect(rooms.filter((r) => r.id === '!w1:matrix')).toHaveLength(1);
     expect(rooms[0].type).toBe('worker');
     expect(rooms[0].name).toBe('w1 房间');
+  });
+
+  it('adds a project room from a workflow source_room_id without any Matrix room meta', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix', team_id: 'design' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({
+      id: '!proj:matrix',
+      name: '网站改版',
+      type: 'project',
+      members: [],
+      parentTeam: 'design',
+      projectId: 'project-1',
+      teamId: 'design',
+    });
+  });
+
+  it('projects actual task execution rooms even when the origin is an external conversation', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: 'dingtalk-session', tasks_detail: [
+        { task_id: 'task-1', room_id: '!execution:matrix' },
+        { task_id: 'task-2', room_id: '!execution:matrix' },
+        { task_id: 'task-3', room_id: '!another:matrix' },
+      ] }),
+    ]);
+    expect(rooms.map(room => room.id)).toEqual(['!execution:matrix', '!another:matrix']);
+    expect(rooms[0]).toMatchObject({ type: 'project', projectId: 'project-1' });
+  });
+
+  it('falls back to 项目 <id> when the workflow has no title', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix', title: '', project_id: 'p-42' }),
+    ]);
+    expect(rooms[0].name).toBe('项目 p-42');
+  });
+
+  it('keeps Matrix roomName over the workflow title and enriches meta', () => {
+    const rooms = buildRooms(
+      undefined,
+      undefined,
+      undefined,
+      { '!proj:matrix': { roomName: '项目群 · 设计', lastMessageTs: 123, unreadCount: 2 } },
+      undefined,
+      [workflow({ source_room_id: '!proj:matrix' })],
+    );
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({
+      id: '!proj:matrix',
+      name: '项目群 · 设计',
+      type: 'project',
+      lastMessageTs: 123,
+      unreadCount: 2,
+    });
+  });
+
+  it('dedupes workflows sharing the same source_room_id and skips empty ones', () => {
+    const rooms = buildRooms(undefined, undefined, undefined, undefined, undefined, [
+      workflow({ source_room_id: '!proj:matrix' }),
+      workflow({ project_id: 'project-2', title: '二期', source_room_id: '!proj:matrix' }),
+      workflow({ project_id: 'project-3', title: '无房间' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({ id: '!proj:matrix', name: '网站改版' });
+  });
+
+  it('never overwrites real team, worker or manager rooms with a workflow room', () => {
+    const rooms = buildRooms(
+      [worker({ roomID: '!w:matrix' })],
+      [team({ name: 'alpha', teamRoomID: '!team:matrix' })],
+      [manager({ name: 'default', roomID: '!ops:matrix' })],
+      undefined,
+      undefined,
+      [
+        workflow({ source_room_id: '!team:matrix', title: 'Workflow Team' }),
+        workflow({ source_room_id: '!w:matrix', title: 'Workflow Worker' }),
+        workflow({ source_room_id: '!ops:matrix', title: 'Workflow Manager' }),
+      ],
+    );
+    expect(rooms.filter((r) => r.id === '!team:matrix')).toHaveLength(1);
+    expect(rooms.find((r) => r.id === '!team:matrix')).toMatchObject({ type: 'team', name: 'alpha 团队房间' });
+    expect(rooms.find((r) => r.id === '!w:matrix')).toMatchObject({ type: 'worker', name: 'w1 房间' });
+    expect(rooms.find((r) => r.id === '!ops:matrix')).toMatchObject({ type: 'manager', name: 'AT助手' });
   });
 });
 
@@ -363,6 +495,16 @@ describe('groupRoomsByType', () => {
       make({ id: 'w1', name: 'W1', type: 'worker' }),
     ];
     expect(groupRoomsByType(rooms)[0].rooms.map((r) => r.id)).toEqual(['w2', 'w1']);
+  });
+
+  it('groups project rooms right after teams under a 项目 label', () => {
+    const rooms = [
+      make({ id: 'p', name: 'P', type: 'project' }),
+      make({ id: 'w', name: 'W', type: 'worker' }),
+      make({ id: 't', name: 'T', type: 'team' }),
+    ];
+    expect(groupRoomsByType(rooms).map((g) => g.type)).toEqual(['team', 'project', 'worker']);
+    expect(groupRoomsByType(rooms).map((g) => g.label)).toEqual(['团队', '项目', 'Agent']);
   });
 });
 
