@@ -70,11 +70,15 @@ export function markStoppedMessages(messages: DisplayMessage[], events: MatrixEv
     } else {
       // Cancellation can precede the first response, or its root may be outside
       // the loaded page. Show an acknowledgement without marking another run.
-      result.push({ id: event.event_id, eventId: event.event_id, sender: event.sender,
+      const acknowledgement: DisplayMessage = { id: event.event_id, eventId: event.event_id, sender: event.sender,
         senderShort: event.sender.split(':')[0].slice(1), content: '', type: 'm.text',
         timestamp: event.origin_server_ts, isMe: false, turnState: 'stopped',
-        sourceEventIds: [event.event_id], runId: data.run_id });
+        sourceEventIds: [event.event_id], runId: data.run_id };
+      const next = result.findIndex(message => message.timestamp > event.origin_server_ts);
+      result.splice(next < 0 ? result.length : next, 0, acknowledgement);
     }
   }
-  return result.sort((a, b) => a.timestamp - b.timestamp);
+  // ChatIR already places each assembled turn at its original position.
+  // Its final edit time must not move that process behind its own handoff.
+  return result;
 }

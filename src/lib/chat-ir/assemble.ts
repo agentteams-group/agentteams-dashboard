@@ -222,7 +222,11 @@ function turnBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] | null {
   if (parseWorkflowNotice(message.content, message.runtime)) return null;
   const blocks = normalizeToBlocks(blockInput(message));
   if (blocks.length === 0) return null;
-  return blocks.every((block) => FOLDABLE_BLOCK_TYPES.has(block.type)) ? blocks : null;
+  return blocks.every((block) => FOLDABLE_BLOCK_TYPES.has(block.type) || isRunEnding(block)) ? blocks : null;
+}
+
+function isRunEnding(block: ParsedA2uiBlock): boolean {
+  return block.type === 'error' && ['quiet', 'failed', 'cancelled'].includes(String(block.payload?.kind));
 }
 
 function allBlocksOf(message: DisplayMessage): ParsedA2uiBlock[] {
@@ -493,6 +497,13 @@ export function assembleChatTimeline(
   // Suppress attachment relation events whose target is present: they render
   // inside the target step. Untargeted ones stay standalone (never drop).
   const visible = stamped.filter((message) => {
+    // Control events drive execution controls, not reasoning. Task rooms may
+    // not supply ChatRoom's optional worker id list; ownership is known here.
+    const execution = message.rawContent?.['com.agentteams.execution'] as Record<string, unknown> | undefined;
+    if (!message.isMe && message.workerName && message.type === 'm.notice'
+      && message.rawContent?.['org.agentteams.progress_only'] === true
+      && execution && typeof execution.run_id === 'string'
+      && ['running', 'stopping', 'stopped', 'completed', 'failed', 'unavailable'].includes(String(execution.status))) return false;
     const targetId = index.attachmentTargets.get(message.id);
     if (!targetId) return true;
     return !stamped.some((candidate) =>
@@ -577,9 +588,7 @@ export function assembleChatTimeline(
       && message.timestamp - lastTsOf(open) <= TOP_LEVEL_TURN_MAX_GAP_MS;
     if (!sameLane && !mediaInRun) {
       open = null;
-      // Sending another message or receiving a file can interrupt adjacency,
-      // but an explicitly identified turn still owns its replies.
-      if (!laneTurn && !message.isMe && !runMedia) explicitTurns.clear();
+      // Explicit thread/run ids retain ownership across interleaved messages.
     }
     placements.push({ kind: 'message', message });
   }
@@ -675,6 +684,8 @@ function projectTurn(
   const processBlocks: ParsedA2uiBlock[] = [];
   for (const entry of entries) {
     for (const block of entry.blocks) {
+      // A quiet ending closes the run without adding a receipt bubble.
+      if (isRunEnding(block) && block.payload?.kind === 'quiet') continue;
       if (block.type === 'text') {
         if (!block.text?.trim() || isAgentPlaceholderBody(block.text)) continue;
         if (entry === answer) continue;
@@ -689,6 +700,8 @@ function projectTurn(
     }
     processBlocks.push(...entry.attachments);
   }
+  if (!processBlocks.length && entries.some(entry => entry.blocks.some(block =>
+    isRunEnding(block) && block.payload?.kind === 'quiet'))) return { message: null, turn: null };
   if (answerText) {
     processBlocks.push({
       type: 'text',
@@ -724,7 +737,7 @@ function projectTurn(
   let state: ChatTurnState;
   if (detached) state = 'detached';
   else if (streaming) state = 'running';
-  else if (answerText || laneFinalized) state = 'finalized';
+  else if (answerText || laneFinalized || entries.some(entry => entry.blocks.some(isRunEnding))) state = 'finalized';
   else if (expired) state = 'interrupted';
   else state = 'pending';
 
