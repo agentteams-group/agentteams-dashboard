@@ -95,7 +95,13 @@ MCP servers get a governance surface, not just a list:
 - **Audit trail** — MCP config mutations flow through the Dashboard audit log with actor, level and timestamp (append-only JSONL).
 - **Credential hygiene** — upstream secrets (e.g. `Authorization` headers) are never echoed back to the browser; the selector projects transport names only.
 
-One-click install from the skill/MCP catalog and the governance story above make the Dashboard the control point for what every agent can reach. See [docs/INTERFACES.md](docs/INTERFACES.md) for the wire contracts.
+Under **资产中心 → 技能**, configure the Nacos registry, namespace and credentials. For Nacos 3.3 with ARD enabled, **发现 Nacos Skill** lets you browse published packages, compare each Worker's enabled runtime version with its workspace and upstream versions, and apply an update to selected Workers. Runtime readback currently uses the embedded QwenPaw Controller endpoint. Offline or unsupported Workers show a readback error.
+
+Use a QwenPaw Harness image containing the fix in `3231267` when updating an installed Skill. Earlier images can write stale files back to the distributed package during Worker shutdown. [QwenPaw PR #18](https://github.com/agentteams-group/agentteams-harness-qwenpaw/pull/18)
+
+Use **查看差异** to inspect added, removed and modified files before selecting Workers. Text files show workspace and upstream content side by side. Selecting an already-enabled identical package records its source without restarting the Worker.
+
+Use **发布到 Nacos** in a custom Skill’s menu for its first release, or **编辑并发布** on a Worker at the upstream baseline. Enter a version and change description, create a draft and submit it. Reopening the panel restores the publication record after a failed submission. After approval, finish publication if required. The page shows Nacos status, the resource rediscovered through ARD and the enabled runtime version. See [docs/INTERFACES.md](docs/INTERFACES.md).
 
 Worker polling supports slim list projections and private ETag revalidation, with full-detail reads before editing and a fallback for older Controllers. See [Worker list compatibility](docs/worker-list-compatibility.md) for the supported combinations and cache boundaries.
 

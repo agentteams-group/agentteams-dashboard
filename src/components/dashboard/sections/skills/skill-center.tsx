@@ -26,6 +26,7 @@ import { useSkills, useDeleteSkill } from '@/hooks/use-skill-center';
 import { SkillEntry } from '@/lib/skill-center-types';
 import { SkillUploadDialog } from './skill-upload-dialog';
 import { NacosConfigDialog } from './nacos-config-dialog';
+import { NacosArdPanel, SkillEditor } from './nacos-ard-panel';
 import { SkillEditDialog } from './skill-edit-dialog';
 import { SkillDetailDialog } from './skill-detail-dialog';
 import { SkillDistributeToWorkerDialog } from './skill-distribute-to-worker-dialog';
@@ -40,6 +41,8 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'custom' | 'nacos' | 'builtin'>('all');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [nacosConfigOpen, setNacosConfigOpen] = useState(false);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [publishing, setPublishing] = useState('');
   const [editingSkill, setEditingSkill] = useState<SkillEntry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SkillEntry | null>(null);
   const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(null);
@@ -104,7 +107,9 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
             <option value="all">全部来源</option><option value="builtin">内置</option><option value="custom">自定义</option><option value="nacos">Nacos</option>
           </NativeSelect>
         </div>}
-        actions={<><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></>} />
+        actions={<><Button variant="outline" size="sm" aria-expanded={discoverOpen} onClick={() => setDiscoverOpen(v => !v)}>发现 Nacos Skill</Button><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></>} />
+
+      {discoverOpen && <NacosArdPanel />}
 
       {isError && (
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
@@ -174,7 +179,10 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                       <Button variant="ghost" size="sm" onClick={() => setDetailSkill(skill)}>详情</Button>
                       {skill.source === 'custom' && <Button variant="ghost" size="sm" onClick={() => setEditingSkill(skill)}>编辑</Button>}
                       <Button variant="ghost" size="sm" onClick={() => setDistributeSkill(skill)}>分发</Button>
-                      {skill.source === 'custom' && <ResourceListMenu label={`更多操作 ${skill.name}`} items={[{ label: '删除技能', onSelect: () => setDeleteTarget(skill) }]} />}
+                      {skill.source === 'custom' && <ResourceListMenu label={`更多操作 ${skill.name}`} items={[
+                        { label: '发布到 Nacos', onSelect: () => setPublishing(skill.name) },
+                        { label: '删除技能', onSelect: () => setDeleteTarget(skill) },
+                      ]} />}
 
                     </div>
                   </td>
@@ -224,6 +232,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
         </div>
       )}
 
+      {publishing && <SkillEditor key={publishing} name={publishing} close={() => setPublishing('')} refresh={handleRefresh} />}
       <SkillUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
