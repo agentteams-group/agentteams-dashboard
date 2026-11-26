@@ -28,6 +28,13 @@ export type { MetaReadResult } from '@/lib/meta-api';
 
 export type WorkerPhase = 'Pending' | 'Running' | 'Sleeping' | 'Updating' | 'Stopped' | 'Failed' | 'Ready';
 export type WorkerState = 'Running' | 'Sleeping' | 'Stopped';
+export interface WorkerMcpServer {
+  name: string;
+  url: string;
+  transport: string;
+  approvals?: { tools: '*'; mode: 'allow' | 'ask' | 'deny' };
+}
+
 export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex';
 export type TeamPhase = 'Pending' | 'Active' | 'Degraded' | 'Failed';
 export type HumanPhase = 'Pending' | 'Active' | 'Failed';
@@ -80,7 +87,7 @@ export interface WorkerResponse extends LlmTuningFields {
   role: string;
   skills?: string[];
   agents?: string;
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   version?: string;
   /** ISO8601 time when the worker entered the current phase (optional, backend vNext). */
   stateStartedAt?: string;
@@ -700,7 +707,7 @@ export interface CreateWorkerRequest {
   soul?: string;
   agents?: string;
   skills?: string[];
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   package?: string;
   state?: WorkerState;
   containerManaged?: boolean;
@@ -718,7 +725,7 @@ export interface UpdateWorkerRequest extends LlmTuningFields {
   soul?: string;
   agents?: string;
   skills?: string[];
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   package?: string;
   state?: WorkerState;
   containerManaged?: boolean;

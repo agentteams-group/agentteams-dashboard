@@ -278,6 +278,27 @@ export function WorkerMcpPanel({
             </DialogDescription>
           </DialogHeader>
           <McpSelector value={draft} onChange={setDraft} />
+          {worker.runtime === 'codex' && draft.map(server => (
+            <label key={server.name} className="flex items-center justify-between gap-4 text-sm">
+              {server.name} · 全部工具审批
+              <select className="rounded-md border bg-background px-2 py-1" value={server.approvals?.mode ?? ''}
+                onChange={event => {
+                  const mode = event.target.value;
+                  setDraft(items => items.map(item => {
+                    if (item.name !== server.name) return item;
+                    const next = { ...item };
+                    if (mode === 'allow' || mode === 'ask' || mode === 'deny') next.approvals = { tools: '*', mode };
+                    else delete next.approvals;
+                    return next;
+                  }));
+                }}>
+                <option value="">运行时默认</option>
+                <option value="ask">每次询问</option>
+                <option value="allow">自动同意</option>
+                <option value="deny">禁止调用</option>
+              </select>
+            </label>
+          ))}
           {saveError && (
             <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />

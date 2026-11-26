@@ -44,12 +44,12 @@ function makeWorker(mcpServers: Array<{ name: string; url: string; transport: st
 
 function renderPanel(
   mcpServers: Array<{ name: string; url: string; transport: string }> = [],
-  options: { canEdit?: boolean; onChanged?: () => void } = {},
+  options: { canEdit?: boolean; onChanged?: () => void; runtime?: WorkerResponse["runtime"] } = {},
 ) {
   return render(
     <TooltipProvider>
       <WorkerMcpPanel
-        worker={makeWorker(mcpServers)}
+        worker={{ ...makeWorker(mcpServers), runtime: options.runtime ?? "qwenpaw" }}
         workerName="worker-a"
         workerTeam="team-alpha"
         canEdit={options.canEdit ?? false}
@@ -247,6 +247,18 @@ describe('WorkerMcpPanel', () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
     // 合并视图刷新：初次挂载 1 次 + 保存成功后 1 次。
     await waitFor(() => expect(mocks.fetchWorkerMcp).toHaveBeenCalledTimes(2));
+  });
+
+  it('saves one wildcard approval mode for a Codex MCP binding', async () => {
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
+    const server = { name: 'github', url: 'http://gateway/mcp/github', transport: 'http' };
+    renderPanel([server], { canEdit: true, runtime: 'codex' });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
+    fireEvent.change(screen.getByLabelText('github · 全部工具审批'), { target: { value: 'ask' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mocks.updateWorker).toHaveBeenCalledWith('worker-a', {
+      mcpServers: [{ ...server, approvals: { tools: '*', mode: 'ask' } }],
+    }));
   });
 
   it('keeps the dialog open and shows the backend message when save fails', async () => {

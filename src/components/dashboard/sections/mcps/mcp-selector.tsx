@@ -14,14 +14,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useMcpServers } from '@/hooks/use-agentteams-mcps';
-import type { McpServerConfig } from '@/lib/agentteams-api';
+import type { McpServerConfig, WorkerMcpServer } from '@/lib/agentteams-api';
 import { InfoTip } from '@/components/dashboard/info-tip';
 
-export interface SelectedMcpServer {
-  name: string;
-  url: string;
-  transport: string;
-}
+export type SelectedMcpServer = WorkerMcpServer;
 
 interface McpSelectorProps {
   value: SelectedMcpServer[];
