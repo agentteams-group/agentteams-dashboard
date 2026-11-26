@@ -253,18 +253,21 @@ test('CLI warning mode exits zero while strict mode fails on bundle and line vio
 
     const script = path.resolve('scripts/check-quality-gates.mjs');
     const common = ['--root', root, '--config', 'scripts/quality-gates.config.json', '--json'];
+    const baseEnv = { ...process.env };
+    delete baseEnv.GITHUB_BASE_REF;
+    delete baseEnv.QUALITY_GATES_BASE_REF;
     for (const command of ['bundle', 'lines']) {
       const args = [script, command, ...common];
-      const warning = spawnSync(process.execPath, [...args, '--warn-only'], { encoding: 'utf8' });
+      const warning = spawnSync(process.execPath, [...args, '--warn-only'], { encoding: 'utf8', env: baseEnv });
       assert.equal(warning.status, 0, warning.stderr);
       assert.equal(JSON.parse(warning.stdout).warnOnly, true);
 
-      const strict = spawnSync(process.execPath, args, { encoding: 'utf8' });
+      const strict = spawnSync(process.execPath, args, { encoding: 'utf8', env: baseEnv });
       assert.equal(strict.status, 1, strict.stderr);
       assert.ok(JSON.parse(strict.stdout).violations.length > 0);
     }
 
-    const pullRequestEnv = { ...process.env, GITHUB_BASE_REF: 'main', QUALITY_GATES_BASE_REF: 'origin/main' };
+    const pullRequestEnv = { ...baseEnv, GITHUB_BASE_REF: 'main', QUALITY_GATES_BASE_REF: 'origin/main' };
     const bundleInPullRequest = spawnSync(process.execPath, [
       script, 'bundle', ...common, '--warn-only',
     ], { encoding: 'utf8', env: pullRequestEnv });
