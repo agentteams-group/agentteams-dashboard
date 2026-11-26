@@ -65,6 +65,20 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  it('finalizes a QwenPaw task run whose first top-level event is a tool and whose report is a new Matrix event', () => {
+    const run = (blocks: unknown[]) => ({ 'org.agentteams.run': { version: '1', run_id: 'qwenpaw:task:one', blocks },
+      'org.agentteams.progress_only': true });
+    const events = [
+      notice('thinking', '@w:server', '核对结果', 0, run([{ type: 'thinking', content: '核对结果' }])),
+      notice('tool', '@w:server', 'read', 10, run([{ type: 'tool_call', tool_call_id: 'call', tool_name: 'read', status: 'succeeded' }])),
+      ev('result', '@w:server', '验收通过', 20, run([{ type: 'text', text: '验收通过' }])),
+    ];
+    const { messages } = assemble(events, 'qwenpaw');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ content: '验收通过', turnState: 'finalized' });
+    expect(messages[0].precomputedBlocks?.map(block => block.type)).toEqual(['thinking', 'tool_call', 'text']);
+  });
+
   for (const runtime of ['codex', 'claudecode', 'qoder', 'openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman']) {
     it(`${runtime}: correlates native tool edits, retains results and closes one process`, () => {
       const run = 'native-owned-run';
@@ -477,6 +491,28 @@ describe('ChatIR turn assembly', () => {
       inProcess: true,
       payload: { url: 'mxc://server/full-log' },
     });
+  });
+
+  it('keeps a final report and its files separate from a preceding expired approval', () => {
+    const events = [
+      notice('approval', '@w:server', 'Bash: expired', 1000, {
+        'org.agentteams.approval': { version: 1, runtime: 'claudecode', request_id: 'r1',
+          context_id: 'c1', reply_format: 'com.agentteams.answer', status: 'expired' },
+        'org.agentteams.progress_only': true,
+      }),
+      ev('report', '@w:server', '验收通过，页面按钮和编码均已核对。', 2000, {
+        'org.agentteams.progress_only': true,
+      }),
+      ev('file', '@w:server', 'page.html', 2100, {
+        msgtype: 'm.file', filename: 'page.html', url: 'mxc://server/page',
+        'm.relates_to': { rel_type: 'com.agentteams.attachment', event_id: 'report' },
+      }),
+    ];
+    const { messages } = assemble(events, 'claudecode');
+    expect(messages.map(m => m.id)).toEqual(['approval', 'report']);
+    expect(messages[1].precomputedBlocks).toContainEqual(expect.objectContaining({
+      type: 'attachment', payload: expect.objectContaining({ url: 'mxc://server/page' }),
+    }));
   });
 
   it('does not treat a long-message narration as the run answer', () => {
