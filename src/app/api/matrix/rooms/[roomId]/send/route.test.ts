@@ -50,13 +50,13 @@ describe('Matrix room message send route', () => {
     expect(upstream).not.toHaveBeenCalled();
   });
 
-  it('captures joined members and their identities before sending', async () => {
+  it.each([true, false])('captures joined members and addresses typed mentions (structured: %s)', async (structured) => {
     const matrixFetch = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(Response.json({ joined: { '@a:hs': { display_name: 'Alice' }, '@me:hs': { display_name: 'Me' } } }))
       .mockResolvedValueOnce(Response.json({ event_id: '$m' }));
     const request = new NextRequest('http://dashboard.test/api/matrix/rooms/r/send?homeserver=http%3A%2F%2F127.0.0.1%3A6167', {
       method: 'PUT', headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: 'hello', track_read_status: true, agent_user_ids: ['@a:hs'], human_user_ids: ['@me:hs'], 'm.mentions': { user_ids: ['@a:hs'] } }),
+      body: JSON.stringify({ body: '@a hello', track_read_status: true, agent_user_ids: ['@a:hs'], human_user_ids: ['@me:hs'], ...(structured ? { 'm.mentions': { user_ids: ['@a:hs'] } } : {}) }),
     });
     const response = await PUT(request, { params: Promise.resolve({ roomId: '!room:test' }) });
     expect(response.status).toBe(200);
