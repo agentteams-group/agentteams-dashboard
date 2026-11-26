@@ -19,7 +19,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Pencil, RefreshCw } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -40,11 +39,7 @@ import {
   type WorkerResponse,
 } from '@/lib/agentteams-api';
 import { formatErrorMessage, shortErrorMessage } from '@/lib/api-error';
-import {
-  mergeWorkerMcpRows,
-  workerMcpEndpoint,
-  workerMcpTransport,
-} from '@/lib/worker-mcp';
+import { mergeWorkerMcpRows } from '@/lib/worker-mcp';
 
 function degradeMessage(reason: string | undefined): string {
   switch (reason) {
@@ -80,6 +75,7 @@ export function WorkerMcpPanel({
   const [self, setSelf] = useState<WorkerMcpResult | null>(null);
   const [loading, setLoading] = useState(!declaredOnly);
   const [loadError, setLoadError] = useState('');
+  const [policyName, setPolicyName] = useState<string>();
   const [editOpen, setEditOpen] = useState(false);
   const [draft, setDraft] = useState<SelectedMcpServer[]>([]);
   const [saving, setSaving] = useState(false);
@@ -113,7 +109,8 @@ export function WorkerMcpPanel({
   // 空态只在两路都读成功且真的为空时成立：降级/失败是「读不到」而非「没有」。
   const empty = !loading && !loadError && !degraded && rows.length === 0;
 
-  const openEdit = useCallback(() => {
+  const openEdit = useCallback((name?: string) => {
+    setPolicyName(name);
     setDraft(worker.mcpServers ?? []);
     setSaveError('');
     setEditOpen(true);
@@ -144,7 +141,7 @@ export function WorkerMcpPanel({
     <div className="space-y-2 pt-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-          {declaredOnly ? '管理分配给此 Agent 的 MCP 服务及工具审批。' : 'CRD 声明（spec.mcpServers）+ worker 自注册（容器启动时注册进 QwenPaw 的 MCP）。env/headers 仅显示键名，值已脱敏。'}
+          {declaredOnly ? '管理分配给此 Agent 的 MCP 服务及工具审批。' : '查看分配给此 Agent 的 MCP 服务和运行时注册的服务。'}
         </p>
         <div className="flex shrink-0 items-center gap-1">
           {canEdit && (
@@ -152,7 +149,7 @@ export function WorkerMcpPanel({
               variant="outline"
               size="sm"
               className="h-11 px-3 text-sm"
-              onClick={openEdit}
+              onClick={() => openEdit()}
             >
               <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
               编辑分配
@@ -195,70 +192,20 @@ export function WorkerMcpPanel({
       {empty && <p className="text-xs text-muted-foreground">无 MCP server</p>}
 
       {rows.length > 0 && (
-        <ul className="space-y-1">
-          {rows.map((row) => {
-            const endpoint = workerMcpEndpoint(row);
-            const transport = workerMcpTransport(row);
-            const envKeys = row.self?.envKeys ?? [];
-            const headerKeys = row.self?.headerKeys ?? [];
-            return (
-              <li key={row.name} className="space-y-1 rounded-md border px-2 py-1.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="min-w-0 max-w-[min(22ch,45%)] truncate font-mono text-xs font-medium"
-                    title={row.self?.displayName && row.self.displayName !== row.name ? `${row.self.displayName} (${row.name})` : row.name}
-                  >
-                    {row.self?.displayName || row.name}
-                  </span>
-                  {row.declared && (
-                    <Badge
-                      variant="outline"
-                      className="h-4 border-blue-500/40 bg-blue-500/10 px-1 text-xs text-blue-700 dark:text-blue-300"
-                    >
-                      声明
-                    </Badge>
-                  )}
-                  {row.self && (
-                    <Badge
-                      variant="outline"
-                      className="h-4 border-emerald-500/40 bg-emerald-500/10 px-1 text-xs text-emerald-700 dark:text-emerald-400"
-                    >
-                      注册
-                    </Badge>
-                  )}
-                  {row.self?.enabled === false && (
-                    <Badge variant="secondary" className="h-4 px-1 text-xs">
-                      停用
-                    </Badge>
-                  )}
-                  {transport && (
-                    <Badge variant="secondary" className="h-4 px-1 font-mono text-xs">
-                      {transport}
-                    </Badge>
-                  )}
-                  <span
-                    className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
-                    title={endpoint}
-                  >
-                    {endpoint || '（无端点）'}
-                  </span>
-                </div>
-                {envKeys.length > 0 && (
-                  <p className="truncate font-mono text-xs text-muted-foreground" title="值已脱敏">
-                    env: {envKeys.map((key) => `${key}=***`).join('  ')}
-                  </p>
-                )}
-                {headerKeys.length > 0 && (
-                  <p className="truncate font-mono text-xs text-muted-foreground" title="值已脱敏">
-                    headers: {headerKeys.map((key) => `${key}=***`).join('  ')}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {row.declared ? '可在上方编辑' : '运行时注册，只读'}
-                </p>
-              </li>
-            );
-          })}
+        <ul aria-label="MCP 服务" className="divide-y rounded-md border">
+          {rows.map((row) => (
+            <li key={row.name} className="flex min-w-0 items-center gap-3 px-3 py-2">
+              <span className="min-w-0 max-w-[22ch] truncate text-sm font-medium"
+                title={row.self?.displayName || row.name}>{row.self?.displayName || row.name}</span>
+              {row.self?.enabled === false && <span className="text-xs text-muted-foreground">停用</span>}
+              {!row.declared && <span className="text-xs text-muted-foreground">运行时注册，只读</span>}
+              {declaredOnly && canEdit && row.declared && (
+                <Button variant="ghost" size="sm" className="ml-auto shrink-0" onClick={() => openEdit(row.name)}>
+                  审批策略
+                </Button>
+              )}
+            </li>
+          ))}
         </ul>
       )}
 
@@ -271,14 +218,14 @@ export function WorkerMcpPanel({
       >
         <DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-[640px]">
           <DialogHeader>
-            <DialogTitle>MCP 分配 — {workerName}</DialogTitle>
+            <DialogTitle>{policyName ? '审批策略' : `MCP 分配 — ${workerName}`}</DialogTitle>
             <DialogDescription className="text-xs">
-              选择此 Agent 可使用的 MCP 服务。
-              {workerTeam ? `所属团队：${workerTeam}。` : ''}
+              {policyName ? '设置此 MCP 服务调用工具时的审批方式。' : '选择此 Agent 可使用的 MCP 服务。'}
+              {!policyName && workerTeam ? `所属团队：${workerTeam}。` : ''}
             </DialogDescription>
           </DialogHeader>
-          <McpSelector value={draft} onChange={setDraft} />
-          {worker.runtime === 'codex' && draft.map(server => (
+          {!policyName && <McpSelector value={draft} onChange={setDraft} />}
+          {policyName && draft.filter(server => server.name === policyName).map(server => (
             <label key={server.name} className="flex min-w-0 items-center justify-between gap-3 text-sm">
               <span className="min-w-0">
                 <span className="block max-w-[22ch] truncate font-medium" title={server.name}>{server.name}</span>

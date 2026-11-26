@@ -94,36 +94,10 @@ describe('WorkerMcpPanel', () => {
       { name: 'declared-only', url: 'http://declared-only.example/mcp', transport: 'http' },
     ]);
 
-    expect(await screen.findByText('https://self.example/sse')).toBeInTheDocument();
-    // 同 name 只一行：声明侧的旧 endpoint 不再出现（自注册优先）。
-    expect(screen.queryByText('http://declared.example/mcp')).not.toBeInTheDocument();
-    expect(screen.getByText('http://declared-only.example/mcp')).toBeInTheDocument();
-    expect(screen.getAllByText('声明')).toHaveLength(2);
-    expect(screen.getAllByText('注册')).toHaveLength(2);
-    expect(screen.getByText('teamharness')).toBeInTheDocument();
-  });
-
-  it('shows env/header key names only, with values masked', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: true,
-      items: [
-        {
-          name: 'teamharness',
-          transport: 'stdio',
-          command: '~/bin/mcp-server',
-          args: ['--flag'],
-          envKeys: ['AGENTTEAMS_WORKER_MATRIX_TOKEN'],
-          headerKeys: ['Authorization'],
-        },
-      ],
-    } satisfies WorkerMcpResult);
-
-    renderPanel();
-
-    expect(await screen.findByText(/env: AGENTTEAMS_WORKER_MATRIX_TOKEN=\*\*\*/)).toBeInTheDocument();
-    expect(screen.getByText(/headers: Authorization=\*\*\*/)).toBeInTheDocument();
-    expect(screen.getByText('~/bin/mcp-server --flag')).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('secret');
+    expect(await screen.findByText('teamharness')).toBeVisible();
+    expect(screen.getAllByText('ctx7')).toHaveLength(1);
+    expect(screen.getByText('declared-only')).toBeVisible();
+    expect(screen.queryByText(/https?:\/\//)).not.toBeInTheDocument();
   });
 
   it('degrades to one info line on 404 while still showing declared servers', async () => {
@@ -137,7 +111,6 @@ describe('WorkerMcpPanel', () => {
 
     expect(await screen.findByText(/需升级 controller/)).toBeInTheDocument();
     expect(screen.getByText('ctx7')).toBeInTheDocument();
-    expect(screen.getByText('http://declared.example/mcp')).toBeInTheDocument();
     expect(screen.queryByText('无 MCP server')).not.toBeInTheDocument();
   });
 
@@ -186,7 +159,7 @@ describe('WorkerMcpPanel', () => {
     });
 
     expect(await screen.findByText('运行时注册，只读')).toBeInTheDocument();
-    expect(screen.getByText('可在上方编辑')).toBeInTheDocument();
+    expect(screen.getByText('ctx7')).toBeVisible();
     // 编辑入口只有 declared 区顶部那一个，自注册行没有单独入口。
     expect(screen.getAllByRole('button', { name: '编辑分配' })).toHaveLength(1);
   });
@@ -253,7 +226,7 @@ describe('WorkerMcpPanel', () => {
     mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
     const server = { name: 'github', url: 'http://gateway/mcp/github', transport: 'http' };
     renderPanel([server], { canEdit: true, runtime: 'codex' });
-    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
+    fireEvent.click(await screen.findByRole('button', { name: '审批策略' }));
     fireEvent.change(screen.getByLabelText('github · 全部工具审批'), { target: { value: 'ask' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(mocks.updateWorker).toHaveBeenCalledWith('worker-a', {
