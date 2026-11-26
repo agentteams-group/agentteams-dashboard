@@ -1,7 +1,7 @@
 // PUT /api/matrix/rooms/[roomId]/send - Send message to room
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatrixHomeserver, getAccessToken } from '../../../proxy-helper';
-import { READ_AUDIENCE_KEY } from '@/lib/message-read-status';
+import { addressedMembers, READ_AUDIENCE_KEY } from '@/lib/message-read-status';
 import { CONTROL_KEY } from '@/lib/direct-execution';
 
 export async function PUT(
@@ -61,14 +61,16 @@ export async function PUT(
           const agents = new Set(Array.isArray(body.agent_user_ids) ? body.agent_user_ids : []);
           const humans = new Set(Array.isArray(body.human_user_ids) ? body.human_user_ids : []);
           if (joined && typeof joined === 'object') {
-            messageContent[READ_AUDIENCE_KEY] = {
-              version: 1,
-              members: Object.entries(joined).map(([userId, profile]) => ({
+            const members = Object.entries(joined).map(([userId, profile]) => ({
                 user_id: userId,
                 display_name: (profile as { display_name?: string }).display_name || userId.split(':')[0].slice(1),
                 kind: agents.has(userId) ? 'agent' : humans.has(userId) ? 'human' : 'member',
-              })),
-            };
+              }));
+            messageContent[READ_AUDIENCE_KEY] = { version: 1, members };
+            if (!mentions && msgtype === 'm.text') {
+              const user_ids = addressedMembers(messageBody, members);
+              if (user_ids.length) messageContent['m.mentions'] = { user_ids };
+            }
           }
         }
       } catch {

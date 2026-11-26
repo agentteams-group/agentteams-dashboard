@@ -26,6 +26,13 @@ describe('per-message read members', () => {
       .toEqual([{ userId: '@bob:hs', displayName: 'Bob', state: 'unread', kind: 'agent' }]);
   });
 
+  it('limits legacy addressed messages to their original recipients', () => {
+    const readers = (body: string) => messageReadMembers({ ...message, rawContent: { ...message.rawContent, body } }, evidence, {}).map(m => m.userId);
+    expect(readers('@bob 继续')).toEqual(['@bob:hs']);
+    expect(readers('@alice @bob:hs hello')).toEqual(['@alice:hs', '@bob:hs']);
+    expect(readers('联系 bob@example.org')).toHaveLength(3);
+  });
+
   it('uses the captured audience without adding later joins or the sender', () => {
     expect(messageReadMembers(message, evidence, {}).map((m) => [m.userId, m.state]))
       .toEqual([['@alice:hs', 'read'], ['@bob:hs', 'unread'], ['@carol:hs', 'unread']]);

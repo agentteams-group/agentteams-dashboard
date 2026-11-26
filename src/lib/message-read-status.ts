@@ -33,13 +33,29 @@ export function sessionReceiptTarget(event: MatrixEvent): string | null {
     && (event.content.status === 'read' || event.content.status === 'received') ? relation.event_id : null;
 }
 
+// Older clients sent leading @names without Matrix mention metadata.
+export function addressedMembers(body: unknown, members: Array<{ user_id: string; display_name?: string }>): string[] {
+  if (typeof body !== 'string') return [];
+  const ids = new Set<string>();
+  for (const word of body.trimStart().split(/\s+/u)) {
+    if (!word.startsWith('@') || word === '@room') break;
+    const matches = members.filter(member => member && typeof member.user_id === 'string' && (
+      member.user_id === word || member.user_id.split(':')[0] === word || '@' + member.display_name === word
+    ));
+    if (matches.length !== 1) break;
+    ids.add(matches[0].user_id);
+  }
+  return [...ids];
+}
+
 /** Missing support is intentionally invisible, including in the counts. */
 export function messageReadMembers(message: ReadMessage, evidence: MatrixEvent[], positions: Record<string, MemberReadPosition>, humanUserIds: string[] = [], agentUserIds: string[] = []): ReadMember[] {
   const audience = message.rawContent?.[READ_AUDIENCE_KEY] as { version?: number; members?: Array<{ user_id: string; display_name?: string; kind?: string }> } | undefined;
   if (audience?.version !== 1 || !Array.isArray(audience.members) || !message.eventId) return [];
   const targetId = message.latestEventId || message.eventId;
   const mentions = message.rawContent?.['m.mentions'] as { user_ids?: string[]; room?: boolean } | undefined;
-  const targets = !mentions?.room && Array.isArray(mentions?.user_ids) && mentions.user_ids.length > 0 ? new Set(mentions.user_ids) : null;
+  const ids = mentions ? mentions.user_ids : addressedMembers(message.rawContent?.body, audience.members);
+  const targets = !mentions?.room && Array.isArray(ids) && ids.length ? new Set(ids) : null;
   const states = new Map<string, 'read' | 'unread'>();
   for (const event of evidence) {
     if (sessionReceiptTarget(event) !== targetId) continue;
