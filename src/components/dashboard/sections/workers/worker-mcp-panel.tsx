@@ -205,8 +205,8 @@ export function WorkerMcpPanel({
               <li key={row.name} className="space-y-1 rounded-md border px-2 py-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
-                    className="max-w-full truncate font-mono text-xs font-medium"
-                    title={row.name}
+                    className="min-w-0 max-w-[min(22ch,45%)] truncate font-mono text-xs font-medium"
+                    title={row.self?.displayName && row.self.displayName !== row.name ? `${row.self.displayName} (${row.name})` : row.name}
                   >
                     {row.self?.displayName || row.name}
                   </span>
@@ -273,16 +273,18 @@ export function WorkerMcpPanel({
           <DialogHeader>
             <DialogTitle>MCP 分配 — {workerName}</DialogTitle>
             <DialogDescription className="text-xs">
-              只写 Worker 的 spec.mcpServers；self-registered（运行时注册）不在 spec 内，
-              不会被动。保存后需 controller reconcile 才会挂到 Worker 运行时。
+              选择此 Agent 可使用的 MCP 服务。
               {workerTeam ? `所属团队：${workerTeam}。` : ''}
             </DialogDescription>
           </DialogHeader>
           <McpSelector value={draft} onChange={setDraft} />
           {worker.runtime === 'codex' && draft.map(server => (
-            <label key={server.name} className="flex items-center justify-between gap-4 text-sm">
-              {server.name} · 全部工具审批
-              <select className="rounded-md border bg-background px-2 py-1" value={server.approvals?.mode ?? ''}
+            <label key={server.name} className="flex min-w-0 items-center justify-between gap-3 text-sm">
+              <span className="min-w-0">
+                <span className="block max-w-[22ch] truncate font-medium" title={server.name}>{server.name}</span>
+                <span className="text-xs text-muted-foreground">全部工具审批</span>
+              </span>
+              <select aria-label={`${server.name} · 全部工具审批`} className="shrink-0 rounded-md border bg-background px-2 py-1" value={server.approvals?.mode ?? ''}
                 onChange={event => {
                   const mode = event.target.value;
                   setDraft(items => items.map(item => {

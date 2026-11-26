@@ -98,11 +98,12 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
           <span className="text-sm text-muted-foreground">暂未选择 MCP 服务器</span>
         )}
         {value.map((srv) => (
-          <Badge key={srv.name} variant="secondary" className="gap-1 pr-1">
+          <Badge key={srv.name} variant="secondary" className="max-w-full gap-1 pr-1">
             <Wifi className="w-3 h-3" />
-            {srv.name}
+            <span className="min-w-0 max-w-[22ch] truncate" title={srv.name}>{srv.name}</span>
             <button
               type="button"
+              aria-label={`移除 ${srv.name}`}
               onClick={() => handleRemove(srv.name)}
               className="ml-1 rounded-full hover:bg-muted p-0.5"
             >
@@ -153,7 +154,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">{srv.name}</span>
+                        <span className="max-w-[22ch] truncate text-sm font-medium" title={srv.name}>{srv.name}</span>
                         <Badge variant="outline" className="text-xs shrink-0">{srv.transport}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground truncate" title={srv.url}>
@@ -177,7 +178,7 @@ export function McpSelector({ value, onChange, defaultSelectedNames }: McpSelect
                 <span className="text-xs text-muted-foreground">已选择 ({draft.length}):</span>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {draft.map((srv) => (
-                    <Badge key={srv.name} variant="secondary" className="text-xs">{srv.name}</Badge>
+                    <Badge key={srv.name} variant="secondary" className="max-w-full text-xs"><span className="max-w-[22ch] truncate" title={srv.name}>{srv.name}</span></Badge>
                   ))}
                 </div>
               </div>
