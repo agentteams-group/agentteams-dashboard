@@ -1,0 +1,41 @@
+{
+  "bundle": {
+    "route": "/",
+    "initial": {
+      "maxGzipBytes": 307200,
+      "maxFiles": 20
+    },
+    "asyncGroup": {
+      "maxGzipBytes": 256000,
+      "maxFiles": 20
+    }
+  },
+  "sourceLines": {
+    "root": "src",
+    "maxLines": 800,
+    "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    "excludeDirectories": ["__tests__", "integration"],
+    "excludePatterns": ["**/*.test.*", "**/*.spec.*"],
+    "baseline": [
+      { "path": "src/lib/agentteams-api.ts", "maxLines": 2258 },
+      { "path": "src/components/dashboard/sections/files-section.tsx", "maxLines": 1881 },
+      { "path": "src/components/dashboard/sections/workers/qwenpaw-runtime-config-panel.tsx", "maxLines": 1594 },
+      { "path": "src/components/dashboard/sections/team-agents/team-agents-workbench.tsx", "maxLines": 1207 },
+      { "path": "src/hooks/use-matrix.ts", "maxLines": 1215 },
+      { "path": "src/components/dashboard/sections/chat/ChatRoom.tsx", "maxLines": 1140 },
+      { "path": "src/lib/backend-config.ts", "maxLines": 1083 },
+      { "path": "src/components/dashboard/sections/tasks-section.tsx", "maxLines": 1044 },
+      { "path": "src/components/dashboard/sections/workers-section.tsx", "maxLines": 953 },
+      { "path": "src/lib/files-model.ts", "maxLines": 949 },
+      { "path": "src/components/dashboard/sections/artifacts-section.tsx", "maxLines": 902 },
+      { "path": "src/components/dashboard/sections/chat/views/MessageBubble.tsx", "maxLines": 897 },
+      { "path": "src/components/dashboard/sections/workers/worker-coding-cli-panel.tsx", "maxLines": 884 },
+      { "path": "src/app/api/auth/login/route.ts", "maxLines": 864 },
+      { "path": "src/lib/chat-ir/assemble.ts", "maxLines": 879 },
+      { "path": "src/components/dashboard/sections/models-section.tsx", "maxLines": 868 },
+      { "path": "src/components/setup/backend-setup-page.tsx", "maxLines": 846 },
+      { "path": "src/lib/a2ui/parser.ts", "maxLines": 817 },
+      { "path": "src/components/dashboard/settings/theme-tab.tsx", "maxLines": 806 }
+    ]
+  }
+}

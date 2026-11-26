@@ -38,8 +38,41 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Quality gate tests
+        run: npm run test:quality
+
       - name: Image publication tests
         run: node --test scripts/test-image-publication.mjs scripts/test-release-reuse.mjs install/unified-entry.test.mjs
+
+  quality-gates:
+    name: Quality Gates (Warning)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: Check source line budget (warning)
+        run: npm run check:lines -- --warn-only --base-ref "origin/${GITHUB_BASE_REF:-main}"
+
+      - name: Build for bundle budget
+        run: npm run build:quality
+
+      - name: Check bundle budget (warning)
+        run: npm run check:bundle -- --warn-only
 
   docs-consistency:
     name: Docs consistency
