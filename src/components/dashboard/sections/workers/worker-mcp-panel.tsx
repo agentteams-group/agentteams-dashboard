@@ -76,8 +76,9 @@ export function WorkerMcpPanel({
   canEdit: boolean;
   onChanged?: () => void;
 }) {
+  const declaredOnly = worker.runtime === 'codex';
   const [self, setSelf] = useState<WorkerMcpResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!declaredOnly);
   const [loadError, setLoadError] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [draft, setDraft] = useState<SelectedMcpServer[]>([]);
@@ -85,6 +86,7 @@ export function WorkerMcpPanel({
   const [saveError, setSaveError] = useState('');
 
   const load = useCallback(async () => {
+    if (declaredOnly) return;
     setLoading(true);
     setLoadError('');
     try {
@@ -94,7 +96,7 @@ export function WorkerMcpPanel({
     } finally {
       setLoading(false);
     }
-  }, [workerName]);
+  }, [declaredOnly, workerName]);
 
   // load 的 catch 分支含 setState——延迟一个宏任务，避免 effect 同步阶段进入
   // setState 链（react-hooks/set-state-in-effect，同其他 worker 面板惯例）。
@@ -142,8 +144,7 @@ export function WorkerMcpPanel({
     <div className="space-y-2 pt-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-          CRD 声明（spec.mcpServers）+ worker 自注册（容器启动时注册进 QwenPaw 的 MCP）。
-          env/headers 仅显示键名，值已脱敏。
+          {declaredOnly ? '管理分配给此 Agent 的 MCP 服务及工具审批。' : 'CRD 声明（spec.mcpServers）+ worker 自注册（容器启动时注册进 QwenPaw 的 MCP）。env/headers 仅显示键名，值已脱敏。'}
         </p>
         <div className="flex shrink-0 items-center gap-1">
           {canEdit && (
@@ -157,7 +158,7 @@ export function WorkerMcpPanel({
               编辑分配
             </Button>
           )}
-          <Button
+          {!declaredOnly && <Button
             variant="ghost"
             size="sm"
             className="h-6 shrink-0 px-2 text-xs"
@@ -166,7 +167,7 @@ export function WorkerMcpPanel({
           >
             <RefreshCw className={`mr-1 h-3 w-3 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
             刷新
-          </Button>
+          </Button>}
         </div>
       </div>
 

@@ -253,6 +253,15 @@ describe('WorkerDrawer', () => {
     expect(mounts.coding).toBe(0);
   });
 
+  it('shows Codex conversation guidance and opens its assigned MCP servers', async () => {
+    renderDrawerFor({ ...worker, runtime: 'codex' });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '会话' }), { button: 0 });
+    expect(await screen.findByText(/Codex 暂不支持在这里查看会话记录/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'MCP' }), { button: 0 });
+    expect(await screen.findByText('ctx7')).toBeVisible();
+  });
+
   it('routes QwenPaw runtime config to the legacy panel instead of the surface', async () => {
     const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
     renderDrawerFor(qwenpawWorker);

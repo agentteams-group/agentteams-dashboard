@@ -343,7 +343,7 @@ export function WorkerDetailPanel({
         ? `${runtimeName} 配置面（surface 驱动）`
         : `${view.mcpServers?.length ?? 0} 个声明 server · 声明 + 自注册合并`,
       render: () =>
-        nonQwenpaw ? (
+        nonQwenpaw && view.runtime !== 'codex' ? (
           surface('mcp')
         ) : (
           <WorkerMcpPanel
@@ -463,7 +463,11 @@ export function WorkerDetailPanel({
       id: 'chats',
       title: '会话',
       desc: '会话列表 / 子代理会话（只读）',
-      render: () => (
+      render: () => nonQwenpaw ? (
+        <p className="text-sm text-muted-foreground">
+          {runtimeName} 暂不支持在这里查看会话记录。{dm && '可点击上方「私聊」打开对话。'}
+        </p>
+      ) : (
         <WorkerChatsPanel key={`chats-${view.name}`} workerName={view.name} showKindTabs />
       ),
     },
