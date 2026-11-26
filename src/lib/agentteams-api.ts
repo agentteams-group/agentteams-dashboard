@@ -32,7 +32,7 @@ export interface WorkerMcpServer {
   name: string;
   url: string;
   transport: string;
-  approvals?: { tools: '*'; mode: 'allow' | 'ask' | 'deny' };
+  approvals?: { tools: '*'; mode: 'allow' | 'ask' };
 }
 
 export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex';

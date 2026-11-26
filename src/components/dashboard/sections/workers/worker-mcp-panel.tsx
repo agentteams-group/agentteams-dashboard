@@ -287,15 +287,14 @@ export function WorkerMcpPanel({
                   setDraft(items => items.map(item => {
                     if (item.name !== server.name) return item;
                     const next = { ...item };
-                    if (mode === 'allow' || mode === 'ask' || mode === 'deny') next.approvals = { tools: '*', mode };
+                    if (mode === 'allow' || mode === 'ask') next.approvals = { tools: '*', mode };
                     else delete next.approvals;
                     return next;
                   }));
                 }}>
                 <option value="">运行时默认</option>
-                <option value="ask">每次询问</option>
-                <option value="allow">自动同意</option>
-                <option value="deny">禁止调用</option>
+                <option value="ask">请求审批</option>
+                <option value="allow">自动通过</option>
               </select>
             </label>
           ))}
