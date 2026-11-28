@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { apiUrl } from '@/lib/api-base';
 import { workerDisplayName } from '@/lib/worker-display-name';
 
@@ -60,7 +61,6 @@ import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerSkillUploadDialog } from './worker-skill-upload-dialog';
 import { WorkerToolsPanel } from './worker-tools-panel';
 import { WorkerWorkspaceFilesPanel } from './worker-workspace-files-panel';
-import { FilesBrowserPanel } from '../chat/views/worker-files-panel';
 import { useNowTick } from '@/hooks/use-now-tick';
 import {
   useDeleteWorker,
@@ -80,6 +80,18 @@ import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { formatErrorMessage } from '@/lib/api-error';
 import { dmTargetFor } from '../managers/manager-drawer-logic';
 import { toast } from 'sonner';
+
+const FilesBrowserPanel = dynamic(
+  () => import('../chat/views/worker-files-panel').then((module) => ({ default: module.FilesBrowserPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-64 items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载文件面板…
+      </div>
+    ),
+  },
+);
 
 const ROLE_LABEL: Record<string, string> = {
   team_leader: '团队负责人',

@@ -2,7 +2,7 @@
 
 import { NativeSelect } from '@/components/ui/native-select';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Download, Library, ListChecks, Play, RotateCcw, Save, Send, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,13 @@ import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { toast } from 'sonner';
 import {
-  LOOP_STATE_EVENT,
   LOOP_TEMPLATES,
+  buildLoopRollback,
   canPublish,
-  canRollback,
   isValidLoopDefinition,
+  loopDefinitionStateEvent,
+  nextLoopDraftVersion,
+  readStableLoopVersions,
   templateToDraft,
   type LoopDefinition,
   type LoopEdge,
@@ -28,7 +30,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useCapabilityStore, capabilityNote } from '@/lib/capability-probe';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { useMatrixStore } from '@/lib/matrix-store';
-import { useRoomMetaStore } from '@/hooks/use-matrix';
+import { useMatrixRoomState, useRoomMetaStore } from '@/hooks/use-matrix';
 import { currentHashParams } from '@/lib/nav-hash';
 import { LoopDryRunDialog } from './loops/loop-dry-run-dialog';
 
@@ -41,6 +43,8 @@ export interface StoredLoopDraft {
   id: string;
   name: string;
   definition: LoopDefinition;
+  /** Room-backed immutable history; persisted with the local draft. */
+  bindRoomId?: string;
 }
 
 /** 导给命令面板：全局搜索要能命中循环，而循环只存在本地草案里。 */
@@ -65,13 +69,10 @@ function writeDrafts(drafts: StoredLoopDraft[]): void {
 /** 向房间写循环定义（复用 state-event BFF；管理员）。 */
 async function publishLoopToRoom(roomId: string, def: LoopDefinition): Promise<void> {
   // state-event BFF 只接受 com.agentteams.* 前缀 —— 循环定义直接复用。
+  const payload = loopDefinitionStateEvent(def);
   const res = await matrixProxyFetch(`/api/matrix/rooms/${encodeURIComponent(roomId)}/state-event`, {
     method: 'POST',
-    body: JSON.stringify({
-      eventType: LOOP_STATE_EVENT,
-      stateKey: `loop:${def.id}:v${def.version}`,
-      content: def,
-    }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
@@ -80,6 +81,7 @@ async function publishLoopToRoom(roomId: string, def: LoopDefinition): Promise<v
 }
 
 export function LoopsSection() {
+  const queryClient = useQueryClient();
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const currentUserId = useMatrixStore((s) => s.userId);
   const roomMeta = useRoomMetaStore((s) => s.meta);
@@ -89,7 +91,8 @@ export function LoopsSection() {
   const [drafts, setDrafts] = useState<StoredLoopDraft[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<LoopDefinition | null>(null);
-  const [bindRoomId, setBindRoomId] = useState<string>('');
+  const [roomBinding, setRoomBinding] = useState<{ loopId: string; roomId: string } | null>(null);
+  const [busy, setBusy] = useState<'publishing' | 'rolling-back' | null>(null);
 
   // F5.6：进入循环域即探测 loops 写能力（404=未接通 → 降级徽标）。
   useEffect(() => {
@@ -127,14 +130,31 @@ export function LoopsSection() {
     [drafts, selectedId],
   );
 
+  const bindRoomId = roomBinding && roomBinding.loopId === selected?.id
+    ? roomBinding.roomId
+    : selected?.bindRoomId ?? '';
+  const roomState = useMatrixRoomState(bindRoomId || null);
+  const stableVersions = useMemo(
+    () => readStableLoopVersions(roomState.data ?? [], editing?.id ?? ''),
+    [roomState.data, editing?.id],
+  );
+
   useEffect(() => {
     setEditing(selected?.definition ?? null);
-  }, [selected]);
+  }, [selected?.id, selected?.definition]);
 
   const persistDrafts = useCallback((next: StoredLoopDraft[]) => {
     setDrafts(next);
     writeDrafts(next);
   }, []);
+
+  const changeBindRoom = (roomId: string) => {
+    if (!selected) return;
+    setRoomBinding({ loopId: selected.id, roomId });
+    persistDrafts(drafts.map((draft) =>
+      draft.id === selected.id ? { ...draft, bindRoomId: roomId } : draft,
+    ));
+  };
 
   const instantiateTemplate = (tpl: (typeof LOOP_TEMPLATES)[number]) => {
     const def = templateToDraft(tpl, currentUserId ?? 'unknown');
@@ -145,16 +165,24 @@ export function LoopsSection() {
   };
 
   const saveDraft = () => {
-    if (!editing || !selected) return;
+    if (!editing || !selected || busy) return;
+    const definition: LoopDefinition = {
+      ...editing,
+      version: nextLoopDraftVersion(editing, stableVersions),
+      status: 'draft',
+      updatedAt: Date.now(),
+      updatedBy: currentUserId ?? 'unknown',
+    };
     const next = drafts.map((d) =>
-      d.id === selected.id ? { ...d, name: editing.name, definition: { ...editing, status: 'draft' as const } } : d,
+      d.id === selected.id ? { ...d, name: definition.name, definition } : d,
     );
     persistDrafts(next);
+    setEditing(definition);
     toast.success('草稿已保存');
   };
 
   const publish = async () => {
-    if (!editing || !selected) return;
+    if (!editing || !selected || busy) return;
     if (userLevel < 3) {
       toast.error('发布/回滚仅管理员可操作（PRD §7.2）');
       return;
@@ -168,51 +196,83 @@ export function LoopsSection() {
       toast.error('请先选择绑定空间（发布以房间状态事件存储）');
       return;
     }
+    if (roomState.isLoading || roomState.isError) {
+      toast.error(roomState.isError ? '房间版本读取失败，无法发布' : '正在读取房间版本，请稍候');
+      return;
+    }
     const version: LoopDefinition = {
       ...editing,
+      version: Math.max(
+        editing.version,
+        stableVersions.reduce((max, item) => Math.max(max, item.version), 0) + 1,
+      ),
       status: 'published',
       publishedBy: currentUserId ?? 'unknown',
       publishedAt: Date.now(),
+      updatedAt: Date.now(),
+      updatedBy: currentUserId ?? 'unknown',
     };
+    setBusy('publishing');
     try {
       await publishLoopToRoom(bindRoomId, version);
       const next = drafts.map((d) =>
-        d.id === selected.id ? { ...d, definition: version } : d,
+        d.id === selected.id
+          ? { ...d, name: version.name, definition: version, bindRoomId }
+          : d,
       );
+      // Matrix is the success boundary: no local/persisted success before this.
       persistDrafts(next);
+      setEditing(version);
+      void queryClient.invalidateQueries({ queryKey: ['matrix-state', bindRoomId] });
       toast.success(`已发布 v${version.version} 到绑定空间`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '发布失败');
+    } finally {
+      setBusy(null);
     }
   };
 
   const [dryRunOpen, setDryRunOpen] = useState(false);
 
+  const rollbackPreview = useMemo(() => {
+    if (!editing) return null;
+    return buildLoopRollback(editing, stableVersions, currentUserId ?? 'unknown');
+  }, [editing, stableVersions, currentUserId]);
+
   const rollback = async () => {
-    if (!editing || !selected) return;
+    if (!editing || !selected || busy) return;
     if (userLevel < 3) {
       toast.error('发布/回滚仅管理员可操作（PRD §7.2）');
       return;
     }
-    const check = canRollback(editing);
-    if (!check.ok) {
-      toast.error(check.reason ?? '无法回滚');
+    if (!bindRoomId || roomState.isLoading || roomState.isError) {
+      toast.error('绑定空间版本不可用，无法回滚');
       return;
     }
-    const nextVersion = editing.version + 1;
-    const rolledBackDef: LoopDefinition = {
-      ...editing,
-      version: nextVersion,
-      status: 'rolled_back',
-      updatedAt: Date.now(),
-      updatedBy: currentUserId ?? 'unknown',
-    };
-    const next = drafts.map((d) =>
-      d.id === selected.id ? { ...d, name: rolledBackDef.name, definition: rolledBackDef } : d,
-    );
-    persistDrafts(next);
-    setEditing(rolledBackDef);
-    toast.success(`已回滚至版本 v${nextVersion}（状态已标记为已回滚）`);
+    setBusy('rolling-back');
+    try {
+      const fresh = await roomState.refetch();
+      if (fresh.isError) throw new Error('房间版本读取失败，无法回滚');
+      const history = readStableLoopVersions(fresh.data ?? [], editing.id);
+      const result = buildLoopRollback(editing, history, currentUserId ?? 'unknown');
+      if (!result.ok) throw new Error(result.reason);
+      await publishLoopToRoom(bindRoomId, result.definition);
+      const rolledBackDef = result.definition;
+      const next = drafts.map((d) =>
+        d.id === selected.id
+          ? { ...d, name: rolledBackDef.name, definition: rolledBackDef, bindRoomId }
+          : d,
+      );
+      // A failed Matrix write must leave the current local version untouched.
+      persistDrafts(next);
+      setEditing(rolledBackDef);
+      void queryClient.invalidateQueries({ queryKey: ['matrix-state', bindRoomId] });
+      toast.success(`已回滚至 v${rolledBackDef.restoredVersion}，发布为 v${rolledBackDef.version}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '回滚失败');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const exportJson = () => {
@@ -478,13 +538,14 @@ export function LoopsSection() {
                       <Play className="h-3 w-3" aria-hidden="true" />
                       预演
                     </Button>
-                    <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={saveDraft}>
+                    <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={saveDraft} disabled={Boolean(busy)}>
                       <Save className="h-3 w-3" aria-hidden="true" />
                       存草稿
                     </Button>
                     <NativeSelect
                       value={bindRoomId}
-                      onChange={(e) => setBindRoomId(e.target.value)}
+                      onChange={(e) => changeBindRoom(e.target.value)}
+                      disabled={Boolean(busy)}
                       className="h-7 rounded-md border border-border/60 bg-background/60 px-1.5 text-xs"
                       aria-label="绑定空间"
                     >
@@ -500,7 +561,7 @@ export function LoopsSection() {
                       size="sm"
                       className="h-7 gap-1 text-xs"
                       onClick={() => void publish()}
-                      disabled={userLevel < 3}
+                      disabled={userLevel < 3 || Boolean(busy) || !bindRoomId || roomState.isLoading || roomState.isError}
                       title={userLevel < 3 ? '发布/回滚仅管理员（§7.2）' : '发布为不可变版本（写入绑定空间状态事件）'}
                     >
                       <Send className="h-3 w-3" aria-hidden="true" />
@@ -512,8 +573,17 @@ export function LoopsSection() {
                         size="sm"
                         className="h-7 gap-1 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400"
                         onClick={() => void rollback()}
-                        disabled={userLevel < 3}
-                        title="回滚到上一个稳定版本并生成新版本记号"
+                        disabled={
+                          userLevel < 3 ||
+                          Boolean(busy) ||
+                          !bindRoomId ||
+                          roomState.isLoading ||
+                          roomState.isError ||
+                          !rollbackPreview?.ok
+                        }
+                        title={!rollbackPreview?.ok
+                          ? rollbackPreview?.reason ?? '没有可回滚的稳定版本'
+                          : '回滚到上一个稳定版本并生成新版本记号'}
                       >
                         <RotateCcw className="h-3 w-3" aria-hidden="true" />
                         回滚

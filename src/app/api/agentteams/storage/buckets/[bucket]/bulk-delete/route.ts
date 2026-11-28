@@ -1,23 +1,30 @@
 // POST /api/agentteams/storage/buckets/[bucket]/bulk-delete — Bulk delete objects
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient } from '@/lib/minio-client';
-import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { guardStorageObject } from '../../../security';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bucket: string }> }
 ) {
   const { bucket } = await params;
-  const bucketName = decodeURIComponent(bucket);
-  const denied = await enforceLevelOnlyRbac(request, 'delete', 'storage.bucket', bucketName);
-  if (denied) return denied;
 
   try {
     const body = await request.json();
     const keys = body.keys as string[] | undefined;
 
-    if (!keys || !Array.isArray(keys) || keys.length === 0) {
+    if (!keys || !Array.isArray(keys) || keys.length === 0 || keys.some((key) => typeof key !== 'string' || !key)) {
       return NextResponse.json({ error: 'keys array is required' }, { status: 400 });
+    }
+
+    // 全量预检：任一秘密对象/越权对象都让整个请求失败，且不得调用 MinIO。
+    const guardedKeys: string[] = [];
+    let guardedBucket = bucket;
+    for (const key of keys) {
+      const guarded = await guardStorageObject(request, 'delete', bucket, key);
+      if (guarded.response) return guarded.response;
+      guardedBucket = guarded.bucket;
+      guardedKeys.push(guarded.key);
     }
 
     const client = createMinioClient();
@@ -25,10 +32,10 @@ export async function POST(
 
     // MinIO removeObjects accepts max 1000 at a time
     const batchSize = 1000;
-    for (let i = 0; i < keys.length; i += batchSize) {
-      const batch = keys.slice(i, i + batchSize);
+    for (let i = 0; i < guardedKeys.length; i += batchSize) {
+      const batch = guardedKeys.slice(i, i + batchSize);
       try {
-        await client.removeObjects(bucketName, batch);
+        await client.removeObjects(guardedBucket, batch);
         for (const key of batch) {
           results.push({ key, success: true });
         }

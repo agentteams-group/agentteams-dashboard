@@ -8,6 +8,10 @@ import { clearToolCallLedger, countToolCalls24h } from '@/lib/tool-call-counter'
 import type { DisplayMessage } from '@/hooks/use-matrix';
 
 const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
+vi.mock('../lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('../markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('../markdown-message', () => ({
   MarkdownMessage: (props: { content: string }) => markdownMock(props),
 }));

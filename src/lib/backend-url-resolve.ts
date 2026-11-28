@@ -13,6 +13,7 @@
 // scheme_unresolved 让 UI 提示「若只支持 http，请显式写 http://」。显式写了
 // http(s):// 的地址原样采用，不升级、不改写。
 import { hasScheme, isHttpUrl, normalizeHttpUrl } from './backend-config';
+import { egressFetch, isEgressPolicyError, type EgressBackend } from './egress-policy';
 
 export type ResolvedScheme = 'http' | 'https';
 
@@ -66,16 +67,14 @@ export function isAddressLike(value: string | undefined | null): boolean {
 }
 
 /** 一次协议探测：能拿到任意 HTTP 响应（含 4xx/5xx/3xx）就算该协议可用。 */
-async function schemeReachable(url: string, timeoutMs: number): Promise<boolean> {
+async function schemeReachable(url: string, timeoutMs: number, backend: EgressBackend): Promise<boolean> {
   try {
-    await fetch(url, {
-      method: 'GET',
-      redirect: 'manual',
-      cache: 'no-store',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    await egressFetch(url, { backend, timeoutMs, method: 'GET', maxRedirects: 0 });
     return true;
-  } catch {
+  } catch (err) {
+    // A denied target must fail closed rather than fall through to another
+    // scheme. Ordinary connection/TLS failures may try the next scheme.
+    if (isEgressPolicyError(err)) throw err;
     return false;
   }
 }
@@ -88,6 +87,7 @@ async function schemeReachable(url: string, timeoutMs: number): Promise<boolean>
 export async function resolveBackendUrl(
   raw: string | undefined | null,
   timeoutMs = 3000,
+  backend: EgressBackend = 'controller',
 ): Promise<ResolvedBackendUrl> {
   const input = typeof raw === 'string' ? raw.trim() : '';
   if (!input) return { url: '', scheme: null, resolved: false, changed: false };
@@ -115,7 +115,7 @@ export async function resolveBackendUrl(
 
   for (const scheme of ['https', 'http'] as const) {
     const candidate = normalizeHttpUrl(`${scheme}://${input}`);
-    if (await schemeReachable(candidate, timeoutMs)) {
+    if (await schemeReachable(candidate, timeoutMs, backend)) {
       const result: ResolvedBackendUrl = {
         url: candidate,
         scheme,

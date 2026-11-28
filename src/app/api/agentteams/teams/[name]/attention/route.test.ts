@@ -1,13 +1,35 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} from '@/lib/server-auth';
+
+vi.mock('@/lib/audit-log', () => ({
+  appendAuditEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 const originalFetch = globalThis.fetch;
+
+function trustedHeaders(): Headers {
+  return new Headers({
+    [SERVER_USER_HEADER]: 'admin',
+    [SERVER_USER_LEVEL_HEADER]: '3',
+    [SERVER_USER_SCOPE_HEADER]: 'global',
+    [SERVER_USER_TEAMS_HEADER]: '[]',
+    [SERVER_USER_WORKERS_HEADER]: '[]',
+  });
+}
 
 async function callGet(
   teamName: string,
   controllerStatus: number,
   query = '',
   responseHeaders: Record<string, string> = {},
+  headers: Headers = trustedHeaders(),
 ) {
   vi.resetModules();
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
@@ -34,7 +56,7 @@ async function callGet(
         pathname: `/api/agentteams/teams/${teamName}/attention`,
         searchParams: new URLSearchParams(query),
       },
-      headers: new Headers(),
+      headers,
     } as never,
     { params: Promise.resolve({ name: teamName }) },
   );
@@ -42,6 +64,20 @@ async function callGet(
 }
 
 describe('GET /api/agentteams/teams/[name]/attention (proxy)', () => {
+  it('returns 401 when the trusted middleware identity is missing', async () => {
+    const res = await callGet('biz-team', 200, '', {}, new Headers());
+    expect(res.status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for a level-3 non-system admin with unknown scope', async () => {
+    const headers = trustedHeaders();
+    headers.delete(SERVER_USER_SCOPE_HEADER);
+    const res = await callGet('biz-team', 200, '', {}, headers);
+    expect(res.status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

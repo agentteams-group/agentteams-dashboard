@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ArtifactsSection } from './artifacts-section';
 import type { ProjectSummary, WorkflowResponse } from '@/lib/agentteams-projects-api';
@@ -49,6 +49,10 @@ vi.mock('@/lib/agentteams-api', () => ({
   },
 }));
 
+vi.mock('@/components/dashboard/sections/chat/lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('@/components/dashboard/sections/chat/markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
   MarkdownMessage: ({ content }: { content: string }) => (
     <div data-testid="md">{content}</div>
@@ -203,5 +207,67 @@ describe('ArtifactsSection（9/14 UX 对齐插件）', () => {
     const dialog = await screen.findByRole('dialog');
     expect(dialog.className).toContain('sm:max-w-5xl');
     expect((await screen.findByTestId('md')).textContent).toBe('# hello md');
+  });
+
+  it('keeps fast B when slow A resolves last and aborts A', async () => {
+    let resolveA!: (_value: Response) => void;
+    const response = (text: string): Response => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/markdown' },
+      blob: async () => ({ size: text.length, text: async () => text }),
+    }) as unknown as Response;
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.includes('report.md')) return new Promise<Response>((resolve) => { resolveA = resolve; });
+      return Promise.resolve(response('# fast B'));
+    });
+    render(<ArtifactsSection />);
+    fireEvent.click((await screen.findAllByText('report.md'))[0]);
+    fireEvent.click((await screen.findAllByText('data.json'))[0]);
+    await screen.findByText('# fast B');
+    const aSignal = (mocks.fetch.mock.calls[0][1] as RequestInit).signal;
+    expect(aSignal?.aborted).toBe(true);
+    await act(async () => { resolveA(response('# stale A')); });
+    expect(screen.getByText('# fast B')).toBeInTheDocument();
+    expect(screen.queryByText('# stale A')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale failure after a newer preview succeeds', async () => {
+    let rejectA!: (_reason: Error) => void;
+    mocks.fetch.mockImplementation((url: string) => url.includes('report.md')
+      ? new Promise<Response>((_resolve, reject) => { rejectA = reject; })
+      : Promise.resolve({
+          ok: true, status: 200, headers: { get: () => 'text/markdown' },
+          blob: async () => ({ size: 6, text: async () => 'new B!' }),
+        } as unknown as Response));
+    render(<ArtifactsSection />);
+    fireEvent.click((await screen.findAllByText('report.md'))[0]);
+    fireEvent.click((await screen.findAllByText('data.json'))[0]);
+    await screen.findByText('new B!');
+    await act(async () => { rejectA(new Error('stale A failed')); });
+    expect(screen.getByText('new B!')).toBeInTheDocument();
+    expect(screen.queryByText(/stale A failed/)).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale oversize response after selecting a normal file', async () => {
+    let resolveA!: (_value: Response) => void;
+    mocks.fetch.mockImplementation((url: string) => url.includes('report.md')
+      ? new Promise<Response>((resolve) => { resolveA = resolve; })
+      : Promise.resolve({
+          ok: true, status: 200, headers: { get: () => 'text/markdown' },
+          blob: async () => ({ size: 3, text: async () => 'B!' }),
+        } as unknown as Response));
+    render(<ArtifactsSection />);
+    fireEvent.click((await screen.findAllByText('report.md'))[0]);
+    fireEvent.click((await screen.findAllByText('data.json'))[0]);
+    await screen.findByText('B!');
+    await act(async () => {
+      resolveA({
+        ok: true, status: 200, headers: { get: () => 'application/octet-stream' },
+        blob: async () => ({ size: 10 * 1024 * 1024, text: async () => '' }),
+      } as unknown as Response);
+    });
+    expect(screen.getByText('B!')).toBeInTheDocument();
+    expect(screen.queryByText(/超过/)).not.toBeInTheDocument();
   });
 });

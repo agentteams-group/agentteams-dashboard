@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Rocket } from 'lucide-react';
@@ -26,14 +27,36 @@ import { DevelopmentSquadDialog } from '../teams/development-squad-dialog';
 import { TeamSettingsPanel } from '../teams/team-settings-panel';
 import { MillforgeDialog } from '../teams/millforge/millforge-dialog';
 import { WorkerCreateDialog } from '../workers/worker-create-dialog';
-import { WorkerDetailPanel } from '../workers/worker-detail-panel';
 import { filterTeamRows, teamMemberWorkers, teamAgentsInitialIntentFromHash } from './team-agents-logic';
 import { MemberPreview } from './member-preview';
 import { AgentSummaryCard, HumanSummaryCard, ResourceIdentity } from './resource-summary-card';
-import { TeamAgentsWorkbench } from './team-agents-workbench';
 import { isDesktopHover } from '@/lib/desktop-interactions';
 import { workerDisplayName } from '@/lib/worker-display-name';
 import { openChatRoom } from '@/lib/open-chat-room';
+
+const WorkerDetailPanel = dynamic(
+  () => import('../workers/worker-detail-panel').then((module) => ({ default: module.WorkerDetailPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-64 flex-1 items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载 Agent 详情…
+      </div>
+    ),
+  },
+);
+
+const TeamAgentsWorkbench = dynamic(
+  () => import('./team-agents-workbench').then((module) => ({ default: module.TeamAgentsWorkbench })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-96 items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载拓扑…
+      </div>
+    ),
+  },
+);
 
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
@@ -108,9 +131,8 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
 
   function refresh() {
     void teamsQuery.refetch();
-    for (const key of ['agentteams-workers', 'agentteams-humans']) {
-      void queryClient.invalidateQueries({ queryKey: [key] });
-    }
+    void workersQuery.refetch();
+    void queryClient.invalidateQueries({ queryKey: ['agentteams-humans'] });
   }
 
   const teams = teamsQuery.data ?? [];
@@ -152,7 +174,14 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
     </div>;
   }
 
-  if ((teamsQuery.isError || workersQuery.isError) && !isConnected) return <ApiErrorState />;
+  if (teamsQuery.isError || workersQuery.isError) {
+    const failure = teamsQuery.error ?? workersQuery.error;
+    return <ApiErrorState
+      title="团队与 Agent 数据加载失败"
+      message={failure instanceof Error ? failure.message : '请求未完成，无法显示团队或 Agent 列表。'}
+      onRetry={refresh}
+    />;
+  }
 
   const isTopology = view === 'teams' && teamView === 'topology';
   const controls = <div className="flex min-w-0 flex-wrap items-center gap-3">{!view && <Tabs value={location.tab} onValueChange={(value) => navigate(value as TeamAgentsTab)}><TabsList aria-label="资源分类">
@@ -186,7 +215,7 @@ export function TeamAgentsSection({ view }: { view?: TeamAgentsTab } = {}) {
         selectedWorker ? <WorkerDetailPanel key={selectedWorker.name} worker={selectedWorker} modelOptions={modelOptions} sessionIssue={sessionIssue} userLevel={userLevel} className="min-h-0 flex-1" onChanged={refresh} onDeleted={() => navigate('agents')} /> :
             <p className="p-6 text-sm text-muted-foreground">{teamsQuery.isLoading || workersQuery.isLoading ? '正在加载…' : '未找到该资源，请返回列表刷新。'}</p>}
     </div> : <>
-      {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
+      {teamsQuery.isLoading || workersQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2" role="status" aria-live="polite"><span className="sr-only">正在加载团队与 Agent…</span>{[0, 1].map((item) => <div key={item} className="h-56 rounded-xl border bg-muted/30 animate-pulse" />)}</div> :
         location.tab === 'teams' ? <div className={RESOURCE_CARD_GRID} aria-label="团队卡片">
           {teamPage.items.map(({ team }) => {
             const members = [...new Set([...teamHumanMembers(team).map((member) => member.name), ...(humans ?? []).filter((human) => human.accessibleTeams?.includes(team.name)).map((human) => human.name)])].filter((name) => name !== team.admin?.name).sort((a, b) => a.localeCompare(b));

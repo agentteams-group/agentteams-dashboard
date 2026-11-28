@@ -29,8 +29,9 @@ vi.mock('@/lib/agentteams-store', () => ({
     selector ? selector(store) : store,
 }));
 
+const infrastructureHook = vi.hoisted(() => vi.fn(() => ({ data: null })));
 vi.mock('@/hooks/use-agentteams-infrastructure', () => ({
-  useInfrastructure: () => ({ data: null }),
+  useInfrastructure: infrastructureHook,
 }));
 
 const matrixState = { isLoggedIn: true, userId: '@alice:test', logout: vi.fn() };
@@ -55,6 +56,8 @@ vi.mock('./sections/plugins/plugin-gallery', () => ({
 import { SettingsDialog } from './settings-dialog';
 
 beforeEach(() => {
+  store.settingsOpen = true;
+  infrastructureHook.mockClear();
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
@@ -70,6 +73,15 @@ afterEach(() => {
 });
 
 describe('SettingsDialog · 模块更新已迁出', () => {
+  it('disables infrastructure requests while the dialog is hidden', () => {
+    store.settingsOpen = false;
+    const { rerender } = render(<SettingsDialog />);
+    expect(infrastructureHook).toHaveBeenLastCalledWith({ enabled: false });
+    store.settingsOpen = true;
+    rerender(<SettingsDialog />);
+    expect(infrastructureHook).toHaveBeenLastCalledWith({ enabled: true });
+  });
+
   it('设置里不再有「模块」tab / 模块更新入口', () => {
     render(<SettingsDialog />);
     expect(screen.getByText('设置')).toBeInTheDocument();

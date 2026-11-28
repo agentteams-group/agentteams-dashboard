@@ -1,21 +1,27 @@
 // @vitest-environment node
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { NextRequest } from 'next/server';
 import { GET, PUT, DELETE } from './route';
 
+vi.mock('@/lib/audit-log', () => ({ appendAuditEvent: vi.fn() }));
+
 let server: Server;
 let controllerUrl: string;
-const received: Array<{ method: string; url: string; body?: string }> = [];
+const received: Array<{ method: string; url: string; body?: string; ifMatch?: string }> = [];
 let nextResponse: { status: number; body: string } = { status: 200, body: '{"name":"worker-1","spec":{"skills":["s1"]}}' };
+const nextEtag: string | null = '"worker-v1"';
 
 beforeAll(async () => {
   server = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
-      received.push({ method: req.method ?? '', url: req.url ?? '', body });
-      res.writeHead(nextResponse.status, { 'content-type': 'application/json' });
+      received.push({ method: req.method ?? '', url: req.url ?? '', body, ifMatch: req.headers['if-match'] as string | undefined });
+      res.writeHead(nextResponse.status, {
+        'content-type': 'application/json',
+        ...(nextEtag ? { etag: nextEtag } : {}),
+      });
       res.end(nextResponse.body);
     });
   });
@@ -29,14 +35,29 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-function makeRequest(path: string, init: { method?: string; body?: string } = {}) {
+const globalAdminHeaders = {
+  'x-agentteams-user': 'admin',
+  'x-agentteams-user-level': '3',
+  'x-agentteams-scope': 'global',
+};
+
+beforeEach(() => {
+  received.length = 0;
+  nextResponse = { status: 200, body: '{"name":"worker-1","spec":{"skills":["s1"]}}' };
+});
+
+function makeRequest(path: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) {
   // Pass the controller URL via the same `controllerUrl` query the proxy-helper
   // recognises, so this test does not need a real AgentTeams controller.
   const url = new URL(`http://localhost${path}`);
   url.searchParams.set('controllerUrl', controllerUrl);
   return new NextRequest(url, {
     method: init.method ?? 'GET',
-    headers: init.body ? { 'content-type': 'application/json' } : undefined,
+    headers: {
+      ...globalAdminHeaders,
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...init.headers,
+    },
     body: init.body,
   });
 }
@@ -52,6 +73,7 @@ describe('GET /api/agentteams/workers/{name}', () => {
     expect(received).toHaveLength(1);
     expect(received[0].method).toBe('GET');
     expect(received[0].url.startsWith('/api/v1/workers/worker-1')).toBe(true);
+    expect(res.headers.get('etag')).toBe(nextEtag);
   });
 
   it('percent-encodes the worker name segment', async () => {
@@ -97,6 +119,7 @@ describe('PUT /api/agentteams/workers/{name} (smoke)', () => {
       makeRequest('/api/agentteams/workers/worker-1', {
         method: 'PUT',
         body: JSON.stringify({ spec: { skills: ['s1', 's2'] } }),
+        headers: { 'if-match': '"worker-v1"' },
       }),
       { params: Promise.resolve({ name: 'worker-1' }) },
     );
@@ -105,6 +128,8 @@ describe('PUT /api/agentteams/workers/{name} (smoke)', () => {
     expect(received[0].method).toBe('PUT');
     expect(received[0].url).toBe('/api/v1/workers/worker-1');
     expect(received[0].body).toBe(JSON.stringify({ spec: { skills: ['s1', 's2'] } }));
+    expect(received[0].ifMatch).toBe('"worker-v1"');
+    expect(res.headers.get('etag')).toBe(nextEtag);
   });
 });
 
@@ -128,6 +153,8 @@ describe('RBAC enforcement on worker write routes', () => {
     const headers: Record<string, string> = {
       'x-agentteams-user': name,
       'x-agentteams-user-level': String(level),
+      'x-agentteams-scope': level === 3 ? 'global' : 'scoped',
+      ...(level === 3 ? {} : { 'x-agentteams-workers': JSON.stringify(['worker-1']) }),
     };
     return new NextRequest(url, { method: 'DELETE', headers });
   }
@@ -151,6 +178,8 @@ describe('RBAC enforcement on worker write routes', () => {
         'content-type': 'application/json',
         'x-agentteams-user': 'observer',
         'x-agentteams-user-level': '1',
+        'x-agentteams-scope': 'scoped',
+        'x-agentteams-workers': JSON.stringify(['worker-1']),
       },
       body: JSON.stringify({ spec: { skills: [] } }),
     });
@@ -160,11 +189,31 @@ describe('RBAC enforcement on worker write routes', () => {
   });
 
   it('allows admin DELETE on a worker', async () => {
-    received.length = 0;
     const res = await DELETE(makeRequestWithLevel('admin', 3), {
       params: Promise.resolve({ name: 'worker-1' }),
     });
     expect(res.status).toBe(200);
     expect(received[0].method).toBe('DELETE');
+  });
+
+  it.each<[string, Record<string, string>, number]>([
+    ['missing identity', {}, 401],
+    ['unknown scope', {
+      'x-agentteams-user': 'user',
+      'x-agentteams-user-level': '1',
+      'x-agentteams-scope': 'unknown',
+    }, 403],
+    ['cross-resource scope', {
+      ...globalAdminHeaders,
+      'x-agentteams-scope': 'scoped',
+      'x-agentteams-workers': JSON.stringify(['other']),
+    }, 403],
+  ])('denies %s before reaching the controller', async (_label, headers, status) => {
+    const url = new URL('http://localhost/api/agentteams/workers/worker-1');
+    url.searchParams.set('controllerUrl', controllerUrl);
+    const req = new NextRequest(url, { method: 'DELETE', headers });
+    const res = await DELETE(req, { params: Promise.resolve({ name: 'worker-1' }) });
+    expect(res.status).toBe(status);
+    expect(received).toHaveLength(0);
   });
 });

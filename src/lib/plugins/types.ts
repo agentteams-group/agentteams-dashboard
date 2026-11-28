@@ -58,10 +58,21 @@ export interface PluginManifest {
   min_version?: string;
   /** Extension points the plugin intends to use (informational + enforced). */
   extensionPoints?: ExtensionPointId[];
+  /** Declarative host metadata lets navigation render without loading plugin code. */
+  contributions?: PluginManifestContributions;
   /** Declarative permission list (informational in the current release). */
   permissions?: string[];
   /** Other plugin ids this plugin depends on. */
   dependencies?: string[];
+}
+
+export interface PluginManifestContributions {
+  menuItems?: Array<{
+    id: string; label: string; icon?: string; order?: number;
+    target: MenuItemTarget;
+  }>;
+  routes?: Array<{ id: string; title: string; description?: string }>;
+  widgets?: Array<{ id: string; title: string; size?: WidgetSize; order?: number }>;
 }
 
 export type PluginSourceKind = 'bundled' | 'url';

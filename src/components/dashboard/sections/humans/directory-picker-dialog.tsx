@@ -69,6 +69,7 @@ export function DirectoryPickerDialog({
   const [expanded, setExpanded] = useState<string[]>([ROOT]);
   const [unavailable, setUnavailable] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
+  const [selectedPath, setSelectedPath] = useState(ROOT);
   // 打开代号：切换人员 / 重新打开时丢弃在途响应。
   const genRef = useRef(0);
   const nodeRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -101,8 +102,11 @@ export function DirectoryPickerDialog({
     setExpanded([ROOT]);
     setUnavailable(false);
     setFocusIdx(0);
+    setSelectedPath(ROOT);
     nodeRefs.current = [];
     void load(ROOT);
+    const frame = requestAnimationFrame(() => nodeRefs.current[0]?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [open, humanName, load]);
 
   const rows = pickerRows(dirs, expanded);
@@ -189,6 +193,7 @@ export function DirectoryPickerDialog({
           <div
             role="tree"
             aria-label="工作区目录"
+            aria-busy={dirs[ROOT]?.status === 'loading'}
             className="max-h-[52vh] space-y-0.5 overflow-y-auto py-1"
           >
             {rows.map((row, i) => {
@@ -204,34 +209,26 @@ export function DirectoryPickerDialog({
                   }}
                   role="treeitem"
                   aria-label={label(row.path)}
+                  aria-selected={row.path === selectedPath}
                   aria-level={row.depth + 1}
                   aria-expanded={hasChildren || !loaded ? row.expanded : undefined}
                   tabIndex={i === idx ? 0 : -1}
                   data-dir-rel={row.path}
                   className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded px-1.5 text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   style={{ paddingLeft: 6 + row.depth * 16 }}
-                  onClick={() => pick(row.path)}
+                  onClick={() => { setSelectedPath(row.path); pick(row.path); }}
                   onKeyDown={onRowKeyDown(i)}
                   onFocus={() => setFocusIdx(i)}
                 >
-                  <button
-                    type="button"
-                    className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                    aria-label={`${row.expanded ? '收起' : '展开'} ${label(row.path)}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggle(row.path);
-                    }}
-                  >
+                  <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
                     {loading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <ChevronRight
                         className={cn('h-3.5 w-3.5 transition-transform', row.expanded && 'rotate-90')}
-                        aria-hidden="true"
                       />
                     )}
-                  </button>
+                  </span>
                   {row.expanded ? (
                     <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   ) : (

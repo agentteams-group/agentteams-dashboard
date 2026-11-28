@@ -22,7 +22,11 @@ function request(
       pathname: '/api/agentteams/millforge',
       searchParams: new URLSearchParams(query),
     },
-    headers: new Headers(),
+    headers: new Headers({
+      'x-agentteams-user': 'admin',
+      'x-agentteams-user-level': '3',
+      'x-agentteams-user-scope': 'global',
+    }),
     text: async () => body,
   };
 }

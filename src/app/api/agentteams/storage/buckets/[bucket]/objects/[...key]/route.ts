@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient } from '@/lib/minio-client';
-import { enforceLevelOnlyRbac } from '@/lib/server-auth';
+import { guardStorageObject } from '../../../../security';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ bucket: string; key: string[] }> }
 ) {
   const { bucket, key } = await params;
-  const objectKey = decodeURIComponent(key.join('/'));
-  const bucketName = decodeURIComponent(bucket);
-  const denied = await enforceLevelOnlyRbac(request, 'delete', 'storage.object', `${bucketName}/${objectKey}`);
-  if (denied) return denied;
+  const guarded = await guardStorageObject(request, 'delete', bucket, key.join('/'));
+  if (guarded.response) return guarded.response;
 
   try {
     const client = createMinioClient();
-    await client.removeObject(bucketName, objectKey);
+    await client.removeObject(guarded.bucket, guarded.key);
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown storage error';

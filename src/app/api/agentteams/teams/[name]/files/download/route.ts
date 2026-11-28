@@ -4,7 +4,7 @@ import type { Client } from 'minio';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import { enforceServerSideRbac } from '@/lib/server-auth';
-import { isSensitiveObjectKey } from '@/lib/sensitive-files';
+import { isSensitiveObjectKey, normalizeStorageBucket, normalizeStorageKey } from '@/lib/sensitive-files';
 
 async function tryStatAndGet(
   client: Client,
@@ -42,17 +42,24 @@ export async function GET(
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
 
-  if (!key.startsWith(`teams/${name}/`)) {
+  let normalizedKey: string;
+  try {
+    normalizedKey = normalizeStorageKey(key);
+    normalizeStorageBucket(bucket);
+  } catch {
+    return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+  }
+  if (!normalizedKey.startsWith(`teams/${name}/`)) {
     return NextResponse.json({ error: '非法 Team 文件路径' }, { status: 400 });
   }
 
-  if (isSensitiveObjectKey(key)) {
+  if (isSensitiveObjectKey(normalizedKey)) {
     return NextResponse.json({ error: '文件不存在' }, { status: 404 });
   }
 
   try {
     const client = createMinioClient();
-    const result = await tryStatAndGet(client, bucket, key);
+    const result = await tryStatAndGet(client, bucket, normalizedKey);
     if (!result) {
       return NextResponse.json({ error: '文件不存在' }, { status: 404 });
     }
@@ -62,7 +69,7 @@ export async function GET(
     const headers = new Headers();
     headers.set('Content-Type', stat.metaData?.['content-type'] || 'application/octet-stream');
     headers.set('Content-Length', String(stat.size));
-    headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(key.split('/').pop() || key)}"`);
+    headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(normalizedKey.split('/').pop() || normalizedKey)}"`);
 
     return new NextResponse(webStream, { headers });
   } catch {

@@ -7,17 +7,16 @@ import { enforceServerSideRbac } from '@/lib/server-auth';
 // GET /api/agentteams/workers/{name}
 //
 // Proxies the AgentTeams controller `GET /api/v1/workers/{name}` endpoint.
-// Needed for the spec.skills merge path: `useUploadWorkerSkill` re-reads the
-// worker via `agentteamsApi.getWorker` before issuing the PUT so concurrent
-// spec edits from other Dashboard sessions aren't clobbered. Without this
-// proxy, Next.js returns 405 before the request reaches the controller.
+// Proxies the AgentTeams controller `GET /api/v1/workers/{name}` endpoint.
+// The detail response supplies both spec.skills and the ETag used by the
+// bounded conditional-write fallback when atomic skill append is unavailable.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   return filterEnvironmentResponse(request, await proxyToAgentTeams(
     request,
     getControllerUrl(request),
     `/api/v1/workers/${encodeURIComponent(name)}`,
-    { forwardBody: false },
+    { forwardBody: false, passthroughHeaders: ['etag'] },
   ));
 }
 
@@ -31,7 +30,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (providerRejected) return providerRejected;
   const rejected = await rejectUnavailableExternalModelAlias(request, await getRequestModelAlias(request));
   if (rejected) return rejected;
-  return filterEnvironmentResponse(request, await proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/workers/${encodeURIComponent(name)}`));
+  return filterEnvironmentResponse(request, await proxyToAgentTeams(
+    request,
+    getControllerUrl(request),
+    `/api/v1/workers/${encodeURIComponent(name)}`,
+    { forwardRequestHeaders: ['if-match'], passthroughHeaders: ['etag'] },
+  ));
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {

@@ -149,6 +149,9 @@ export function queryKeysForWrite(
   if (scope.destDir != null && scope.destDir !== scope.dir) {
     keys.push(filesQueryKeys.dir(human, scope.destDir));
   }
-  if (kind === 'delete' || kind === 'restore') keys.push(filesQueryKeys.trash(human));
+  // 单文件 rename/move 的旧 Controller 兼容路径也会把源文件软删进回收站。
+  if (kind === 'delete' || kind === 'restore' || kind === 'rename' || kind === 'move') {
+    keys.push(filesQueryKeys.trash(human));
+  }
   return [...keys, filesQueryKeys.recursive(human), filesQueryKeys.quota(human)];
 }

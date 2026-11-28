@@ -79,7 +79,7 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
                 }
                 onNavClick(menu.id);
               }}
-              className={`relative flex h-9 min-h-9 w-full items-center gap-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-1 focus-visible:outline-ring ${collapsed ? 'justify-center px-0' : 'px-3'} ${active && (!grouped || collapsed) ? 'bg-[#F1F2F2] text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+              className={`relative flex h-9 min-h-9 w-full items-center gap-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-1 focus-visible:outline-ring ${collapsed ? 'justify-center px-0' : 'px-3'} ${active && (!grouped || collapsed) ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
               <Icon className="size-4 shrink-0" aria-hidden="true" />
               {!collapsed && <span className="min-w-0 flex-1 truncate text-left">{menu.label}</span>}
               {count > 0 && <span className={`rounded-full bg-primary/10 px-1.5 text-xs text-primary ${collapsed ? 'absolute right-0 top-0' : 'ml-auto'}`}>{count > 99 ? '99+' : count}</span>}
@@ -92,7 +92,7 @@ export function WorkspaceNavigation({ activeSection, countMap, sectionsWithNotif
                   <button key={item.id} type="button" aria-label={item.id === 'humans' ? '用户' : item.label} data-nav-section={item.id} aria-current={activeSection === item.id ? 'page' : undefined}
                     title={item.id === 'humans' ? '用户' : item.label}
                     onClick={() => onNavClick(item.id)}
-                    className={`relative flex h-9 min-h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm transition-colors focus-visible:outline-1 focus-visible:outline-ring ${activeSection === item.id ? 'bg-[#F1F2F2] font-medium text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+                    className={`relative flex h-9 min-h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm transition-colors focus-visible:outline-1 focus-visible:outline-ring ${activeSection === item.id ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
                     <span className="min-w-0 truncate">{item.id === 'humans' ? '用户' : item.label}</span>
                     {(countMap[item.id] ?? 0) > 0 && <span className="ml-auto text-xs tabular-nums">{countMap[item.id] > 99 ? '99+' : countMap[item.id]}</span>}
                   </button>

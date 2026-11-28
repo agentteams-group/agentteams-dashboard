@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, memo } from 'react';
 import { Loader2 } from 'lucide-react';
+import { validateMermaidInWorker } from '@/lib/mermaid-validation';
+import { MERMAID_LIMITS } from '@/lib/mermaid-limits';
 
 interface MermaidBlockProps {
   chart: string;
@@ -15,12 +17,16 @@ const MermaidBlock = memo(function MermaidBlock({ chart }: MermaidBlockProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     const initAndRender = async () => {
       setLoading(true);
       setError(null);
       setSvg(null);
       try {
+        const validation = await validateMermaidInWorker(chart, controller.signal);
+        if (cancelled) return;
+        if (!validation.ok) throw new Error(validation.reason);
         const mod = await import('mermaid');
         if (cancelled) return;
         const mermaid = mod.default || mod;
@@ -37,13 +43,19 @@ const MermaidBlock = memo(function MermaidBlock({ chart }: MermaidBlockProps) {
           // Explicit: dangerouslySetInnerHTML below relies on mermaid's
           // sanitizing; never depend on the library default silently.
           securityLevel: 'strict',
+          maxTextSize: MERMAID_LIMITS.characters,
+          maxEdges: MERMAID_LIMITS.edges,
           flowchart: { useMaxWidth: true, htmlLabels: true },
           sequence: { useMaxWidth: true },
           gantt: { useMaxWidth: true },
         });
 
         const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const startedAt = performance.now();
         const { svg: renderedSvg } = await mermaid.render(id, chart);
+        if (performance.now() - startedAt > MERMAID_LIMITS.timeoutMs) {
+          throw new Error('图表布局超时');
+        }
         if (!cancelled) {
           setSvg(renderedSvg);
           setLoading(false);
@@ -57,7 +69,7 @@ const MermaidBlock = memo(function MermaidBlock({ chart }: MermaidBlockProps) {
     };
 
     initAndRender();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [chart]);
 
   return (

@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const { statObject, enforceLevelOnlyRbac } = vi.hoisted(() => ({
+const { statObject, enforceStorageObjectRbac } = vi.hoisted(() => ({
   statObject: vi.fn(),
-  enforceLevelOnlyRbac: vi.fn(async () => null),
+  enforceStorageObjectRbac: vi.fn(async (): Promise<NextResponse | null> => null),
 }));
 
 vi.mock('@/lib/minio-client', () => ({ createMinioClient: () => ({ statObject }) }));
-vi.mock('@/lib/server-auth', () => ({ enforceLevelOnlyRbac }));
+vi.mock('@/lib/server-auth', () => ({ enforceStorageObjectRbac }));
 
 import { GET } from './route';
 
@@ -22,6 +22,16 @@ describe('storage download denials and failures', () => {
     const response = await GET(request(key));
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: '文件不存在' });
+    expect(statObject).not.toHaveBeenCalled();
+  });
+
+  it('returns storage RBAC denials before contacting storage', async () => {
+    enforceStorageObjectRbac.mockResolvedValueOnce(
+      NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+    );
+    const response = await GET(request('workers/other/report.txt'));
+    expect(response.status).toBe(403);
+    expect(enforceStorageObjectRbac).toHaveBeenCalledWith(expect.any(NextRequest), 'view', 'workers/other/report.txt');
     expect(statObject).not.toHaveBeenCalled();
   });
 

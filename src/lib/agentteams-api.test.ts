@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { normalizeKubeMode, agentteamsApi } from '@/lib/agentteams-api';
+import { appendWorkerSkill, normalizeKubeMode, agentteamsApi, saveHumanModelAccess, saveHumanWorkspaceAccess } from '@/lib/agentteams-api';
 
 const originalFetch = globalThis.fetch;
 
@@ -65,6 +65,149 @@ describe('agentteamsApi.deleteTeam', () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
 
     await expect(agentteamsApi.deleteTeam('alpha-team')).resolves.toBeUndefined();
+  });
+});
+
+describe('Human configuration concurrent sibling writes', () => {
+  const modelAccess = { scopes: [{ provider: 'provider-a', models: ['model-a'] }] };
+  const workspaceAccess = {
+    grants: [{ team: 'team-a', paths: ['files/docs'], mode: 'read' as const }],
+  };
+
+  function json(body: unknown, status = 200, etag?: string) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...(etag ? { etag } : {}) },
+    });
+  }
+
+  it('preserves sibling fields when model and workspace PATCHes run concurrently', async () => {
+    const record = {
+      metadata: { name: 'alice' },
+      spec: { modelAccess: { scopes: [] }, workspaceAccess: {}, untouched: 'keep' },
+    };
+    const patches: Array<Record<string, unknown>> = [];
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') return json(record, 200, 'human-v1');
+      if (method === 'PATCH') {
+        const patch = JSON.parse(String(init?.body)) as { spec: Record<string, unknown> };
+        patches.push(patch.spec);
+        Object.assign(record.spec, patch.spec);
+        return json(record, 200, 'human-v2');
+      }
+      throw new Error(`unexpected ${method}`);
+    }) as unknown as typeof fetch;
+
+    const results = await Promise.all([
+      saveHumanModelAccess('alice', modelAccess),
+      saveHumanWorkspaceAccess('alice', workspaceAccess),
+    ]);
+
+    expect(results.map((result) => result.method)).toEqual(['PATCH', 'PATCH']);
+    expect(patches).toHaveLength(2);
+    expect(record.spec).toMatchObject({ modelAccess, workspaceAccess, untouched: 'keep' });
+    expect(results[1]).toMatchObject({ verified: true });
+  });
+
+  it('retries a sibling write with If-Match after a concurrent fallback PUT', async () => {
+    const record = {
+      metadata: { name: 'alice' },
+      spec: { modelAccess: { scopes: [] }, workspaceAccess: {}, untouched: 'keep' },
+    };
+    let version = 0;
+    const conditionalWrites: string[] = [];
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'PATCH') return json({ error: 'method not allowed' }, 405);
+      if (method === 'GET') return json(record, 200, `human-v${version}`);
+      if (method === 'PUT') {
+        const ifMatch = new Headers(init?.headers).get('If-Match');
+        conditionalWrites.push(ifMatch ?? '');
+        if (ifMatch !== `human-v${version}`) return json({ error: 'conflict' }, 409);
+        const body = JSON.parse(String(init?.body)) as typeof record;
+        Object.assign(record.spec, body.spec);
+        version += 1;
+        return json(record, 200, `human-v${version}`);
+      }
+      throw new Error(`unexpected ${method}`);
+    }) as unknown as typeof fetch;
+
+    await Promise.all([
+      saveHumanModelAccess('alice', modelAccess),
+      saveHumanWorkspaceAccess('alice', workspaceAccess),
+    ]);
+
+    expect(conditionalWrites).toHaveLength(3);
+    expect(conditionalWrites[0]).toBe('human-v0');
+    expect(conditionalWrites[1]).toBe('human-v0');
+    expect(conditionalWrites[2]).toBe('human-v1');
+    expect(record.spec).toMatchObject({ modelAccess, workspaceAccess, untouched: 'keep' });
+  });
+
+  it('refuses a blind fallback PUT when the controller provides no ETag', async () => {
+    const fetchMock = vi.fn(async (_url, init) => {
+      if ((init?.method ?? 'GET') === 'PATCH') return json({ error: 'unsupported' }, 405);
+      return json({ spec: {} });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(saveHumanModelAccess('alice', modelAccess)).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+  });
+});
+
+describe('Worker skill concurrent appends', () => {
+  function json(body: unknown, status = 200, etag?: string) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...(etag ? { etag } : {}) },
+    });
+  }
+
+  it('uses the atomic append endpoint without a read-modify-write', async () => {
+    const fetchMock = vi.fn(async () => json({ name: 'worker', skills: ['skill-a'] }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await appendWorkerSkill('worker', 'skill-a');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit];
+    expect(String(url)).toContain('/api/agentteams/workers/worker/skills/append');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ skillName: 'skill-a' });
+  });
+
+  it('retains both A and B skills when fallback PUTs race with stale ETags', async () => {
+    let version = 0;
+    let skills: string[] = [];
+    const conditionalWrites: string[] = [];
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const method = init?.method ?? 'GET';
+      const path = String(_url);
+      if (method === 'POST' && path.includes('/skills/append')) return json({ error: 'unsupported' }, 405);
+      if (method === 'GET') return json({ name: 'worker', skills }, 200, `worker-v${version}`);
+      if (method === 'PUT') {
+        const ifMatch = new Headers(init?.headers).get('If-Match');
+        conditionalWrites.push(ifMatch ?? '');
+        if (ifMatch !== `worker-v${version}`) return json({ error: 'conflict' }, 409);
+        const body = JSON.parse(String(init?.body)) as { skills: string[] };
+        skills = body.skills;
+        version += 1;
+        return json({ name: 'worker', skills }, 200, `worker-v${version}`);
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    }) as unknown as typeof fetch;
+
+    await Promise.all([
+      appendWorkerSkill('worker', 'skill-a'),
+      appendWorkerSkill('worker', 'skill-b'),
+    ]);
+
+    expect(skills).toEqual(['skill-a', 'skill-b']);
+    expect(conditionalWrites).toHaveLength(3);
+    expect(conditionalWrites.filter((etag) => etag === 'worker-v0')).toHaveLength(2);
+    expect(conditionalWrites).toContain('worker-v1');
   });
 });
 

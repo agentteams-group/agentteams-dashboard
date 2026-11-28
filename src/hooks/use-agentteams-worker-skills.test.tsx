@@ -8,16 +8,14 @@ import { agentteamsApi } from '@/lib/agentteams-api';
 vi.mock('@/lib/agentteams-api', () => ({
   agentteamsApi: {
     uploadWorkerSkill: vi.fn(),
-    getWorker: vi.fn(),
-    updateWorker: vi.fn(),
+    appendWorkerSkill: vi.fn(),
     restartWorker: vi.fn(),
   },
 }));
 
 const mockedApi = agentteamsApi as unknown as {
   uploadWorkerSkill: ReturnType<typeof vi.fn>;
-  getWorker: ReturnType<typeof vi.fn>;
-  updateWorker: ReturnType<typeof vi.fn>;
+  appendWorkerSkill: ReturnType<typeof vi.fn>;
   restartWorker: ReturnType<typeof vi.fn>;
 };
 
@@ -57,8 +55,7 @@ describe('useUploadWorkerSkill', () => {
 
   it('uploads the file with restart=false before reconciling spec.skills', async () => {
     mockedApi.uploadWorkerSkill.mockResolvedValueOnce(uploadResponse);
-    mockedApi.getWorker.mockResolvedValueOnce({ name: 'worker-1', skills: [] });
-    mockedApi.updateWorker.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
+    mockedApi.appendWorkerSkill.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
     mockedApi.restartWorker.mockResolvedValueOnce({ success: true, note: 'reloaded' });
 
     const qc = makeQueryClient();
@@ -76,22 +73,19 @@ describe('useUploadWorkerSkill', () => {
     );
 
     await waitFor(() => {
-      expect(mockedApi.getWorker).toHaveBeenCalledWith('worker-1');
-      expect(mockedApi.updateWorker).toHaveBeenCalledWith('worker-1', {
-        skills: ['my-skill'],
-      });
+      expect(mockedApi.appendWorkerSkill).toHaveBeenCalledWith('worker-1', 'my-skill');
       // spec.skills is updated BEFORE restart.
       const uploadCallOrder = mockedApi.uploadWorkerSkill.mock.invocationCallOrder[0]!;
-      const updateCallOrder = mockedApi.updateWorker.mock.invocationCallOrder[0]!;
+      const updateCallOrder = mockedApi.appendWorkerSkill.mock.invocationCallOrder[0]!;
       const restartCallOrder = mockedApi.restartWorker.mock.invocationCallOrder[0]!;
       expect(uploadCallOrder).toBeLessThan(updateCallOrder);
       expect(updateCallOrder).toBeLessThan(restartCallOrder);
     });
   });
 
-  it('skips updateWorker when spec.skills already contains the skill', async () => {
+  it('treats a successful atomic append as specUpdated', async () => {
     mockedApi.uploadWorkerSkill.mockResolvedValueOnce(uploadResponse);
-    mockedApi.getWorker.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
+    mockedApi.appendWorkerSkill.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
     mockedApi.restartWorker.mockResolvedValueOnce({ success: true, note: 'reloaded' });
 
     const qc = makeQueryClient();
@@ -102,15 +96,14 @@ describe('useUploadWorkerSkill', () => {
       res = await result.current.mutateAsync({ workerName: 'worker-1', file: fakeFile });
     });
 
-    expect(mockedApi.updateWorker).not.toHaveBeenCalled();
+    expect(mockedApi.appendWorkerSkill).toHaveBeenCalledTimes(1);
     expect(res!.specUpdated).toBe(true);
     expect(res!.specError).toBeUndefined();
   });
 
-  it('reports specUpdated=false and surfaces specError when updateWorker fails', async () => {
+  it('reports specUpdated=false and surfaces specError when appendWorkerSkill fails', async () => {
     mockedApi.uploadWorkerSkill.mockResolvedValueOnce(uploadResponse);
-    mockedApi.getWorker.mockResolvedValueOnce({ name: 'worker-1', skills: [] });
-    mockedApi.updateWorker.mockRejectedValueOnce(new Error('controller 502'));
+    mockedApi.appendWorkerSkill.mockRejectedValueOnce(new Error('controller 502'));
 
     const qc = makeQueryClient();
     const { result } = renderHook(() => useUploadWorkerSkill(), { wrapper: wrap(qc) });
@@ -128,8 +121,7 @@ describe('useUploadWorkerSkill', () => {
 
   it('reports reloadError when the worker reload itself fails', async () => {
     mockedApi.uploadWorkerSkill.mockResolvedValueOnce(uploadResponse);
-    mockedApi.getWorker.mockResolvedValueOnce({ name: 'worker-1', skills: [] });
-    mockedApi.updateWorker.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
+    mockedApi.appendWorkerSkill.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
     mockedApi.restartWorker.mockRejectedValueOnce(new Error('controller unreachable'));
 
     const qc = makeQueryClient();
@@ -146,8 +138,7 @@ describe('useUploadWorkerSkill', () => {
 
   it('skips the reload when reloadAfterSpec=false', async () => {
     mockedApi.uploadWorkerSkill.mockResolvedValueOnce(uploadResponse);
-    mockedApi.getWorker.mockResolvedValueOnce({ name: 'worker-1', skills: [] });
-    mockedApi.updateWorker.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
+    mockedApi.appendWorkerSkill.mockResolvedValueOnce({ name: 'worker-1', skills: ['my-skill'] });
 
     const qc = makeQueryClient();
     const { result } = renderHook(() => useUploadWorkerSkill(), { wrapper: wrap(qc) });
@@ -175,8 +166,7 @@ describe('useUploadWorkerSkill', () => {
       ).rejects.toThrow('upload boom');
     });
 
-    expect(mockedApi.getWorker).not.toHaveBeenCalled();
-    expect(mockedApi.updateWorker).not.toHaveBeenCalled();
+    expect(mockedApi.appendWorkerSkill).not.toHaveBeenCalled();
     expect(mockedApi.restartWorker).not.toHaveBeenCalled();
   });
 });

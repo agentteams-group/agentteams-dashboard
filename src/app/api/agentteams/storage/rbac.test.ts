@@ -59,13 +59,16 @@ const presignMod = () => import('./presign/route');
 const bucketsMod = () => import('./buckets/route');
 const objectsMod = () => import('./buckets/[bucket]/objects/route');
 
-const { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } = await import('@/lib/server-auth');
+const { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER, SERVER_USER_SCOPE_HEADER, SERVER_USER_TEAMS_HEADER, SERVER_USER_WORKERS_HEADER } = await import('@/lib/server-auth');
 
 function buildRequest(url: string, level?: number, body?: unknown): NextRequest {
   const headers: Record<string, string> = {};
   if (level !== undefined) {
     headers[SERVER_USER_HEADER] = `user-${level}`;
     headers[SERVER_USER_LEVEL_HEADER] = String(level);
+    headers[SERVER_USER_SCOPE_HEADER] = level === 3 ? 'global' : 'scoped';
+    headers[SERVER_USER_TEAMS_HEADER] = JSON.stringify(level === 3 ? [] : ['t1']);
+    headers[SERVER_USER_WORKERS_HEADER] = JSON.stringify(level === 3 ? [] : ['demo']);
   }
   return new NextRequest(url, {
     method: body === undefined ? 'GET' : 'POST',
@@ -179,7 +182,7 @@ describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
       expect(mockPresignedPutObject).not.toHaveBeenCalled();
     });
 
-    it('level 1 身份把 bucket/key 放在 query 上同样被拒（create 门先于参数解析 → 403）', async () => {
+    it('level 1 身份缺少 bucket/key 返回 400，不调用 MinIO', async () => {
       const { POST } = await presignMod();
       const res = await POST(
         buildRequest(
@@ -188,7 +191,7 @@ describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
           {},
         ),
       );
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(400);
       expect(mockPresignedPutObject).not.toHaveBeenCalled();
     });
 
@@ -252,6 +255,20 @@ describe('storage read routes RBAC + sensitive-file filtering (SEC-02)', () => {
         { key: 'workers/demo/README.md', size: 12, isPrefix: undefined },
         { key: 'workers/demo/', size: 0, isPrefix: true },
       ]);
+    });
+
+    it('保留目录 prefix 的末尾分隔符，避免 MinIO 只返回目录自身', async () => {
+      mockListObjects.mockImplementation(() =>
+        makeListStream([{ name: 'workers/demo/README.md', size: 12 }]),
+      );
+      const { GET } = await objectsMod();
+      const res = await GET(
+        buildRequest('http://localhost/api/agentteams/storage/buckets/agentteams-fs/objects?prefix=workers%2Fdemo%2F', 3),
+        { params: Promise.resolve({ bucket: 'agentteams-fs' }) },
+      );
+      expect(res.status).toBe(200);
+      expect(mockListObjects).toHaveBeenCalledWith('agentteams-fs', 'workers/demo/', false);
+      expect((await res.json()).objects[0].key).toBe('workers/demo/README.md');
     });
 
     it('敏感对象不进列表（不暴露存在性）', async () => {

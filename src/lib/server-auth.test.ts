@@ -3,13 +3,22 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { NextRequest } from 'next/server';
-import { enforceServerSideRbac, enforceLevelOnlyRbac, readServerIdentity, SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } from './server-auth';
+import { enforceServerSideRbac, enforceLevelOnlyRbac, readServerIdentity, SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER, SERVER_USER_TEAMS_HEADER, SERVER_USER_WORKERS_HEADER, SERVER_USER_SCOPE_HEADER } from './server-auth';
 import { setAuditLogPathForTests } from './audit-log';
 
-function makeRequest(name: string | null, level: number | null): NextRequest {
+function makeRequest(
+  name: string | null,
+  level: number | null,
+  scope: 'global' | 'scoped' | 'unknown' = level === 3 ? 'global' : 'scoped',
+): NextRequest {
   const headers = new Headers();
   if (name) headers.set(SERVER_USER_HEADER, name);
   if (level !== null) headers.set(SERVER_USER_LEVEL_HEADER, String(level));
+  if (name && level !== null) {
+    headers.set(SERVER_USER_SCOPE_HEADER, scope);
+    headers.set(SERVER_USER_TEAMS_HEADER, JSON.stringify(scope === 'scoped' ? ['t1'] : []));
+    headers.set(SERVER_USER_WORKERS_HEADER, JSON.stringify(scope === 'scoped' ? ['w1'] : []));
+  }
   return new NextRequest('http://localhost/api/agentteams/workers/x', { headers });
 }
 
@@ -22,6 +31,9 @@ describe('readServerIdentity', () => {
     expect(readServerIdentity(makeRequest('alice', 2))).toEqual({
       name: 'alice',
       level: 2,
+      teams: ['t1'],
+      workers: ['w1'],
+      scope: 'scoped',
       sourceIp: undefined,
     });
   });
@@ -72,9 +84,21 @@ describe('enforceServerSideRbac', () => {
     vi.restoreAllMocks();
   });
 
-  it('returns null (allow) when no identity header is present', async () => {
+  it('returns 401 when no identity header is present', async () => {
     const res = await enforceServerSideRbac(makeRequest(null, null), 'delete', 'worker', 'w1');
-    expect(res).toBeNull();
+    expect(res?.status).toBe(401);
+  });
+
+  it('denies unknown and empty scopes even for level 3', async () => {
+    expect((await enforceServerSideRbac(makeRequest('admin', 3, 'unknown'), 'view', 'worker', 'w1'))?.status).toBe(403);
+    const headers = new Headers({
+      [SERVER_USER_HEADER]: 'admin',
+      [SERVER_USER_LEVEL_HEADER]: '3',
+      [SERVER_USER_SCOPE_HEADER]: 'scoped',
+      [SERVER_USER_WORKERS_HEADER]: '[]',
+    });
+    const req = new NextRequest('http://localhost/api/agentteams/workers/x', { headers });
+    expect((await enforceServerSideRbac(req, 'view', 'worker', 'w1'))?.status).toBe(403);
   });
 
   it('allows admin (level 3) to delete any worker', async () => {
@@ -114,9 +138,9 @@ describe('enforceLevelOnlyRbac', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns null (allow) when no identity header is present', async () => {
+  it('returns 401 when no identity header is present', async () => {
     const res = await enforceLevelOnlyRbac(makeRequest(null, null), 'delete', 'storage.bucket', 'foo');
-    expect(res).toBeNull();
+    expect(res?.status).toBe(401);
   });
 
   it('allows admin (level 3) to delete a storage bucket', async () => {

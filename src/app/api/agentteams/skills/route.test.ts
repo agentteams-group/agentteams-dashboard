@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { GET } from './route';
+import { GET, POST } from './route';
+
+vi.mock('@/lib/audit-log', () => ({ appendAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock('@/lib/minio-client', () => ({
   createMinioClient: () => ({ bucketExists: () => Promise.resolve(true) }),
@@ -33,7 +35,9 @@ describe('GET /api/agentteams/skills', () => {
     vi.clearAllMocks();
     vi.mocked(listSkillsActual).mockResolvedValue([]);
     vi.mocked(listGlobalSkillsActual).mockResolvedValue([]);
+    vi.stubEnv('DASHBOARD_STATELESS', '1');
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   it('merges metadata and global skills, metadata takes precedence', async () => {
     vi.mocked(listSkillsActual).mockResolvedValue([meta('custom-skill', '自定义', 'custom')]);
@@ -51,6 +55,19 @@ describe('GET /api/agentteams/skills', () => {
     expect(custom.description).toBe('自定义');
     const builtin = body.skills.find((s: { name: string }) => s.name === 'builtin-skill');
     expect(builtin.source).toBe('builtin');
+  });
+
+  it.each([1, 2, 3])('allows Skills reads and enforces upload RBAC at level %i', async (level) => {
+    const headers = { 'x-agentteams-user': `user-${level}`, 'x-agentteams-user-level': String(level) };
+    const read = await GET(new NextRequest('http://localhost/api/agentteams/skills', { headers }));
+    expect(read.status).toBe(200);
+    const write = await POST(new NextRequest('http://localhost/api/agentteams/skills', {
+      method: 'POST', headers,
+    }));
+    // Level 3 passes RBAC and reaches content-type validation; lower levels
+    // are denied by the route's independent server-side check.
+    expect(write.status).toBe(level === 3 ? 400 : 403);
+    if (level < 3) expect(await write.json()).toMatchObject({ action: 'create', resourceType: 'skill' });
   });
 
   it('filters by source param', async () => {

@@ -76,13 +76,18 @@ describe('plugin manager lifecycle', () => {
     expect(usePluginRegistry.getState().disabledIds).toContain('alpha');
   });
 
-  it('enable re-activates a disabled plugin', async () => {
+  it('enable restores manifest contributions without loading the entry', async () => {
     const { manifest: m, source } = fakeBundled('alpha');
+    m.contributions = {
+      menuItems: [{ id: 'alpha-menu', label: 'Alpha', target: { type: 'section', sectionId: 'overview' } }],
+      widgets: [{ id: 'alpha-widget', title: 'Alpha' }],
+    };
+    const load = vi.spyOn(source, 'load');
     register(makePluginRecord(m, source));
-    await pluginManager.activate('alpha');
     await pluginManager.disable('alpha');
     await pluginManager.enable('alpha');
-    expect(statusOf('alpha')).toBe('active');
+    expect(statusOf('alpha')).toBe('enabled');
+    expect(load).not.toHaveBeenCalled();
     expect(useExtensionStore.getState().widgets).toHaveLength(1);
   });
 

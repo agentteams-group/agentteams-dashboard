@@ -1,10 +1,12 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
 import type { MatrixEvent } from '@/lib/matrix-api';
 import {
   formatMatrixEvent,
   formatMatrixEvents,
   isMessageReadByOthers,
   mergeRawEventsInto,
+  mergeTimelineEvents,
   useRoomMetaStore,
 } from './use-matrix';
 
@@ -503,30 +505,44 @@ describe('formatMatrixEvents', () => {
 describe('isMessageReadByOthers', () => {
   const base = { isMe: true, timestamp: 100 };
 
-  it('returns true when another member has read past the message', () => {
+  it('returns true when another member has read past the message using target event time', () => {
     const receipts = {
-      '@agent:example.test': { eventId: '$1', ts: 150 },
+      '@agent:example.test': { eventId: '$1', ts: 1, eventTimestamp: 150 },
     };
     expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(true);
   });
 
   it('returns false when the other member read receipt is older', () => {
     const receipts = {
-      '@agent:example.test': { eventId: '$1', ts: 50 },
+      '@agent:example.test': { eventId: '$1', ts: 999, eventTimestamp: 50 },
+    };
+    expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
+  });
+
+  it('keeps unresolved positions unread even when the receipt timestamp is newer', () => {
+    const receipts = {
+      '@agent:example.test': { eventId: '$missing', ts: 999 },
+    };
+    expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
+  });
+
+  it('ignores thread receipts for root messages', () => {
+    const receipts = {
+      '@agent:example.test': { eventId: '$thread', ts: 999, eventTimestamp: 999, threadId: '$root' },
     };
     expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
   });
 
   it('ignores the sender own receipt', () => {
     const receipts = {
-      '@human:example.test': { eventId: '$1', ts: 150 },
+      '@human:example.test': { eventId: '$1', ts: 150, eventTimestamp: 150 },
     };
     expect(isMessageReadByOthers(base, '@human:example.test', receipts)).toBe(false);
   });
 
   it('returns false for messages that are not mine', () => {
     const receipts = {
-      '@agent:example.test': { eventId: '$1', ts: 150 },
+      '@agent:example.test': { eventId: '$1', ts: 150, eventTimestamp: 150 },
     };
     expect(isMessageReadByOthers({ isMe: false, timestamp: 100 }, '@human:example.test', receipts)).toBe(false);
   });
@@ -565,6 +581,29 @@ describe('mergeRawEventsInto', () => {
     expect(merged[1].content.body).toBe('v2-edited');
   });
 
+  it('removes a redacted target and its revisions during buffered replay', () => {
+    const chunk = [
+      message('$revision', '* edited', 200, { 'm.relates_to': { rel_type: 'm.replace', event_id: '$root' } }),
+      message('$root', 'root', 100),
+      message('$kept', 'kept', 50),
+    ];
+    const onUnknownRedaction = vi.fn();
+    const merged = mergeRawEventsInto(chunk, [{
+      event_id: '$redaction', sender: '@mod:test', type: 'm.room.redaction', origin_server_ts: 300, redacts: '$root', content: {},
+    }], { onUnknownRedaction });
+    expect(merged.map((event) => event.event_id)).toEqual(['$kept']);
+    expect(onUnknownRedaction).not.toHaveBeenCalled();
+  });
+
+  it('reports an unknown buffered redaction target for cache invalidation', () => {
+    const onUnknownRedaction = vi.fn();
+    const merged = mergeRawEventsInto([message('$kept', 'kept', 100)], [{
+      event_id: '$redaction', sender: '@mod:test', type: 'm.room.redaction', origin_server_ts: 300, redacts: '$outside-window', content: {},
+    }], { onUnknownRedaction });
+    expect(merged.map((event) => event.event_id)).toEqual(['$kept']);
+    expect(onUnknownRedaction).toHaveBeenCalledTimes(1);
+  });
+
   it('skips events without an event_id', () => {
     const chunk = [message('$old1', 'a', 100)];
     const anon = {
@@ -575,6 +614,56 @@ describe('mergeRawEventsInto', () => {
     } as unknown as MatrixEvent;
     const merged = mergeRawEventsInto(chunk, [anon]);
     expect(merged.map((e) => e.event_id)).toEqual(['$old1']);
+  });
+});
+
+describe('mergeTimelineEvents redactions', () => {
+  function cacheWith(chunk: MatrixEvent[]) {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['matrix-messages', '!r:test'], {
+      pages: [{ chunk }],
+      pageParams: [undefined],
+    });
+    return queryClient;
+  }
+
+  function cachedIds(queryClient: QueryClient) {
+    const data = queryClient.getQueryData<{ pages: Array<{ chunk: MatrixEvent[] }> }>(['matrix-messages', '!r:test']);
+    return data?.pages.flatMap((page) => page.chunk.map((event) => event.event_id)) ?? [];
+  }
+
+  it('removes the target message and all cached m.replace revisions', () => {
+    const queryClient = cacheWith([
+      message('$revision', '* edited', 200, { 'm.relates_to': { rel_type: 'm.replace', event_id: '$root' } }),
+      message('$root', 'root', 100),
+      message('$kept', 'kept', 50),
+    ]);
+    mergeTimelineEvents(queryClient, '!r:test', [{
+      event_id: '$redaction', sender: '@mod:test', type: 'm.room.redaction', origin_server_ts: 300, redacts: '$root', content: {},
+    }], '@human:example.test');
+    expect(cachedIds(queryClient)).toEqual(['$kept']);
+  });
+
+  it('removes a redacted revision without deleting its root', () => {
+    const queryClient = cacheWith([
+      message('$revision', '* edited', 200, { 'm.relates_to': { rel_type: 'm.replace', event_id: '$root' } }),
+      message('$root', 'root', 100),
+    ]);
+    mergeTimelineEvents(queryClient, '!r:test', [{
+      event_id: '$redaction', sender: '@mod:test', type: 'm.room.redaction', origin_server_ts: 300, redacts: '$revision', content: {},
+    }], '@human:example.test');
+    expect(cachedIds(queryClient)).toEqual(['$root']);
+  });
+
+  it('invalidates the room cache when the redaction target is unknown', () => {
+    const queryClient = cacheWith([message('$kept', 'kept', 100)]);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    mergeTimelineEvents(queryClient, '!r:test', [{
+      event_id: '$redaction', sender: '@mod:test', type: 'm.room.redaction', origin_server_ts: 300, redacts: '$outside-window', content: {},
+    }], '@human:example.test');
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['matrix-messages', '!r:test'], exact: true, refetchType: 'none',
+    });
   });
 });
 

@@ -5,8 +5,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
+import { promises as dns } from 'node:dns';
 import { BACKEND_NAMES, effectiveUrl, forgetWorking } from '@/lib/backend-config';
 import { __resetBackendUrlResolutionForTests } from '@/lib/backend-url-resolve';
+import {
+  __resetSessionStoreForTests,
+  createSession,
+  sessionCookieHeader,
+} from '@/lib/dashboard-session';
 import { POST } from './route';
 
 let workDir: string;
@@ -38,12 +44,14 @@ let serverHits = 0;
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.stubEnv('DASHBOARD_CONFIG_FILE', configFile());
-  // PR-91 review (Block 2): the probe is token-gated pre-login — these
-  // tests exercise the probe semantics, so a valid env token is available.
   vi.stubEnv('DASHBOARD_SETUP_TOKEN', 'test-token-123');
+  vi.stubEnv('DASHBOARD_SESSION_SECRET', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
+  vi.stubEnv('DASHBOARD_ALLOWED_HOSTS', '127.0.0.1,localhost');
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', '');
   vi.stubEnv('AGENTTEAMS_SGLANG_URL', '');
+  vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
   serverHits = 0;
+  __resetSessionStoreForTests();
   __resetBackendUrlResolutionForTests();
   for (const name of BACKEND_NAMES) forgetWorking(name);
 });
@@ -51,20 +59,29 @@ beforeEach(() => {
 afterEach(() => {
   if (fs.existsSync(configFile())) fs.rmSync(configFile());
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
-function post(body: unknown): NextRequest {
+function sessionCookie(crLevel: 1 | 2 | 3): string {
+  const { cookieValue } = createSession({
+    user: `level-${crLevel}`,
+    crLevel,
+    credential: { kind: 'matrix', token: 'dummy-matrix-token' },
+  });
+  return sessionCookieHeader(cookieValue);
+}
+
+function post(body: unknown, cookie = sessionCookie(1)): NextRequest {
   const payload =
     body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-  // PR-91 review: carry the setup token — the pre-login door to the probe.
   return new NextRequest('http://localhost/api/agentteams/setup/backends/test', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: 'test-token-123', ...payload }),
+    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify({ ...payload }),
   });
 }
 
-/** Raw request WITHOUT the token — for the gate tests themselves. */
+/** Raw request WITHOUT the token or session — for the gate tests themselves. */
 function postRaw(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/agentteams/setup/backends/test', {
     method: 'POST',
@@ -136,13 +153,13 @@ describe('POST /api/agentteams/setup/backends/test (F1c plugin config_test seman
   it('no body → tests the currently configured candidates', async () => {
     fs.writeFileSync(
       configFile(),
-      JSON.stringify({ version: 1, backends: { sglang: { internal: goodUrl } } }),
+      JSON.stringify({ version: 1, backends: { controller: { internal: goodUrl } } }),
     );
     const res = await POST(post({}));
     const data = (await res.json()) as TestResponse;
     expect(res.status).toBe(200);
-    expect(data.results.sglang).toHaveLength(1);
-    expect(data.results.sglang[0].url).toBe(goodUrl);
+    expect(data.results.controller).toHaveLength(1);
+    expect(data.results.controller[0].url).toBe(goodUrl);
   });
 
   it('rejects disallowed hosts (SSRF filter) with 403', async () => {
@@ -336,34 +353,76 @@ describe('草稿凭据参与探测（门后地址「测试」401 修复）', () 
       await gate.close();
     }
   });
+
+  it('*** 不跨 origin 继承：端口变化后不发旧凭据', async () => {
+    const oldGate = await startCaptureServer();
+    const newGate = await startCaptureServer();
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: {
+              url: oldGate.url,
+              auth: { type: 'basic', username: 'ops', password: 'stored' },
+            },
+          },
+        },
+      }),
+    );
+    try {
+      const res = await POST(
+        post({
+          backends: {
+            controller: {
+              internal: { url: newGate.url, auth: { type: 'basic', username: 'ops', password: '***' } },
+            },
+          },
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(oldGate.seen).toEqual([]);
+      expect(newGate.seen.length).toBeGreaterThan(0);
+      expect(newGate.seen.every((value) => value === undefined)).toBe(true);
+    } finally {
+      await oldGate.close();
+      await newGate.close();
+    }
+  });
 });
 
-describe('PR-91 review (Block 2): the probe is no longer unauthenticated', () => {
-  it('pre-login probe without a token → 403 token-required, nothing probed', async () => {
+describe('SEC-03: backend probes require Admin after first configuration', () => {
+  it.each([3, 2])('dashboard level %s receives 403 before DNS or network activity', async (crLevel) => {
     fs.writeFileSync(
       configFile(),
       JSON.stringify({ version: 1, backends: { controller: { internal: goodUrl } } }),
     );
-    const res = await POST(postRaw({ backends: { controller: { internal: goodUrl } } }));
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toBe('token-required');
-    expect(serverHits).toBe(0); // gate fires before any network I/O
-  });
-
-  it('pre-login probe with a wrong token → 403 invalid-token, nothing probed', async () => {
+    vi.mocked(dns.lookup).mockClear();
     const res = await POST(
-      postRaw({ token: 'wrong-token', backends: { controller: { internal: goodUrl } } }),
+      post({ backends: { controller: { internal: goodUrl } } }, sessionCookie(crLevel as 1 | 2 | 3)),
     );
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toBe('invalid-token');
+    expect(await res.json()).toEqual({ ok: false, error: 'only admin (L1) may test backend config' });
+    expect(dns.lookup).not.toHaveBeenCalled();
     expect(serverHits).toBe(0);
   });
 
-  it('pre-login probe with the setup token works (same door as the config write)', async () => {
+  it('an existing config closes pre-login probes even with the setup token', async () => {
     fs.writeFileSync(
       configFile(),
       JSON.stringify({ version: 1, backends: { controller: { internal: goodUrl } } }),
     );
+    const res = await POST(
+      postRaw({ token: 'test-token-123', backends: { controller: { internal: goodUrl } } }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: 'admin-required' });
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(serverHits).toBe(0);
+  });
+
+  it('first-config bootstrap still accepts the setup token', async () => {
     const res = await POST(
       postRaw({ token: 'test-token-123', backends: { controller: { internal: goodUrl } } }),
     );
@@ -372,15 +431,32 @@ describe('PR-91 review (Block 2): the probe is no longer unauthenticated', () =>
     expect(serverHits).toBeGreaterThan(0);
   });
 
-  it('ENFORCE=0: pre-login probe without a token works (installer opt-out, trusted-LAN)', async () => {
+  it('ENFORCE=0: bootstrap works, but existing config still requires Admin', async () => {
     vi.stubEnv('DASHBOARD_SETUP_TOKEN_ENFORCE', '0');
+    const bootstrap = await POST(postRaw({ backends: { controller: { internal: goodUrl } } }));
+    expect(bootstrap.status).toBe(200);
+    expect(serverHits).toBeGreaterThan(0);
+
     fs.writeFileSync(
       configFile(),
       JSON.stringify({ version: 1, backends: { controller: { internal: goodUrl } } }),
     );
+    serverHits = 0;
     const res = await POST(postRaw({ backends: { controller: { internal: goodUrl } } }));
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: 'admin-required' });
+    expect(serverHits).toBe(0);
+  });
+
+  it('rejects a metadata target before connecting', async () => {
+    vi.mocked(dns.lookup).mockClear();
+    const res = await POST(
+      post({ backends: { controller: { internal: 'http://169.254.169.254/latest/meta-data' } } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('host-not-allowed');
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(serverHits).toBe(0);
   });
 });
 

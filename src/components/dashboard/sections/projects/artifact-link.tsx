@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '@/components/dashboard/sections/chat/lazy-markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 import { DocumentPreview } from '@/components/dashboard/document-preview';
 import { isSlideDocument } from '@/lib/document-preview';

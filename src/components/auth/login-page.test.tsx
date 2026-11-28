@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoginPage } from './login-page';
 
 const { setMatrixAuth } = vi.hoisted(() => ({ setMatrixAuth: vi.fn() }));
+const { router } = vi.hoisted(() => ({ router: { push: vi.fn() } }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
 
 vi.mock('@/lib/matrix-store', () => ({
   useMatrixStore: (selector: (_s: { setMatrixAuth: typeof setMatrixAuth }) => unknown) =>

@@ -191,7 +191,7 @@ describe('QwenpawRuntimeConfigPanel', () => {
     renderPanel();
 
     await screen.findByLabelText('最大输入长度');
-    openTab('智能体 Loop 设置');
+    openTab('Worker Loop 设置');
 
     const iteration = await screen.findByLabelText('迭代上限');
     fireEvent.change(iteration, { target: { value: '55' } });
@@ -211,7 +211,7 @@ describe('QwenpawRuntimeConfigPanel', () => {
     renderPanel();
 
     await screen.findByLabelText('最大输入长度');
-    openTab('智能体 Loop 设置');
+    openTab('Worker Loop 设置');
     const iteration = await screen.findByLabelText('迭代上限');
     fireEvent.change(iteration, { target: { value: '999' } });
     fireEvent.click(screen.getByRole('button', { name: /保存改动/ }));
@@ -269,7 +269,7 @@ describe('QwenpawRuntimeConfigPanel', () => {
     renderPanel();
 
     await screen.findByLabelText('最大输入长度');
-    openTab('智能体 Loop 设置');
+    openTab('Worker Loop 设置');
 
     expect(await screen.findByText('模式 A')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '删除自定义 Loop mode-a' }));

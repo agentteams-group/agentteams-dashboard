@@ -1,31 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Readable } from 'node:stream';
 import { createMinioClient } from '@/lib/minio-client';
-import { enforceLevelOnlyRbac } from '@/lib/server-auth';
-import { isSensitiveObjectKey } from '@/lib/sensitive-files';
+import { guardStorageObject } from '../security';
 
 export async function GET(request: NextRequest) {
-  const denied = await enforceLevelOnlyRbac(request, 'view', 'storage', 'download');
-  if (denied) return denied;
   const bucket = request.nextUrl.searchParams.get('bucket') || '';
   const key = request.nextUrl.searchParams.get('key') || '';
-
-  if (!bucket || !key) {
-    return NextResponse.json({ error: 'bucket and key are required' }, { status: 400 });
-  }
+  const guarded = await guardStorageObject(request, 'view', bucket, key);
+  if (guarded.response) return guarded.response;
 
   try {
-    const objectName = decodeURIComponent(key);
-    // 敏感文件（worker 凭据类）与 worker 路由同语义：统一 404。
-    if (isSensitiveObjectKey(objectName)) {
-      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
-    }
-
     const client = createMinioClient();
-    const bucketName = decodeURIComponent(bucket);
-    const stat = await client.statObject(bucketName, objectName);
+    const stat = await client.statObject(guarded.bucket, guarded.key);
 
-    const nodeStream = await client.getObject(bucketName, objectName);
+    const nodeStream = await client.getObject(guarded.bucket, guarded.key);
     const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
     const responseHeaders = new Headers();
@@ -33,7 +21,7 @@ export async function GET(request: NextRequest) {
     responseHeaders.set('Content-Length', String(stat.size));
     responseHeaders.set(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(objectName.split('/').pop() || objectName)}"`
+      `attachment; filename="${encodeURIComponent(guarded.key.split('/').pop() || guarded.key)}"`
     );
 
     return new NextResponse(webStream, { headers: responseHeaders });

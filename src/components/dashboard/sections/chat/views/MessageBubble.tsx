@@ -7,7 +7,7 @@ import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { Button } from '@/components/ui/button';
 import type { DisplayMessage } from '@/hooks/use-matrix';
 import { isMessageReadByOthers, type ReadReceiptEntry } from '@/hooks/use-matrix';
-import { MarkdownMessage } from '../markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '../lazy-markdown-message';
 import { ConfirmationCard, toConfirmationCardPayload } from '../confirmation-card';
 import { InterventionCard } from '../intervention-card';
 import { ReviewReportCard } from '../review-report-card';

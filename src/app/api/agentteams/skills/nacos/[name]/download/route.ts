@@ -9,7 +9,7 @@ import {
   SKILLS_METADATA_PREFIX,
 } from '@/lib/skill-center-types';
 import { zipSync } from 'fflate';
-import { fetchNacosSkillZip, cacheSkillContent } from '@/lib/nacos-fetcher';
+import { fetchNacosSkillZip, cacheSkillContent, unzipNacosArtifact } from '@/lib/nacos-fetcher';
 import type { NacosZipResult } from '@/lib/nacos-fetcher';
 
 async function getSkillMetadata(client: Client, skillName: string): Promise<SkillEntry | null> {
@@ -112,16 +112,13 @@ export async function GET(
     let nacosResult: NacosZipResult;
     try {
       nacosResult = await fetchNacosSkillZip(name, config);
-    } catch (nacosErr) {
-      return NextResponse.json({
-        error: nacosErr instanceof Error ? nacosErr.message : 'Nacos 下载失败',
-      }, { status: 502 });
+    } catch {
+      return NextResponse.json({ error: 'Nacos 下载失败' }, { status: 502 });
     }
 
     // Parse the ZIP to extract and cache files
     try {
-      const { unzipSync } = await import('fflate');
-      const entries = unzipSync(nacosResult.zipBytes);
+      const entries = unzipNacosArtifact(nacosResult.zipBytes);
       const files = Object.entries(entries).map(([relativePath, data]) => ({
         relativePath,
         data: data as Uint8Array,
@@ -154,8 +151,7 @@ export async function GET(
         },
       });
     }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: '技能下载失败' }, { status: 502 });
   }
 }

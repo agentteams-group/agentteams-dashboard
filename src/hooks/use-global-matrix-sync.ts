@@ -20,6 +20,8 @@ import {
 import { extractMessagePreview } from '@/components/dashboard/sections/chat/room-builders';
 import { ingestAssistantReminders } from '@/lib/assistant-reminders';
 import { isAssistantControlEvent } from '@/lib/assistant-control';
+import { fetchChatRoomAccess } from '@/lib/chat-room-access-query';
+import { ReceiptResolutionQueue } from '@/lib/receipt-resolution-queue';
 import {
   bufferSyncEvents,
   recordSyncFailure,
@@ -33,6 +35,9 @@ import {
  * flat regardless of how many rooms the account is in.
  */
 const NAME_PROBE_CONCURRENCY = 6;
+const INITIAL_NAME_PROBE_LIMIT = 20;
+const DEFERRED_NAME_PROBE_DELAY_MS = 2_000;
+const RECEIPT_RESOLUTION_CONCURRENCY = 4;
 
 /**
  * Single global Matrix /sync loop, mounted once at dashboard level so it
@@ -78,17 +83,15 @@ export function useGlobalMatrixSync(): void {
     let retryDelay = 1000;
     let filterRejected = false;
 
-    // 12.13+：房间名/成员数补采。原实现对「前 80 个已加入房间」做一次
-    // Promise.all 扫描，超过 80 个房间之后的名字永久缺失；且 /sync 的 state
-    // 段只在房间有变更时才下发，安静房间（如 admin-manager DM）在首次 sync
-    // 之后永远等不到 m.room.name。改为：
-    //   1. 不限房间数，按 NAME_PROBE_CONCURRENCY 分批（避免并发风暴）；
-    //   2. 已带 roomName + memberCount 的房间跳过（初始 sync 已给全量 state）；
-    //   3. 探测记录按会话去重，且从 sync 的 rooms.join 反向补采——会话中途
-    //      接受的邀请、初始 sync 之后才加入的房间都不会漏。
+    // Room names/member counts are backfilled in bounded batches. The first
+    // batch contains the active room plus the most recently active rooms, so a
+    // large account does not delay useful sidebar metadata behind idle rooms.
     const nameProbed = new Set<string>();
     const seenJoinedRooms = new Set<string>();
     let nameProbeChain: Promise<void> = Promise.resolve();
+    let startupBackfillScheduled = false;
+    let deferredRooms: string[] = [];
+    let deferredProbeTimer: ReturnType<typeof setTimeout> | undefined;
 
     /** Fetch m.room.name + joined member count for one room (best effort). */
     const probeRoomName = async (rid: string) => {
@@ -114,14 +117,12 @@ export function useGlobalMatrixSync(): void {
       }
     };
 
-    /** Queue a name/member-count probe for rooms that still lack either field. */
+    /** Queue name/member-count probes for rooms that still lack either field. */
     const probeRoomNames = (rids: string[]) => {
       const current = useRoomMetaStore.getState().meta;
       const pending = rids.filter((rid) => {
         if (!rid || nameProbed.has(rid)) return false;
         const m = current[rid];
-        // Already fully populated (initial sync carries m.room.name + summary
-        // for every joined room) — nothing to fetch.
         return !m?.roomName || !m?.memberCount;
       });
       if (pending.length === 0) return;
@@ -133,6 +134,36 @@ export function useGlobalMatrixSync(): void {
           await Promise.all(batch.map(probeRoomName));
         }
       });
+    };
+
+    const rankRooms = (rids: string[]) => {
+      const activeRoomId = useRoomMetaStore.getState().activeRoomId;
+      const meta = useRoomMetaStore.getState().meta;
+      return [...new Set(rids)].sort((a, b) => {
+        if (a === activeRoomId) return -1;
+        if (b === activeRoomId) return 1;
+        return (meta[b]?.lastMessageTs ?? 0) - (meta[a]?.lastMessageTs ?? 0);
+      });
+    };
+
+    const scheduleDeferredNameProbes = () => {
+      if (cancelled || deferredRooms.length === 0) return;
+      deferredProbeTimer = setTimeout(() => {
+        if (cancelled) return;
+        const batch = deferredRooms.slice(0, INITIAL_NAME_PROBE_LIMIT);
+        deferredRooms = deferredRooms.slice(INITIAL_NAME_PROBE_LIMIT);
+        probeRoomNames(batch);
+        scheduleDeferredNameProbes();
+      }, DEFERRED_NAME_PROBE_DELAY_MS);
+    };
+
+    const scheduleInitialNameBackfill = (rids: string[]) => {
+      if (startupBackfillScheduled) return;
+      startupBackfillScheduled = true;
+      const ranked = rankRooms(rids);
+      probeRoomNames(ranked.slice(0, INITIAL_NAME_PROBE_LIMIT));
+      deferredRooms = ranked.slice(INITIAL_NAME_PROBE_LIMIT);
+      scheduleDeferredNameProbes();
     };
 
     const SYNC_FILTER = JSON.stringify({
@@ -184,9 +215,18 @@ export function useGlobalMatrixSync(): void {
     const loadHistorical = async () => {
       if (cancelled) return;
       try {
-        const roomsResp = await matrixApi.getJoinedRooms(homeserver, accessToken);
+        const roomsResp = await fetchChatRoomAccess(
+          queryClient,
+          homeserver,
+          accessToken,
+          userId,
+          generation,
+        );
         if (cancelled) return;
-        // Limit to 10 most recent rooms to keep startup snappy
+        scheduleInitialNameBackfill(roomsResp.joined_rooms);
+        // Message history remains independent from metadata backfill. Name
+        // probes continue in bounded background batches and never hold up the
+        // live /sync loop or historical ingestion.
         const rooms = roomsResp.joined_rooms.slice(0, 10);
         await Promise.all(
           rooms.map(async (rid) => {
@@ -201,23 +241,26 @@ export function useGlobalMatrixSync(): void {
             }
           }),
         );
-        // 房间名/成员数补采：对全部已加入房间（无数量上限）。房间名是未归类
-        // 房间（项目群、admin-manager DM）在侧栏出现的前提；成员数驱动
-        // 群组/私聊分类。已带两者的房间会被 probeRoomNames 跳过。
-        probeRoomNames(roomsResp.joined_rooms);
-        // Track the queued probe chain so the historical pass only resolves
-        // once the backfill settled (and a cancelled effect stops early).
-        await nameProbeChain;
       } catch {
         /* getJoinedRooms may fail if Matrix is unreachable — sync loop will keep trying */
+      } finally {
+        if (!startupBackfillScheduled && !cancelled) {
+          scheduleInitialNameBackfill([...seenJoinedRooms]);
+        }
       }
     };
+
+    const receiptResolutionQueue = new ReceiptResolutionQueue<MatrixEvent | void>(
+      RECEIPT_RESOLUTION_CONCURRENCY,
+      (rid) => useRoomMetaStore.getState().activeRoomId === rid,
+    );
 
     /** Process ephemeral typing + read receipt events for one room. */
     const ingestEphemeral = (
       rid: string,
       events: Array<{ type: string; content?: Record<string, unknown> }>,
     ) => {
+      const receiptPositions = new Map<string, { eventId: string; ts: number; threadId?: string }>();
       for (const event of events) {
         if (event.type === 'm.typing') {
           const typingUserIds = (event.content?.user_ids as string[]) || [];
@@ -226,42 +269,66 @@ export function useGlobalMatrixSync(): void {
             displayName: uid.startsWith('@') ? uid.split(':')[0].slice(1) : uid,
           }));
           useTypingStore.getState().setTypingUsers(rid, users);
-        } else if (event.type === 'm.receipt') {
+        } else if (event.type === 'm.receipt' && useRoomMetaStore.getState().activeRoomId === rid) {
           const content = (event.content ?? {}) as Record<
             string,
             Record<string, Record<string, { ts?: number; thread_id?: string }> | undefined>
           >;
-          const existing = useReceiptStore.getState().receipts[rid] ?? {};
-          const next = { ...existing };
           for (const [eventId, relations] of Object.entries(content)) {
             const readBy = relations?.['m.read'];
             if (!readBy) continue;
             for (const [uId, info] of Object.entries(readBy)) {
               const receiptKey = info.thread_id ? `${uId}|${info.thread_id}` : uId;
-              next[receiptKey] = {
+              const position = {
                 eventId,
                 ts: typeof info?.ts === 'number' ? info.ts : Date.now(),
                 threadId: info.thread_id,
               };
-              // Receipt ts is when it was sent, not the position it covers.
-              void queryClient.fetchQuery({
-                queryKey: ['matrix-event', homeserver, userId, rid, eventId],
-                queryFn: () => matrixApi.getRoomEvent(homeserver, accessToken, rid, eventId),
-                staleTime: Infinity,
-              }).then((target) => {
-                if (cancelled || isStale()) return;
-                const current = useReceiptStore.getState().receipts[rid] ?? {};
-                if (current[receiptKey]?.eventId !== eventId) return;
-                useReceiptStore.getState().setRoomReceipts(rid, {
-                  ...current,
-                  [receiptKey]: { ...current[receiptKey], eventTimestamp: target.origin_server_ts },
-                });
-              }).catch(() => { /* An unresolved position never proves read. */ });
+              const previous = receiptPositions.get(receiptKey);
+              if (!previous || position.ts >= previous.ts) receiptPositions.set(receiptKey, position);
             }
           }
-          useReceiptStore.getState().setRoomReceipts(rid, next);
         }
       }
+      if (receiptPositions.size === 0) return;
+
+      const existing = useReceiptStore.getState().receipts[rid] ?? {};
+      const next = { ...existing };
+      for (const [receiptKey, position] of receiptPositions) {
+        const previous = existing[receiptKey];
+        // Ephemeral receipt batches can arrive delayed/out of order. An older
+        // receipt must never move a reader's position backwards.
+        if (previous && previous.ts > position.ts) continue;
+        next[receiptKey] = position;
+        const eventKey = ['matrix-event', homeserver, userId, rid, position.eventId] as const;
+        const cached = queryClient.getQueryData<MatrixEvent>(eventKey);
+        if (cached) {
+          if (typeof cached.origin_server_ts === 'number') {
+            next[receiptKey] = { ...position, eventTimestamp: cached.origin_server_ts };
+          }
+          continue;
+        }
+        receiptResolutionQueue.enqueue({
+          key: JSON.stringify(eventKey),
+          roomId: rid,
+          run: () => queryClient.fetchQuery({
+            queryKey: eventKey,
+            queryFn: () => matrixApi.getRoomEvent(homeserver, accessToken, rid, position.eventId),
+            staleTime: Infinity,
+          }).then((target) => {
+            if (cancelled || isStale() || useRoomMetaStore.getState().activeRoomId !== rid) return;
+            const current = useReceiptStore.getState().receipts[rid] ?? {};
+            const latest = current[receiptKey];
+            if (latest?.eventId !== position.eventId || latest.ts !== position.ts) return;
+            if (typeof target.origin_server_ts !== 'number') return;
+            useReceiptStore.getState().setRoomReceipts(rid, {
+              ...current,
+              [receiptKey]: { ...latest, eventTimestamp: target.origin_server_ts },
+            });
+          }),
+        });
+      }
+      useReceiptStore.getState().setRoomReceipts(rid, next);
     };
 
     /** True when the event is a thread reply (m.thread relation). */
@@ -406,11 +473,10 @@ export function useGlobalMatrixSync(): void {
               userId ?? '',
             );
             ingestRoomMeta(rid, roomData);
-            // Backfill room name / member count for rooms the one-shot sweep
-            // never saw (invite accepted this session, joined after the sweep).
-            // probeRoomNames de-dupes per session, so this is a no-op for
-            // rooms already covered.
-            probeRoomNames([rid]);
+            // Once the startup priority batch is established, newly joined
+            // rooms can be probed individually. During startup the joined-room
+            // snapshot owns prioritization so /sync cannot bypass the cap.
+            if (startupBackfillScheduled) probeRoomNames([rid]);
 
             // F-4: the invite snapshot is keyed by roomId and a single
             // roomId can't be in both `invite` and `join` simultaneously
@@ -503,6 +569,8 @@ export function useGlobalMatrixSync(): void {
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
+      if (deferredProbeTimer) clearTimeout(deferredProbeTimer);
+      receiptResolutionQueue.dispose();
       useHitlInboxStore.getState().clearConfirmations();
     };
   }, [homeserver, accessToken, isLoggedIn, userId, queryClient]);

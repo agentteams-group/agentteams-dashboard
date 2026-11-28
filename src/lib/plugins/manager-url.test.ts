@@ -52,15 +52,20 @@ describe('plugin manager url flows', () => {
     loaderMock.hashString.mockReturnValue('hash');
   });
 
-  it('installFromUrl validates, registers and activates a url plugin', async () => {
+  it('installFromUrl validates and registers without loading the plugin entry', async () => {
     loaderMock.fetchManifestJson.mockResolvedValue(validManifest);
     loaderMock.loadUrlPluginModule.mockResolvedValue(fakeModule());
 
     await pluginManager.installFromUrl('http://cdn/plugin.json');
 
     const registry = usePluginRegistry.getState();
-    expect(registry.records['url-plugin'].status).toBe('active');
+    expect(registry.records['url-plugin'].status).toBe('installed');
     expect(registry.installedUrls).toContain('http://cdn/plugin.json');
+    expect(loaderMock.loadUrlPluginModule).not.toHaveBeenCalled();
+    expect(useExtensionStore.getState().widgets).toHaveLength(0);
+
+    await pluginManager.activate('url-plugin');
+    expect(usePluginRegistry.getState().records['url-plugin'].status).toBe('active');
     expect(useExtensionStore.getState().widgets).toHaveLength(1);
   });
 
@@ -82,6 +87,7 @@ describe('plugin manager url flows', () => {
     loaderMock.fetchManifestJson.mockResolvedValue(validManifest);
     loaderMock.loadUrlPluginModule.mockResolvedValue(fakeModule());
     await pluginManager.installFromUrl('http://cdn/plugin.json');
+    await pluginManager.activate('url-plugin');
     expect(useExtensionStore.getState().widgets).toHaveLength(1);
 
     await pluginManager.reload('url-plugin');
@@ -121,15 +127,16 @@ describe('plugin manager init (bundled discovery)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('init discovers bundled plugins, activates them, and marks the registry ready', async () => {
+  it('init discovers bundled manifests, publishes declared contributions, and defers entry activation', async () => {
     await pluginManager.init();
 
     const registry = usePluginRegistry.getState();
     expect(registry.ready).toBe(true);
     expect(registry.records['monitor-panel']).toBeDefined();
-    expect(registry.records['monitor-panel'].status).toBe('active');
+    expect(registry.records['monitor-panel'].status).toBe('installed');
 
-    // The example plugin contributes a menu item, a route and a widget.
+    // Declarative contributions are available immediately; route/widget entry
+    // code is loaded only when DeferredPluginContribution actually renders.
     expect(useExtensionStore.getState().menuItems.length).toBeGreaterThanOrEqual(1);
     expect(useExtensionStore.getState().routes.length).toBeGreaterThanOrEqual(1);
     expect(useExtensionStore.getState().widgets.length).toBeGreaterThanOrEqual(1);

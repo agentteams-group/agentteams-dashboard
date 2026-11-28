@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import { enforceServerSideRbac } from '@/lib/server-auth';
-import { isSensitiveObjectKey } from '@/lib/sensitive-files';
+import { isSensitiveObjectKey, isSensitiveStoragePrefix, normalizeStorageKey, normalizeStorageBucket } from '@/lib/sensitive-files';
 import type { StorageObject } from '@/lib/agentteams-api';
 
 // AgentTeams team workspace layout (see team-tasks/route.ts):
@@ -57,11 +57,23 @@ export async function GET(
   }
 
   try {
-    const client = createMinioClient();
     const teamRoot = `teams/${name}/`;
-    // The client tracks prefixes as full keys; accept either a full key or a
-    // path relative to the team root, then always list under teams/{name}/.
-    const base = subPrefix.startsWith(teamRoot) ? subPrefix : `${teamRoot}${subPrefix}`;
+    const candidate = subPrefix.startsWith('teams/') ? subPrefix : `${teamRoot}${subPrefix}`;
+    let base: string;
+    try {
+      base = normalizeStorageKey(candidate);
+      normalizeStorageBucket(bucket);
+    } catch {
+      return NextResponse.json({ error: '非法 Team 文件路径' }, { status: 400 });
+    }
+    if (base !== teamRoot.slice(0, -1) && !base.startsWith(teamRoot)) {
+      return NextResponse.json({ error: '非法 Team 文件路径' }, { status: 400 });
+    }
+    if (isSensitiveStoragePrefix(bucket, base)) {
+      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+    }
+    // The client tracks prefixes as full keys; always list under teams/{name}/.
+    const client = createMinioClient();
     const objects = await listFiles(client, bucket, base);
     // 范围收敛 + 敏感条目过滤：credentials/.ssh 等不进列表。
     const trimmed = objects.filter((obj) => {

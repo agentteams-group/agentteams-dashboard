@@ -62,6 +62,10 @@ vi.mock('@/lib/hitl-audit', () => ({
 const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
 // 路径以本文件为基准：MessageBubble 引的 '../markdown-message' 就是这里的
 // './markdown-message'（同一个 sections/chat/markdown-message.tsx）。
+vi.mock('./lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('./markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('./markdown-message', () => ({
   MarkdownMessage: (props: { content: string }) => markdownMock(props),
 }));

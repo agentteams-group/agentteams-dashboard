@@ -1,7 +1,14 @@
 import { createMinioClient } from '@/lib/minio-client';
 import { getNacosConfig } from '@/lib/skill-center-config';
-import { fetchNacosSkillZip, cacheSkillContent, getNacosAccessToken } from '@/lib/nacos-fetcher';
-import { unzipSync } from 'fflate';
+import {
+  fetchNacosSkillZip,
+  cacheSkillContent,
+  getNacosAccessToken,
+  nacosFetch,
+  readNacosJson,
+  sanitizeNacosText,
+  unzipNacosArtifact,
+} from '@/lib/nacos-fetcher';
 
 export interface SyncEvent {
   type: 'skill-updated' | 'skill-unchanged' | 'skill-failed' | 'full-sync-start' | 'full-sync-end' | 'error';
@@ -46,13 +53,15 @@ class NacosSyncEngine {
       return false;
     }
 
+    let accessToken = '';
     try {
       const config = await getNacosConfig();
       if (!config) throw new Error('Nacos 未配置');
 
-      const result = await fetchNacosSkillZip(skillName, config);
+      accessToken = await getNacosAccessToken(config);
+      const result = await fetchNacosSkillZip(skillName, config, accessToken);
 
-      const entries = unzipSync(result.zipBytes);
+      const entries = unzipNacosArtifact(result.zipBytes);
       const files = Object.entries(entries).map(([relativePath, data]) => ({
         relativePath,
         data: data as Uint8Array,
@@ -71,12 +80,13 @@ class NacosSyncEngine {
       });
       return true;
     } catch (err) {
+      const message = sanitizeNacosText(err instanceof Error ? err.message : 'unknown', [accessToken]);
       this.emit({
         type: 'skill-failed', skillName, version: nacosVersion,
         timestamp: Date.now(),
-        message: `技能 "${skillName}" 同步失败: ${err instanceof Error ? err.message : 'unknown'}`,
+        message: `技能 "${skillName}" 同步失败: ${message}`,
       });
-      throw err;
+      throw new Error(message);
     }
   }
 
@@ -101,23 +111,30 @@ class NacosSyncEngine {
     const apiBase = `${protocol}://${hostPort}`;
 
     const accessToken = await getNacosAccessToken(config);
-    const tokenParam = accessToken
-      ? `&accessToken=${encodeURIComponent(accessToken)}`
-      : '';
-    const nsParam = `namespaceId=${encodeURIComponent(namespace)}`;
-
-    const listUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
-    const listRes = await fetch(listUrl, {
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15000),
+    const params = new URLSearchParams({
+      filterableForm: 'true',
+      pageNo: '1',
+      pageSize: '500',
+      namespaceId: namespace,
     });
 
-    if (!listRes.ok) throw new Error(`获取技能列表失败: HTTP ${listRes.status}`);
-
-    const listData = await listRes.json() as {
+    const listUrl = `${apiBase}/v3/console/ai/skills/list?${params}`;
+    let listData: {
       code?: number;
       data?: { pageItems?: Array<{ name: string; labels?: { latest?: string } }> };
     };
+    try {
+      const listRes = await nacosFetch(listUrl, {
+        accessToken,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!listRes.ok) throw new Error(`获取技能列表失败: HTTP ${listRes.status}`);
+      listData = await readNacosJson<typeof listData>(listRes, accessToken);
+    } catch (err) {
+      const message = sanitizeNacosText(err instanceof Error ? err.message : '获取技能列表失败', [accessToken]);
+      this.emit({ type: 'error', timestamp: Date.now(), message });
+      throw new Error(message);
+    }
 
     const skills = listData.data?.pageItems ?? [];
     let downloaded = 0;

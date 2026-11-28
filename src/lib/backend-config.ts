@@ -32,8 +32,22 @@ import {
   REQUIRED_BACKENDS,
   type BackendName,
 } from './backend-names';
+import {
+  egressFetch,
+  isEgressPolicyError,
+  validateEgressTarget,
+  type EgressResponse,
+} from './egress-policy';
+import { writePrivateFileAtomic } from './private-file';
 
-export { BACKEND_NAMES, EMBEDDED_DEFAULTS, REQUIRED_BACKENDS, type BackendName };
+export {
+  isEgressPolicyError,
+  validateEgressTarget,
+  BACKEND_NAMES,
+  EMBEDDED_DEFAULTS,
+  REQUIRED_BACKENDS,
+  type BackendName,
+};
 
 type FsModule = typeof import('node:fs');
 
@@ -133,11 +147,18 @@ function normalizeEntry(raw: unknown): AddressEntry | undefined {
   return auth ? { url, auth } : url;
 }
 
-/** 保存合并（插件 merge_address_entries 语义，按槽位位置配对）：
- * - 新条目 = 字符串 → 原样（显式降级为服务自身认证，丢弃旧凭据）；
- * - 对象无 auth / type 非 basic|bearer → 同样丢弃旧凭据，存纯 URL；
- * - 秘密字段为空或 '***' → 继承旧条目同类型同名字段（脱敏回传 = 保持不变）；
- * - 继承后凭据仍不完整 → 降级为纯 URL 条目（插件同语义）。 */
+/** Canonical credential boundary: scheme + normalized host + effective port.
+ * Paths may change without moving a credential to another origin. */
+export function addressOrigin(value: string): string {
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return '';
+  }
+}
+
+/** 保存合并：只有脱敏密码/token 且 origin 与 auth type 都一致时才继承。
+ * 空秘密不再隐式继承；URL 变化必须显式重新输入凭据或降级为服务自身认证。 */
 export function mergeAddressEntry(
   oldEntry: AddressEntry | undefined,
   newEntry: unknown,
@@ -158,22 +179,29 @@ export function mergeAddressEntry(
       : '';
   if (type !== 'basic' && type !== 'bearer') return url;
   const oldAuth = typeof oldEntry === 'object' && oldEntry ? oldEntry.auth : undefined;
+  const canInherit =
+    !!oldAuth && oldAuth.type === type &&
+    !!addressOrigin(addressUrl(oldEntry)) && addressOrigin(addressUrl(oldEntry)) === addressOrigin(url);
   if (type === 'basic') {
     const a = rawAuth as { username?: unknown; password?: unknown };
+    const submittedPassword = typeof a.password === 'string' ? a.password.trim() : '';
     const username =
       (typeof a.username === 'string' ? a.username.trim() : '') ||
-      (oldAuth?.type === 'basic' ? oldAuth.username : '');
-    let password = typeof a.password === 'string' ? a.password.trim() : '';
-    if ((!password || password === REDACTED_SECRET) && oldAuth?.type === 'basic') {
-      password = oldAuth.password;
-    }
+      (canInherit && oldAuth?.type === 'basic' ? oldAuth.username : '');
+    const password =
+      submittedPassword === REDACTED_SECRET && canInherit && oldAuth?.type === 'basic'
+        ? oldAuth.password
+        : submittedPassword;
     return username && password && password !== REDACTED_SECRET
       ? { url, auth: { type: 'basic', username, password } }
       : url;
   }
   const a = rawAuth as { token?: unknown };
-  let token = typeof a.token === 'string' ? a.token.trim() : '';
-  if ((!token || token === REDACTED_SECRET) && oldAuth?.type === 'bearer') token = oldAuth.token;
+  const submittedToken = typeof a.token === 'string' ? a.token.trim() : '';
+  const token =
+    submittedToken === REDACTED_SECRET && canInherit && oldAuth?.type === 'bearer'
+      ? oldAuth.token
+      : submittedToken;
   return token && token !== REDACTED_SECRET ? { url, auth: { type: 'bearer', token } } : url;
 }
 
@@ -278,85 +306,33 @@ export function isHttpUrl(value: string | undefined | null): value is string {
   }
 }
 
-// Cloud instance-metadata sentinels: never a legitimate dashboard backend in
-// any mode. Post-merge review: the original string-equality check on the
-// plain IP missed the IPv4-mapped IPv6 form ([::ffff:169.254.169.254]), the
-// rest of the 169.254.0.0/16 range, IPv6 link-local, and the common metadata
-// DNS names.
-const METADATA_HOSTNAMES = new Set([
-  'metadata',
-  'metadata.google.internal',
-  'metadata.google.com',
-  'instance-data',
-]);
-
-/** IPv4 address embedded in an IPv4-mapped IPv6 literal, if any. */
-function ipv4MappedFrom(hostname: string): string | null {
-  const dotted = hostname.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
-  if (dotted) return dotted[1];
-  const hext = hostname.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
-  if (!hext) return null;
-  const hi = Number.parseInt(hext[1], 16);
-  const lo = Number.parseInt(hext[2], 16);
-  return `${hi >>> 8}.${hi & 0xff}.${lo >>> 8}.${lo & 0xff}`;
-}
-
-/** 169.254.0.0/16 — link-local, the cloud metadata sentinel range. */
-function isIpv4LinkLocal(hostname: string): boolean {
-  const parts = hostname.split('.');
-  if (parts.length !== 4) return false;
-  const nums = parts.map((p) => Number(p));
-  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
-  return nums[0] === 169 && nums[1] === 254;
-}
-
-/** fe80::/10 — IPv6 link-local (zone id, if any, stripped). */
-function isIpv6LinkLocal(hostname: string): boolean {
-  const h = hostname.toLowerCase().split('%')[0];
-  return h.includes(':') && /^fe[89ab]/.test(h);
-}
-
-/** Metadata sentinel in any form: plain IP, IPv4-mapped, /16 range,
- * fe80::/10, or the DNS names that resolve to it. */
-function isMetadataTarget(hostname: string): boolean {
-  const mapped = ipv4MappedFrom(hostname);
-  const hosts = mapped ? [hostname, mapped] : [hostname];
-  return (
-    hosts.some((h) => h === '169.254.169.254' || isIpv4LinkLocal(h) || METADATA_HOSTNAMES.has(h)) ||
-    isIpv6LinkLocal(hostname)
-  );
-}
-
-// Optional SSRF filter for the pre-login "test connection" endpoint.
-// Empty (default) = allow any http(s) target — this is a local
-// self-configuration tool; operators can pin exact hosts if they want.
+/** Legacy synchronous hostname gate used by non-backend URL validators.
+ * Backend save/test connections do NOT use this: they use the asynchronous
+ * validateEgressTarget/egressFetch policy with A/AAAA and private-range checks. */
 export function isTestTargetAllowed(url: string): boolean {
   let hostname: string;
   try {
-    hostname = new URL(url.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    hostname = new URL(url.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   } catch {
     return false;
   }
-  // Cloud instance-metadata sentinel: never a legitimate dashboard backend
-  // in any mode (the setup probe is an authenticated owner tool since the
-  // PR-91 security review — this is belt, not the suspenders). Covers the
-  // plain IP, IPv4-mapped IPv6 forms, the whole 169.254.0.0/16 range,
-  // IPv6 link-local, and the common metadata DNS names (post-merge review).
-  if (isMetadataTarget(hostname)) return false;
-  const fromEnv = (process.env.DASHBOARD_ALLOWED_HOSTS || '').trim();
-  // Empty = allow (local self-config posture — plugin config_test parity).
-  // Since the PR-91 review the probe endpoint is no longer reachable
-  // unauthenticated: pre-login callers must hold the setup token (or the
-  // installer opted out with DASHBOARD_SETUP_TOKEN_ENFORCE=0, trusted-LAN),
-  // and post-login callers hold a session. Set DASHBOARD_ALLOWED_HOSTS for
-  // a strict allowlist regardless of caller.
-  if (!fromEnv) return true;
-  const allowed = fromEnv
+  const metadataName = ['metadata', 'metadata.google.internal', 'metadata.google.com', 'instance-data'].includes(hostname);
+  const mappedMetadata = hostname === '::ffff:169.254.169.254' || hostname === '::ffff:a9fe:a9fe';
+  const metadataAddress =
+    hostname.startsWith('169.254.') || hostname.startsWith('fe80:') || mappedMetadata;
+  if (metadataName || metadataAddress) {
+    return false;
+  }
+  const allowed = (process.env.DASHBOARD_ALLOWED_HOSTS || '')
     .split(',')
-    .map((h) => h.trim().toLowerCase())
+    .map((host) => host.trim().toLowerCase().replace(/\.$/, ''))
     .filter(Boolean);
-  return allowed.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  if (allowed.length === 0) return true;
+  return allowed.some((host) => hostname === host || hostname.endsWith(`.${host}`));
 }
+
+// SSRF policy lives in egress-policy.ts and is shared by saves, scheme probes,
+// health probes and redirects. validateEgressTarget is re-exported above.
 
 // ---------------------------------------------------------------------------
 // Config file access (sync read — see header; async writes)
@@ -409,13 +385,7 @@ export async function configExists(): Promise<boolean> {
 }
 
 async function writeConfigAtomic(config: DashboardConfig): Promise<void> {
-  const fsp = (await loadFs()).promises;
-  const path = await import('node:path');
-  const file = configFilePath();
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(config, null, 2), { mode: 0o644 });
-  await fsp.rename(tmp, file);
+  await writePrivateFileAtomic(configFilePath(), `${JSON.stringify(config, null, 2)}\n`);
 }
 
 /** Pre-login one-shot write: only succeeds while no config file exists.
@@ -459,10 +429,8 @@ export async function updateConfig(
   // Explicit removal of a backend = `docker volume rm` factory reset
   // (the UI form always sends all six, so merge === replace from the UI).
   //
-  // Per-address credentials (plugin merge_address_entries parity): the pair
-  // is matched by SLOT position — a basic/bearer secret that is empty or the
-  // '***' redaction placeholder inherits the saved secret of the same slot
-  // and type, and an explicit 服务自身认证 entry (plain string) drops it.
+  // Per-address credentials: a redacted secret inherits only within the same
+  // canonical origin and auth type. Empty secrets and changed origins drop it.
   const existingCfg = readConfigSync();
   const existing = existingCfg?.backends ?? {};
   const merged: DashboardConfig['backends'] = { ...existing };
@@ -600,10 +568,10 @@ export function orderedCandidates(name: BackendName): string[] {
 // auth_for_url / headers_with_auth / build_auth_map)
 // ---------------------------------------------------------------------------
 
-/** 凭据反查归一：去 http(s):// 前缀 + 去尾斜杠（两侧同口径）。scheme 无关
- * → 同一个地址条目的 http/https 候选变体命中同一份凭据（插件 X1c）。 */
+/** 凭据反查归一：origin 完全一致（scheme/host/effective port）。路径可变，
+ * 但绝不在 scheme 变化或换端口后复用同一秘密。 */
 function authMatchKey(value: string): string {
-  return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return addressOrigin(value);
 }
 
 function toBase64(value: string): string {
@@ -713,7 +681,6 @@ export async function getSetupToken(): Promise<string> {
   // is closed (verifySetupToken fails closed on it).
   if (isSharedMode()) return '';
   const fsp = (await loadFs()).promises;
-  const path = await import('node:path');
   const tokenFile = await tokenFilePath();
   try {
     const persisted = (await fsp.readFile(tokenFile, 'utf-8')).trim();
@@ -724,8 +691,7 @@ export async function getSetupToken(): Promise<string> {
   const crypto = await import('node:crypto');
   const token = crypto.randomBytes(16).toString('hex');
   try {
-    await fsp.mkdir(path.dirname(tokenFile), { recursive: true });
-    await fsp.writeFile(tokenFile, token, { mode: 0o600 });
+    await writePrivateFileAtomic(tokenFile, token);
   } catch {
     // Read-only fs (tests): the token is still usable in this process.
   }
@@ -890,26 +856,22 @@ export async function resolveIpHint(url: string): Promise<string> {
   }
 }
 
-/**
- * Probe fetch with vetted redirects (post-merge review): the default fetch
- * follows 302/308, so a target that redirects to the cloud metadata sentinel
- * (or any other address) would bypass isTestTargetAllowed, which only vets
- * the ORIGINAL url. Each hop is re-vetted with the same filter — a
- * disallowed hop is refused, while a benign self-redirect (e.g. a console's
- * Next trailing-slash 308) still resolves. Cap: 2 hops.
- */
-async function probeFetchWithVettedRedirects(url: string, init: RequestInit, maxHops = 2): Promise<Response> {
-  let current = url;
-  for (let hop = 0; ; hop += 1) {
-    const res = await fetch(current, { ...init, redirect: 'manual' });
-    const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
-    if (!location || hop >= maxHops) return res;
-    const next = new URL(location, current).toString();
-    if (!isTestTargetAllowed(next)) {
-      throw new Error(`probe redirect refused: target host "${new URL(next).hostname}" not allowed`);
-    }
-    current = next;
-  }
+/** One policy-vetted probe request. Redirects, DNS pinning and the total
+ * deadline are handled by the shared egress transport. */
+async function probeFetchWithVettedRedirects(
+  url: string,
+  backend: BackendName,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<EgressResponse> {
+  return egressFetch(url, {
+    backend,
+    timeoutMs,
+    method: init.method,
+    headers: init.headers,
+    body: typeof init.body === 'string' ? init.body : undefined,
+    signal: init.signal ?? undefined,
+  });
 }
 
 /** 探测用凭据头：草稿凭据（未保存的表单值）优先——设置页「测试」必须能
@@ -932,13 +894,10 @@ async function probeOnce(
 ): Promise<ProbeResult> {
   const spec = PROBE_PATHS[name];
   const target = new URL(spec.path, url.replace(/\/+$/, '')).toString();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const res = await probeFetchWithVettedRedirects(target, {
+    const res = await probeFetchWithVettedRedirects(target, name, {
       method: spec.method ?? 'GET',
-      signal: controller.signal,
       headers: {
         ...(spec.body ? { 'content-type': 'application/json' } : {}),
         // 逐地址覆盖凭据：门后（公网 Basic 门 / API key 门）的后端不带凭据探测
@@ -948,7 +907,7 @@ async function probeOnce(
         ...(name === 'minio' ? {} : probeAuthHeaders(name, url, draftAuth)),
       },
       body: spec.body,
-    });
+    }, timeoutMs);
     const latencyMs = Date.now() - startedAt;
     if (name === 'higress-gateway' && res.status === 404) {
       // 404 = the gateway answered, but the AI route is missing.
@@ -961,8 +920,6 @@ async function probeOnce(
     const hint = await resolveIpHint(url);
     if (hint) error = `${error}｜${hint}`;
     return { ok: false, httpOk: false, latencyMs: Date.now() - startedAt, error };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

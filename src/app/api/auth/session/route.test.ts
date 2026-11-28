@@ -34,6 +34,7 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
     __resetSessionStoreForTests();
     delete process.env.DASHBOARD_SESSION_SECRET;
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('reports unauthenticated without a session cookie', async () => {
@@ -50,6 +51,8 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
       level: 3,
       mode: 'higress',
       higressSession: false,
+      teams: [],
+      workers: [],
     });
   });
 
@@ -69,6 +72,8 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
       level: 2,
       mode: 'matrix',
       higressSession: false,
+      teams: ['biz-team'],
+      workers: [],
     });
     // The Matrix token must never leave the server.
     expect(JSON.stringify(data)).not.toContain('syt_secret');
@@ -111,6 +116,7 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
   it('refreshes a downgraded Human session from Controller without a Console probe', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ name: 'alice', permissionLevel: 2, accessibleTeams: [] })));
     const { cookieValue } = createSession({ user: 'alice', crLevel: 1, credential: { kind: 'matrix', token: 'alice-token' } });
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
     const data = await (await GET(requestWith(`${SESSION_COOKIE_NAME}=${cookieValue}`))).json();
     expect(data.level).toBe(2);
     expect(data.higressSession).toBe(false);
@@ -119,6 +125,7 @@ describe('GET /api/auth/session (M19 dashboard session)', () => {
   it('does not treat a revoked Human identity as authenticated', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 401 })));
     const { cookieValue } = createSession({ user: 'alice', crLevel: 1, credential: { kind: 'matrix', token: 'alice-token' } });
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
     expect(await (await GET(requestWith(`${SESSION_COOKIE_NAME}=${cookieValue}`))).json()).toEqual({ authenticated: false });
   });
 });

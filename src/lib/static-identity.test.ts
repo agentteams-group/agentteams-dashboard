@@ -51,7 +51,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
     const calls = mockProbes([
       { prefix: 'http://127.0.0.1:1/api/v1/me', status: 200, body: { name: 'human-alice', permissionLevel: 1, accessibleTeams: [] } },
     ]);
-    expect(await resolveStaticIdentity(requestWith('alice-token'))).toEqual({ ok: true, identity: { name: 'human-alice', level: 3, teams: [] } });
+    expect(await resolveStaticIdentity(requestWith('alice-token'))).toEqual({ ok: true, identity: { name: 'human-alice', level: 3, teams: [], workers: [] } });
     expect(calls).toEqual(['http://127.0.0.1:1/api/v1/me']);
   });
 
@@ -60,7 +60,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
       { prefix: 'http://127.0.0.1:1/api/v1/humans', status: 200, body: { humans: [] } },
     ]);
     const result = await resolveStaticIdentity(requestWith('sa-token'));
-    expect(result).toEqual({ ok: true, identity: { name: 'admin', level: 3, teams: [] } });
+    expect(result).toEqual({ ok: true, identity: { name: 'admin', level: 3, teams: [], workers: [] } });
   });
 
   it('L2 team token: humans 403 → teams 200+list → whoami → {name, 2, teams}', async () => {
@@ -72,7 +72,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
     const result = await resolveStaticIdentity(requestWith('matrix-l2'));
     expect(result).toEqual({
       ok: true,
-      identity: { name: 'user', level: 2, teams: ['alpha-team', 'beta-team'] },
+      identity: { name: 'user', level: 2, teams: ['alpha-team', 'beta-team'], workers: [] },
     });
   });
 
@@ -86,7 +86,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
     const result = await resolveStaticIdentity(requestWith('matrix-l2'));
     expect(result).toEqual({
       ok: true,
-      identity: { name: 'alice', level: 2, teams: ['alpha-team'] },
+      identity: { name: 'alice', level: 2, teams: ['alpha-team'], workers: [] },
     });
   });
 
@@ -97,7 +97,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
       { prefix: 'http://127.0.0.1:1/api/v1/workers', status: 200, body: { workers: [{ name: 'worker-1' }] } },
     ]);
     const result = await resolveStaticIdentity(requestWith('matrix-l3'));
-    expect(result).toEqual({ ok: true, identity: { name: 'user', level: 1, teams: [] } });
+    expect(result).toEqual({ ok: true, identity: { name: 'user', level: 1, teams: [], workers: ['worker-1'] } });
   });
 
   it('L2 with ZERO teams: teams 200+empty, workers 200+empty → level 2 (not invalid)', async () => {
@@ -107,7 +107,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
       { prefix: 'http://127.0.0.1:1/api/v1/workers', status: 200, body: { workers: [] } },
     ]);
     const result = await resolveStaticIdentity(requestWith('matrix-l2-empty'));
-    expect(result).toEqual({ ok: true, identity: { name: 'user', level: 2, teams: [] } });
+    expect(result).toEqual({ ok: true, identity: { name: 'user', level: 2, teams: [], workers: [] } });
   });
 
   it('auth failure on all probes (401) → invalid (definitive)', async () => {
@@ -133,7 +133,7 @@ describe('resolveStaticIdentity (F7 static-mode identity ladder)', () => {
       ['http://127.0.0.1:1'],
     );
     const result = await resolveStaticIdentity(requestWith('sa-token'));
-    expect(result).toEqual({ ok: true, identity: { name: 'admin', level: 3, teams: [] } });
+    expect(result).toEqual({ ok: true, identity: { name: 'admin', level: 3, teams: [], workers: [] } });
   });
 
   it('caches resolutions for the token (no re-probe on the second call)', async () => {

@@ -66,7 +66,7 @@ export function WorkerDetailDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={`${worker.name} · ${sectionTitle}`}
-      description="智能体运行状态与配置详情"
+      description="Worker运行状态与配置详情"
       bodyClassName="flex flex-col overflow-hidden"
     >
       <WorkerDetailPanel

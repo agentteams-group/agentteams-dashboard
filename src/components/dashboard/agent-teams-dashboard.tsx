@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
@@ -17,7 +16,7 @@ import { useTeams } from '@/hooks/use-agentteams-teams';
 import { useManagers } from '@/hooks/use-agentteams-managers';
 import { useHumans } from '@/hooks/use-agentteams-humans';
 import { ConnectionBanner } from './connection-banner';
-import { SettingsDialog } from './settings-dialog';
+import { useShellPollingSection } from '@/lib/shell-polling';
 import { SectionErrorBoundary } from './section-error-boundary';
 import { SectionSkeleton } from './section-skeleton';
 import { Sidebar } from './sidebar';
@@ -56,6 +55,10 @@ import { isTeamAdmin } from '@/lib/team-access';
 import styles from './workspace.module.css';
 import { workspaceMenuFor, workspaceMenus } from './workspace-navigation';
 import { isComposing, useDesktopInputFocus } from '@/lib/desktop-interactions';
+import { refreshSectionQueries } from '@/lib/section-refresh';
+
+// The settings module (and all of its tabs) is absent until the dialog opens.
+const SettingsDialog = lazy(() => import('./settings-dialog').then(m => ({ default: m.SettingsDialog })));
 
 // Lazy load sections for performance
 const OverviewSection = lazy(() => import('./sections/overview-section').then(m => ({ default: m.OverviewSection })));
@@ -127,12 +130,14 @@ export function AgentTeamsDashboard() {
   useDesktopInputFocus();
   const queryClient = useQueryClient();
   const { activeSection, setActiveSection } = useActiveSection();
+  useShellPollingSection(activeSection);
   const isConversationSection = activeSection === 'chat' || activeSection === 'my-teams';
   const taskCollaboration = useSectionStore((s) => s.taskCollaboration);
   const navigationSection = activeSection === 'chat' && taskCollaboration ? 'tasks' : activeSection;
   const { mode, isLoading: modeLoading } = useDeploymentMode();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // FUNC-06: subscribe per-field. Matrix sync bumps isSyncing/lastSyncedAt
@@ -141,10 +146,12 @@ export function AgentTeamsDashboard() {
   // section below it) each time.
   const isConnected = useAgentTeamsStore((s) => s.isConnected);
   const openSettings = useAgentTeamsStore((s) => s.openSettings);
+  const settingsOpen = useAgentTeamsStore((s) => s.settingsOpen);
   const taskBoardVisible = useAgentTeamsStore((s) => s.taskBoardVisible);
   const userLevel = useAgentTeamsStore((s) => s.userLevel);
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
   const matrixUserId = useMatrixStore((s) => s.userId);
+  const activeRoomId = useRoomMetaStore((s) => s.activeRoomId);
   const notifications = useNotificationStore((s) => s.notifications);
   const { searchQuery, setSearchQuery } = useSearch();
   const { data: versionData } = useVersion();
@@ -162,7 +169,7 @@ export function AgentTeamsDashboard() {
   const conversationAccess = useChatRoomAccess();
   const agentRooms = useMemo(() => withLeaderAccess(buildRooms([], teams, managers), conversationAccess.joinedRooms, conversationAccess.state).filter((room) => room.access === 'joined' && (room.agentRole === 'leader' ? !!room.team && isTeamAdmin(room.team, sessionUser, matrixUserId) : room.agentRole === 'operations' && userLevel >= 3)), [teams, managers, userLevel, sessionUser, matrixUserId, conversationAccess.joinedRooms, conversationAccess.state]);
 
-  // Plugin system: discover + activate plugins once per session.
+  // Plugin system: discover manifests only; entry modules load at their render host.
   usePluginSystem();
   const pluginRoutes = usePluginRoutes();
   const pluginsReady = usePluginRegistry((s) => s.ready);
@@ -341,22 +348,11 @@ export function AgentTeamsDashboard() {
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
     try {
-      // Query keys are flat strings ('agentteams-workers', 'matrix-messages', ...),
-      // so a key-prefix invalidate never matches. Use a predicate to invalidate
-      // every agentteams/matrix query, including parameterized keys.
-      await queryClient.invalidateQueries({
-        predicate: (query) => {
-          const first = query.queryKey[0];
-          return (
-            typeof first === 'string' &&
-            (first.startsWith('agentteams-') || first.startsWith('matrix-'))
-          );
-        },
-      });
+      await refreshSectionQueries(queryClient, activeSection, activeRoomId);
     } finally {
       setIsRefreshingAll(false);
     }
-  }, [queryClient]);
+  }, [queryClient, activeSection, activeRoomId]);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -382,6 +378,8 @@ export function AgentTeamsDashboard() {
             sectionsWithNotifications={sectionsWithNotifications}
             onNavClick={handleNavClick}
             onClose={() => setMobileMenuOpen(false)}
+            onOpenChange={setMobileMenuOpen}
+            triggerRef={mobileMenuTriggerRef}
             mode={mode}
           />
 
@@ -405,6 +403,8 @@ export function AgentTeamsDashboard() {
               onNavClick={handleNavClick}
               onRefreshAll={handleRefreshAll}
               onOpenMobileMenu={() => setMobileMenuOpen(true)}
+              mobileMenuOpen={mobileMenuOpen}
+              mobileMenuTriggerRef={mobileMenuTriggerRef}
               onOpenSettings={openSettings}
               mode={mode}
               createActions={visibleCreateActions}
@@ -443,14 +443,9 @@ export function AgentTeamsDashboard() {
                 </div>
               ) : (
                 <main className="workspace-content flex-1 overflow-y-auto custom-scrollbar pt-1 pb-4">
-                  <AnimatePresence mode="wait">
-                    <motion.div
+                    <div
                       key={activeSection}
-                      className="w-full"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.2 }}
+                      className="w-full animate-in fade-in slide-in-from-bottom-1 duration-200"
                     >
                       <SectionErrorBoundary sectionName={activeLabel}>
                         <Suspense fallback={<SectionSkeleton />}>
@@ -461,8 +456,7 @@ export function AgentTeamsDashboard() {
                           )}
                         </Suspense>
                       </SectionErrorBoundary>
-                    </motion.div>
-                  </AnimatePresence>
+                    </div>
                 </main>
               )}
             </div>
@@ -471,7 +465,11 @@ export function AgentTeamsDashboard() {
           </div>
         </div>
 
-        <SettingsDialog />
+        {settingsOpen && (
+          <Suspense fallback={null}>
+            <SettingsDialog />
+          </Suspense>
+        )}
       </div>
     </TooltipProvider>
   );

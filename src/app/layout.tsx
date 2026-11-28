@@ -5,6 +5,7 @@ import "./globals.css";
 import { buildThemeInitScript } from "@/lib/theme/init-script";
 import { THEME_STORAGE_KEY } from "@/lib/theme/types";
 import { ClientAuthInstaller } from "@/components/client-auth-installer";
+import { ShellPollingProvider } from "@/lib/shell-polling";
 
 const geistSans = GeistSans;
 const geistMono = GeistMono;
@@ -34,8 +35,10 @@ export default function RootLayout({
       <body
         className="antialiased"
       >
-        <ClientAuthInstaller />
-        {children}
+        <ShellPollingProvider>
+          <ClientAuthInstaller />
+          {children}
+        </ShellPollingProvider>
       </body>
     </html>
   );

@@ -7,14 +7,26 @@
     "predev": "node scripts/copy-document-preview-assets.mjs && npm run prepare:speech",
     "dev": "node scripts/dev.mjs",
     "prepare:speech": "node scripts/prepare-speech-assets.mjs",
+    "prepare:pptx-fonts": "node scripts/prepare-pptx-font-assets.mjs",
     "build": "npm run prepare:speech && next build && node scripts/copy-standalone-assets.mjs",
     "start": "node scripts/start.mjs",
     "lint": "eslint . && node scripts/typography-scan.mjs",
     "lint:tone": "node scripts/ai-tone-scan.mjs",
     "lint:typography": "node scripts/typography-scan.mjs",
     "typecheck": "tsc --noEmit",
+    "check:bundle": "node scripts/check-quality-gates.mjs bundle",
+    "check:lines": "node scripts/check-quality-gates.mjs lines",
+    "check:quality": "npm run check:bundle && npm run check:lines",
+    "check:assets": "node scripts/check-assets.mjs",
+    "test:quality": "node --test scripts/test-quality-gates.mjs scripts/test-approved-plan-commands.mjs",
+    "test:dependencies": "node --test scripts/test-stream-json-compat.mjs",
+    "test:perf": "node scripts/run-performance-checks.mjs",
+    "test:e2e": "node scripts/smoke-e2e.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "build:quality": "node scripts/copy-document-preview-assets.mjs && next build",
     "test": "vitest run",
-    "test:integration": "vitest run src/__tests__/integration",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:model-skill": "vitest run --config vitest.integration-model-skill.config.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "prebuild": "node scripts/copy-document-preview-assets.mjs"
@@ -53,7 +65,7 @@
     "mermaid": "^12.0.0",
     "minio": "^8.0.7",
     "mitt": "^3.0.1",
-    "next": "^16.4.1",
+    "next": "16.4.6",
     "opencc-js": "1.4.2",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
@@ -74,7 +86,7 @@
     "three": "^0.186.1",
     "three-spritetext": "1.10.0",
     "uuid": "^11.1.0",
-    "yaml": "^2.8.1",
+    "yaml": "2.9.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -90,6 +102,7 @@
     "axe-core": "^4.13.0",
     "eslint": "^9",
     "eslint-config-next": "^16.4.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "fast-check": "^4.5.3",
     "jsdom": "^29.1.1",
     "rehype-stringify": "^10.0.1",
@@ -100,12 +113,24 @@
     "vitest": "^5.0.2"
   },
   "overrides": {
-    "dompurify": ">=3.4.12",
+    "dompurify": "3.5.0",
     "sharp": ">=0.35.5",
-    "fast-xml-parser": ">=5.10.1",
+    "fast-xml-parser": ">=5.11.3",
     "postcss": ">=8.5.23",
     "nanoid": "^3.3.18",
     "lodash-es": ">=4.18",
-    "baseline-browser-mapping": ">=2.11.0"
+    "baseline-browser-mapping": ">=2.11.0",
+    "markdown-it": "14.3.3",
+    "undici": "8.12.2",
+    "jsdom": {
+      "undici": "7.30.2"
+    },
+    "source-map-js": "1.2.2",
+    "decode-uri-component": "0.5.1",
+    "minio": {
+      "stream-json": "file:../../vendor/stream-json-3.9.0-minio-compat.0.tgz"
+    },
+    "katex": "0.19.1",
+    "zod": "4.6.6"
   }
 }

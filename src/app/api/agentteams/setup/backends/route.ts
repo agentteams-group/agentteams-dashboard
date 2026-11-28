@@ -10,42 +10,18 @@
 // setup UI instead of the login form. The embedded auto-detect probe only
 // runs in the unconfigured case so normal deployments pay zero extra latency.
 //
-// POST (auth modes — F1c + F1f shared-mode hardening):
-//   - post-login, standalone (default, one instance per user): any logged-in
-//     user (L1 or L2) may create or update the config — plugin parity, the
-//     instance's user IS the plugin's "user of this host".
-//   - post-login, shared (DASHBOARD_SHARED_MODE=1, e.g. a shared multi-user deployment):
-//     only level-3 (admin) sessions may save (A). An L2 overwriting the
-//     backend config on a shared instance would redirect EVERY user's data
-//     plane (config file > env, global) — that is attack surface ①.
-//     Every save is audited with actor + level + changed fields (C).
-//   - pre-login (token-gated, repeatable — F1e): body.token must equal the
-//     setup token. First launch creates the config; afterwards the same
-//     token remains the ONLY owner gate for re-configuring from a
-//     logged-out browser — the escape hatch for broken/changed
-//     environments (wrong addresses, network move), reachable from the
-//     login screen via ?setup=1. Plugin parity (config-first): the config
-//     surface stays reachable before login and login is downstream of it.
-//     Shared mode (B): the token comes ONLY from DASHBOARD_SETUP_TOKEN env
-//     and is never persisted; with no env token this path is closed.
-//     The SSRF surface of user-supplied addresses stays pinned by
-//     DASHBOARD_ALLOWED_HOSTS; config editing does not touch credentials
-//     (L1 SA token / L2 session tokens stay server-side).
-//   - pre-login (token-gated, repeatable — F1e): body.token must equal the
-//     setup token. First launch creates the config; afterwards the same
-//     token remains the ONLY owner gate for re-configuring from a
-//     logged-out browser — the escape hatch for broken/changed
-//     environments (wrong addresses, network move), reachable from the
-//     login screen via ?setup=1. Plugin parity (config-first): the config
-//     surface stays reachable before login and login is downstream of it;
-//     the dashboard's install-method difference (a web login gate the
-//     host-embedded plugin lacks) keeps the token as the pre-login write
-//     authority — it plugs the auth-bypass threat (a logged-out attacker
-//     redirecting the controller to a fake backend to spoof L1 password
-//     verification). Losing the token = `docker volume rm` factory reset.
+// POST (auth modes — SEC-03):
+//   - Any authenticated save/test requires level 3, in standalone and shared
+//     modes alike. Level 1/2 receive 403 before URL resolution or network I/O.
+//   - Before the first config exists, the setup token remains the pre-login
+//     owner gate (or the explicit trusted-LAN ENFORCE=0 opt-out). Once config
+//     exists, a level-3 session is required; the setup token is not a permanent
+//     backend-management credential.
+//   - Every save is audited without secrets.
 //
-// Every successful save re-probes the saved backends (plugin put_config →
-// refresh_effective) and returns `effective` / `switched` for the UI banner.
+// Every successful save re-probes the saved backends and returns effective /
+// switched. Save and test share DNS/A/AAAA, private-address, redirect and
+// timeout policy; an internal Controller needs an operator allowlist entry.
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/dashboard-session';
 import {
@@ -57,8 +33,8 @@ import {
   configExists,
   effectiveUrl,
   isHttpUrl,
+  isEgressPolicyError,
   isSetupTokenEnforced,
-  isSharedMode,
   normalizeHttpUrl,
   pickBackendUrl,
   probeBackend,
@@ -67,6 +43,7 @@ import {
   refreshEffective,
   saveConfigOneShot,
   updateConfig,
+  validateEgressTarget,
   verifySetupToken,
   type AddressEntry,
   type BackendAddrs,
@@ -180,8 +157,11 @@ async function resolveBackendsPayload(
           if (!item) return;
           const input = addressUrl(item);
           if (!input) return;
-          const result = await resolveBackendUrl(input);
+          const result = await resolveBackendUrl(input, 3000, name);
           if (!isHttpUrl(result.url)) return; // 非 http(s) → 不落库（merge 同样丢）
+          // Validate the final URL before any config write. Scheme-less input
+          // is also checked inside resolveBackendUrl before its first probe.
+          await validateEgressTarget(result.url, name);
           if (result.warning) {
             warnings.push({ backend: name, slot, input, url: result.url, warning: result.warning });
           }
@@ -315,6 +295,16 @@ function projectLegacyConfig(
 }
 
 export async function POST(request: NextRequest) {
+  const session = getSessionFromRequest(request);
+  // SEC-03: global backend management is Admin-only in every deployment mode.
+  if (session && session.level < 3) {
+    return NextResponse.json({ error: 'only admin (L1) may save backend config' }, { status: 403 });
+  }
+  const existed = await configExists();
+  // Setup token / trusted-LAN bootstrap authorizes first configuration only.
+  if (!session && existed) {
+    return NextResponse.json({ error: 'admin-required' }, { status: 403 });
+  }
   const body = (await request.json().catch(() => null)) as {
     token?: unknown;
     backends?: unknown;
@@ -332,48 +322,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'at least one address is required' }, { status: 400 });
   }
 
-  const session = getSessionFromRequest(request);
   const token = typeof body?.token === 'string' ? body.token : undefined;
   const before = readConfigSync()?.backends ?? {};
 
-  if (session) {
-    // F1f-A: shared (multi-user) deployment — only an admin (level 3)
-    // session may save. Standalone keeps the F1c any-user behavior.
-    if (isSharedMode() && session.level < 3) {
-      return NextResponse.json(
-        { error: 'shared-mode: only admin (L1) may save backend config' },
-        { status: 403 },
-      );
-    }
-    // 协议解析（https 优先）必须在鉴权之后、合并落盘之前 —— 无协议输入在
-    // 解析时要发网络探测，未授权调用方不得触发。
-    const prepared = await resolveBackendsPayload(parsed.backends);
-    const result = await updateConfig(prepared.backends, addressMode);
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-    // F1f-C: every config write is audited with actor + level + diff.
-    await auditConfigWrite(before, savedSentBackends(prepared.backends), session.user, session.level, request);
-    // Re-probe what was just saved (plugin put_config → refresh_effective):
-    // the effective address is latency-elected from real probes, not seeded
-    // blindly.
-    const { effective, switched } = await refreshEffective(Object.keys(prepared.backends) as BackendName[]);
-    return NextResponse.json({
-      ok: true,
-      mode: 'update',
-      effective,
-      switched,
-      resolved: prepared.resolved,
-      ...(prepared.warnings.length > 0 ? { warnings: prepared.warnings } : {}),
-    });
-  }
-
-  // Pre-login: token-gated, repeatable (F1e) — unless the installer
-  // disabled the gate with DASHBOARD_SETUP_TOKEN_ENFORCE=0 (F1f3).
-  // First launch creates the config; afterwards the token overwrites it
-  // (broken/changed environment escape hatch — see header). No session,
-  // no other path.
-  if (isSetupTokenEnforced()) {
+  if (!session && isSetupTokenEnforced()) {
     if (!token) {
       return NextResponse.json({ error: 'token-required' }, { status: 403 });
     }
@@ -381,18 +333,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'invalid-token' }, { status: 403 });
     }
   }
-  const existed = await configExists();
-  // 同 session 分支：鉴权通过后再解析协议（https 优先），再合并落盘。
-  const prepared = await resolveBackendsPayload(parsed.backends);
+
+  let prepared: ResolvedPayload;
+  try {
+    prepared = await resolveBackendsPayload(parsed.backends);
+  } catch (err) {
+    if (isEgressPolicyError(err)) {
+      return NextResponse.json({ error: 'host-not-allowed' }, { status: 403 });
+    }
+    throw err;
+  }
   const result = existed
     ? await updateConfig(prepared.backends, addressMode)
     : await saveConfigOneShot(prepared.backends, addressMode);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  await auditConfigWrite(before, savedSentBackends(prepared.backends), 'pre-login', 0, request);
-  // Re-probe the saved config so the effective cache is honest from the
-  // first request (plugin put_config → refresh_effective).
+  await auditConfigWrite(
+    before,
+    savedSentBackends(prepared.backends),
+    session?.user ?? 'pre-login',
+    session?.level ?? 0,
+    request,
+  );
+  // Re-probe only after policy validation and the atomic config write.
   const { effective, switched } = await refreshEffective(Object.keys(prepared.backends) as BackendName[]);
   return NextResponse.json({
     ok: true,

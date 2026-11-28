@@ -1,11 +1,12 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import { Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { platformAssistantSettingsHash } from '@/lib/nav-hash';
-import { ChatRoom, type ChatContextPanel } from './ChatRoom';
+import type { ChatContextPanel } from './ChatRoom';
 import type { RoomInfo } from './room-info';
 import type { MentionEntry } from './chat-composer';
 import styles from './agent-conversation.module.css';
@@ -14,6 +15,18 @@ import { ManagerModelGate } from './manager-model-gate';
 import { RoomArchiveAction } from './room-archive';
 import { useRoomArchiveStatus } from '@/hooks/use-room-archive';
 import { AssistantReminderSettings } from './assistant-reminder-settings';
+
+const ChatRoom = dynamic(
+  () => import('./ChatRoom').then((module) => ({ default: module.ChatRoom })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载房间…
+      </div>
+    ),
+  },
+);
 
 export type { ChatContextPanel } from './ChatRoom';
 

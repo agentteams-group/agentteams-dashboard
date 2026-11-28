@@ -14,5 +14,10 @@ export const manifest: PluginManifest = {
   entry: { dashboard: 'index.tsx' },
   dashboardVersion: '>=0.2.0',
   extensionPoints: ['sidebar-menu', 'route', 'dashboard-widget'],
+  contributions: {
+    menuItems: [{ id: 'monitor', label: '运行监控', icon: 'activity', target: { type: 'plugin-route', routeId: 'monitor' } }],
+    routes: [{ id: 'monitor', title: '运行监控' }],
+    widgets: [{ id: 'cluster-health', title: '集群健康概览', size: 'md' }],
+  },
   permissions: ['network'],
 };

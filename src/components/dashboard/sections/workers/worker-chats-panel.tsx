@@ -117,7 +117,7 @@ export interface SpawnChatRow {
   hasChildren: boolean;
 }
 
-/** spawn 会话 → 扁平树行。父 session 不在本列表（属普通智能体会话）→
+/** spawn 会话 → 扁平树行。父 session 不在本列表（属普通Worker会话）→
  * 该 spawn 落根层；无 parent 字段的旧 runtime 全部落根层（扁平列表）。 */
 export function buildSpawnChatRows(
   chats: ChatSpec[],
@@ -189,7 +189,7 @@ export function WorkerChatsPanel({
   showKindTabs = false,
 }: {
   workerName: string;
-  /** 顶层「智能体会话 / 子代理会话」双 tab（Worker 详情「会话」卡用；
+  /** 顶层「Worker会话 / 子代理会话」双 tab（Worker 详情「会话」卡用；
    * 默认关闭 = 房间抽屉原行为不变，ChatRoom 等既有消费者不受影响）。 */
   showKindTabs?: boolean;
 }) {
@@ -203,7 +203,7 @@ export function WorkerChatsPanel({
   const [detailState, setDetailState] = useState<LoadState>('loading');
   const [detailError, setDetailError] = useState('');
   const [chatStatus, setChatStatus] = useState<ChatStatus>('');
-  // 顶层会话类别（showKindTabs 生效时）：智能体会话 = 非 spawn；子代理 = spawn。
+  // 顶层会话类别（showKindTabs 生效时）：Worker会话 = 非 spawn；子代理 = spawn。
   const [kind, setKind] = useState<'agent' | 'spawn'>('agent');
   const [spawnCollapsed, setSpawnCollapsed] = useState<ReadonlySet<string>>(new Set());
 
@@ -585,7 +585,7 @@ export function WorkerChatsPanel({
     </div>
   );
 
-  // 顶层双 tab：智能体会话（非 spawn）/ 子代理会话（spawn）——两个 tab 同一
+  // 顶层双 tab：Worker会话（非 spawn）/ 子代理会话（spawn）——两个 tab 同一
   // 数据面（运行时 /workers/{name}/chats），不重叠。
   if (showKindTabs) {
     return (
@@ -603,7 +603,7 @@ export function WorkerChatsPanel({
         >
           <TabsList className="h-9 w-fit">
             <TabsTrigger value="agent" className="text-xs">
-              智能体会话 ({agentChats.length})
+              Worker会话 ({agentChats.length})
             </TabsTrigger>
             <TabsTrigger value="spawn" className="text-xs">
               子代理会话 ({spawnChats.length})

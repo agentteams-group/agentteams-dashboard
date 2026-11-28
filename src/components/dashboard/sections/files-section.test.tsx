@@ -29,6 +29,7 @@ const ENTRIES = {
     { name: 'readme.md', type: 'file' as const, size: 2048, updatedAt: '2026-11-02T10:00:00Z' },
   ],
 };
+const FILE_CONTENT = 'x'.repeat(2048);
 
 function renderSection() {
   const client = new QueryClient({
@@ -52,9 +53,9 @@ beforeEach(() => {
   );
   vi.spyOn(humanFilesApi, 'listTrash').mockResolvedValue([]);
   vi.spyOn(humanFilesApi, 'getQuota').mockResolvedValue({ usedBytes: 2048, quotaBytes: 1_000_000 });
-  vi.spyOn(humanFilesApi, 'download').mockResolvedValue(new Blob(['x']));
+  vi.spyOn(humanFilesApi, 'download').mockImplementation(async () => new Blob([FILE_CONTENT]));
   vi.spyOn(humanFilesApi, 'readText').mockResolvedValue({ text: 'hello', etag: '"e1"' });
-  vi.spyOn(humanFilesApi, 'writeFile').mockResolvedValue({ path: 'x', size: 1, etag: '"e2"' });
+  vi.spyOn(humanFilesApi, 'writeFile').mockResolvedValue({ path: 'x', size: FILE_CONTENT.length, etag: '"e2"' });
   vi.spyOn(humanFilesApi, 'deleteFile').mockResolvedValue({ trashId: 't1' });
   vi.spyOn(humanFilesApi, 'purgeTrash').mockResolvedValue(undefined);
   vi.spyOn(humanFilesApi, 'restoreTrash').mockResolvedValue(undefined);
@@ -267,6 +268,25 @@ describe('FilesSection 全局搜索', () => {
 });
 
 describe('FilesSection 操作', () => {
+  async function openRenameDialog() {
+    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
+    fireEvent.click(await screen.findByRole('button', { name: /重命名/ }));
+    return within(await screen.findByRole('dialog'));
+  }
+
+  async function openMoveDialog() {
+    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
+    fireEvent.click(await screen.findByRole('button', { name: /移动/ }));
+    return within(await screen.findByRole('dialog'));
+  }
+
+  async function openDeleteDialog() {
+    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /删除/ }));
+    return within(await screen.findByRole('dialog'));
+  }
+
   it('上传队列：成功后提示并清空队列，下一批独立提示', async () => {
     const success = vi.spyOn(toast, 'success');
     renderSection();
@@ -302,53 +322,272 @@ describe('FilesSection 操作', () => {
     expect(screen.queryByTestId('upload-queue')).not.toBeInTheDocument();
   });
 
-  it('重命名：读 → 写新名 → 删旧名', async () => {
+  it('重命名：复制 → 长度/校验和验证 → 软删旧名，绝不 purge', async () => {
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
-    fireEvent.click(await screen.findByRole('button', { name: /重命名/ }));
-    const input = await screen.findByLabelText('新名称');
-    fireEvent.change(input, { target: { value: 'renamed.md' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
-
-    await waitFor(() =>
-      expect(humanFilesApi.writeFile).toHaveBeenCalledWith(
-        'alice',
-        'renamed.md',
-        expect.anything(),
-      ),
-    );
-    expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md');
-    expect(humanFilesApi.purgeTrash).toHaveBeenCalledWith('alice', 't1');
-  });
-
-  it('移动：目标目录 + 文件名', async () => {
-    renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
-    fireEvent.click(await screen.findByRole('button', { name: /移动/ }));
-    const input = await screen.findByLabelText(/目标目录/);
-    fireEvent.change(input, { target: { value: 'docs' } });
-    fireEvent.click(screen.getByRole('button', { name: '移动' }));
-
-    await waitFor(() =>
-      expect(humanFilesApi.writeFile).toHaveBeenCalledWith(
-        'alice',
-        'docs/readme.md',
-        expect.anything(),
-      ),
-    );
-  });
-
-  it('删除：确认后 deleteFile（软删）', async () => {
-    renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'readme.md' }));
-    const card = await screen.findByTestId('file-detail-card');
-    fireEvent.click(within(card).getByRole('button', { name: /删除/ }));
-
-    const dialog = await screen.findByRole('dialog');
-    const buttons = within(dialog).getAllByRole('button', { name: '删除' });
-    fireEvent.click(buttons[buttons.length - 1]);
+    const dialog = await openRenameDialog();
+    fireEvent.change(dialog.getByLabelText('新名称'), { target: { value: 'renamed.md' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md'));
+    expect(humanFilesApi.writeFile).toHaveBeenCalledWith('alice', 'renamed.md', expect.any(Blob));
+    expect(humanFilesApi.download).toHaveBeenNthCalledWith(1, 'alice', 'readme.md', { size: 2048 });
+    expect(humanFilesApi.download).toHaveBeenNthCalledWith(2, 'alice', 'renamed.md', { size: 2048 });
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+    const downloadOrders = vi.mocked(humanFilesApi.download).mock.invocationCallOrder;
+    const writeOrder = vi.mocked(humanFilesApi.writeFile).mock.invocationCallOrder[0];
+    const deleteOrder = vi.mocked(humanFilesApi.deleteFile).mock.invocationCallOrder[0];
+    expect(downloadOrders[0]).toBeLessThan(writeOrder);
+    expect(downloadOrders[1]).toBeLessThan(deleteOrder);
+  });
+
+  it('移动：复制 → 长度/校验和验证 → 软删源文件，绝不 purge', async () => {
+    renderSection();
+    const dialog = await openMoveDialog();
+    fireEvent.change(dialog.getByLabelText(/目标目录/), { target: { value: 'docs' } });
+    fireEvent.click(dialog.getByRole('button', { name: '移动' }));
+
+    await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md'));
+    expect(humanFilesApi.writeFile).toHaveBeenCalledWith('alice', 'docs/readme.md', expect.any(Blob));
+    expect(humanFilesApi.download).toHaveBeenNthCalledWith(1, 'alice', 'readme.md', { size: 2048 });
+    expect(humanFilesApi.download).toHaveBeenNthCalledWith(2, 'alice', 'docs/readme.md', { size: 2048 });
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('重命名：目标写入失败时不得删除源文件', async () => {
+    vi.mocked(humanFilesApi.writeFile).mockRejectedValueOnce(new Error('写入失败'));
+    renderSection();
+    const dialog = await openRenameDialog();
+    fireEvent.change(dialog.getByLabelText('新名称'), { target: { value: 'renamed.md' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('写入失败');
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+    fireEvent.click(dialog.getByRole('button', { name: '取消' }));
+    expect(await screen.findByRole('button', { name: 'readme.md' })).toBeInTheDocument();
+  });
+
+  it('重命名：目标长度校验失败时不得删除源文件', async () => {
+    vi.mocked(humanFilesApi.writeFile).mockResolvedValueOnce({
+      path: 'renamed.md', size: 2047, etag: '"short"',
+    });
+    renderSection();
+    const dialog = await openRenameDialog();
+    fireEvent.change(dialog.getByLabelText('新名称'), { target: { value: 'renamed.md' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('目标文件长度校验失败');
+    expect(humanFilesApi.download).toHaveBeenCalledTimes(1);
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('重命名：目标校验和不匹配时不得删除源文件', async () => {
+    vi.mocked(humanFilesApi.download).mockImplementation(async (_name, path) =>
+      path === 'renamed.md' ? new Blob(['y'.repeat(2048)]) : new Blob([FILE_CONTENT]),
+    );
+    renderSection();
+    const dialog = await openRenameDialog();
+    fireEvent.change(dialog.getByLabelText('新名称'), { target: { value: 'renamed.md' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('SHA-256 校验失败');
+    expect(humanFilesApi.download).toHaveBeenCalledTimes(2);
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('重命名：源文件长度变化时在写入前中止', async () => {
+    vi.mocked(humanFilesApi.download).mockResolvedValueOnce(new Blob(['changed']));
+    renderSection();
+    const dialog = await openRenameDialog();
+    fireEvent.change(dialog.getByLabelText('新名称'), { target: { value: 'renamed.md' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('源文件大小已变化');
+    expect(humanFilesApi.writeFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('移动：目标冲突时不写、不删源', async () => {
+    vi.mocked(humanFilesApi.listDirectory).mockImplementation(async (_name, dir = '') =>
+      dir === 'docs'
+        ? { path: 'docs', entries: [{ name: 'readme.md', type: 'file', size: 2048 }] }
+        : ENTRIES,
+    );
+    renderSection();
+    const dialog = await openMoveDialog();
+    fireEvent.change(dialog.getByLabelText(/目标目录/), { target: { value: 'docs' } });
+    fireEvent.click(dialog.getByRole('button', { name: '移动' }));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('目标路径已存在');
+    expect(humanFilesApi.download).not.toHaveBeenCalled();
+    expect(humanFilesApi.writeFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('目录移动：第二个文件会失败也不得逐文件删除或假成功', async () => {
+    vi.mocked(humanFilesApi.listDirectory).mockImplementation(async (_name, dir = '') =>
+      dir === 'docs'
+        ? {
+            path: 'docs',
+            entries: [
+              { name: 'a.txt', type: 'file', size: 2048 },
+              { name: 'b.txt', type: 'file', size: 2048 },
+            ],
+          }
+        : ENTRIES,
+    );
+    vi.mocked(humanFilesApi.writeFile).mockImplementation(async (_name, path) => {
+      if (path === 'archive/docs/b.txt') throw new Error('第二个文件写入失败');
+      return { path, size: 2048, etag: '"e"' };
+    });
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'docs' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /移动/ }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('目录移动暂不支持');
+    expect(dialog.getByRole('button', { name: '移动' })).toBeDisabled();
+    expect(humanFilesApi.download).not.toHaveBeenCalled();
+    expect(humanFilesApi.writeFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+    expect(vi.mocked(humanFilesApi.listDirectory).mock.calls.some(([, dir]) => dir === 'docs')).toBe(false);
+  });
+
+  it('空目录移动：立即拒绝且不创建目标目录', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'docs' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /移动/ }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('目录移动暂不支持');
+    expect(humanFilesApi.makeDirectory).not.toHaveBeenCalled();
+    expect(humanFilesApi.download).not.toHaveBeenCalled();
+    expect(humanFilesApi.writeFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('目录重命名：立即拒绝且不遍历或删除源文件', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'docs' }));
+    const card = await screen.findByTestId('file-detail-card');
+    fireEvent.click(within(card).getByRole('button', { name: /重命名/ }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    expect(await dialog.findByRole('alert')).toHaveTextContent('目录重命名暂不支持');
+    expect(dialog.getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(humanFilesApi.download).not.toHaveBeenCalled();
+    expect(humanFilesApi.writeFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('删除：默认软删且不 purge', async () => {
+    renderSection();
+    const dialog = await openDeleteDialog();
+    expect(dialog.getByRole('checkbox', { name: '移入回收站（可恢复）' })).toBeChecked();
+    fireEvent.click(dialog.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md'));
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('删除：取消后重开恢复默认可恢复状态', async () => {
+    renderSection();
+    const first = await openDeleteDialog();
+    fireEvent.click(first.getByRole('checkbox', { name: '移入回收站（可恢复）' }));
+    fireEvent.click(first.getByRole('button', { name: '取消' }));
+
+    const reopened = await openDeleteDialog();
+    expect(reopened.getByRole('checkbox', { name: '移入回收站（可恢复）' })).toBeChecked();
+    expect(humanFilesApi.deleteFile).not.toHaveBeenCalled();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('删除：仅显式取消可恢复选项后才 purge', async () => {
+    renderSection();
+    const dialog = await openDeleteDialog();
+    fireEvent.click(dialog.getByRole('checkbox', { name: '移入回收站（可恢复）' }));
+    fireEvent.click(dialog.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(humanFilesApi.purgeTrash).toHaveBeenCalledWith('alice', 't1'));
+    expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md');
+  });
+
+  it('批量删除：固定软删且不 purge', async () => {
+    vi.mocked(humanFilesApi.listDirectory).mockResolvedValue({
+      path: '',
+      entries: [
+        ...ENTRIES.entries,
+        { name: 'notes.txt', type: 'file', size: 10 },
+      ],
+    });
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: /多选/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择 readme.md' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 notes.txt' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    const recoverable = dialog.getByRole('checkbox', { name: '移入回收站（可恢复）' });
+    expect(recoverable).toBeChecked();
+    expect(recoverable).toBeDisabled();
+    fireEvent.click(dialog.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledTimes(2));
+    expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md');
+    expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'notes.txt');
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('批量删除：仅选一项也锁定可恢复删除', async () => {
+    renderSection();
+    await screen.findByRole('button', { name: 'readme.md' });
+    fireEvent.click(screen.getByRole('button', { name: /多选/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择 readme.md' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    const recoverable = dialog.getByRole('checkbox', { name: '移入回收站（可恢复）' });
+    expect(recoverable).toBeChecked();
+    expect(recoverable).toBeDisabled();
+    expect(dialog.getByText(/批量删除统一移入回收站/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledWith('alice', 'readme.md'));
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+  });
+
+  it('批量删除：第二个文件失败时保留失败源文件且不 purge', async () => {
+    vi.mocked(humanFilesApi.listDirectory).mockResolvedValue({
+      path: '',
+      entries: [
+        { name: 'a.txt', type: 'file', size: 10 },
+        { name: 'b.txt', type: 'file', size: 10 },
+      ],
+    });
+    vi.mocked(humanFilesApi.deleteFile).mockImplementation(async (_name, path) => {
+      if (path === 'b.txt') throw new Error('第二个文件删除失败');
+      return { trashId: 't1' };
+    });
+    renderSection();
+    await screen.findByRole('button', { name: 'a.txt' });
+    fireEvent.click(screen.getByRole('button', { name: /多选/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择 a.txt' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 b.txt' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(humanFilesApi.deleteFile).toHaveBeenCalledTimes(2));
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'b.txt' })).toBeInTheDocument();
   });
 
   it('回收站：恢复调用 restoreTrash', async () => {
@@ -522,6 +761,7 @@ describe('FilesSection 刷新与远端变化', () => {
     fireEvent.click(buttons[buttons.length - 1]);
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(humanFilesApi.purgeTrash).not.toHaveBeenCalled();
     // 弹窗保持打开（错误就地提示）；关掉后列表已回滚。
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(await screen.findByRole('button', { name: 'readme.md' })).toBeInTheDocument();

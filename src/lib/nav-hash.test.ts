@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  filesHash,
   auditHash,
   currentHashParams,
   hashForActiveSection,
@@ -16,7 +17,7 @@ import {
 const allSections = new Set([
   'overview', 'chat', 'my-teams', 'tasks', 'artifacts', 'coding-runs', 'loops', 'my-workbench',
   'resources', 'team-agents', 'workers', 'teams', 'platform-assistant-settings', 'humans', 'skills', 'models',
-  'knowledge', 'audit', 'tools',
+  'knowledge', 'audit', 'tools', 'files',
 ]);
 const isKnown = (s: string) => allSections.has(s) || s.startsWith('plugin-route:');
 
@@ -65,6 +66,7 @@ describe('hashForSection', () => {
     expect(hashForSection('skills')).toBe('console/resources/skills');
     expect(hashForSection('models')).toBe('console/resources/models');
     expect(hashForSection('knowledge')).toBe('console/resources/knowledge');
+    expect(hashForSection('files')).toBe('console/resources/files');
     expect(hashForSection('audit')).toBe('console/governance/audit');
     expect(hashForSection('overview')).toBe('console/system/overview');
   });
@@ -125,6 +127,20 @@ describe('hashForActiveSection', () => {
     expect(
       hashForActiveSection('resources', '#console/resources/humans?project=run-1'),
     ).toBe('console/resources/humans?project=run-1');
+  });
+
+  it('preserves files directory and focused-entry context across canonical and legacy routes', () => {
+    const hash = filesHash({ path: 'docs/项目', file: 'a b.md' });
+    expect(hash).toBe('#console/resources/files?path=docs%2F%E9%A1%B9%E7%9B%AE&file=a+b.md');
+    for (const raw of [hash.slice(1), `files${hash.slice(hash.indexOf('?'))}`]) {
+      const resolved = resolveHash(raw, isKnown);
+      expect(resolved?.section).toBe('files');
+      expect(resolved?.params?.get('path')).toBe('docs/项目');
+      expect(resolved?.params?.get('file')).toBe('a b.md');
+      expect(hashForActiveSection(resolved!.section, `#${raw}`)).toBe(hash.slice(1));
+    }
+    expect(resolveHash('console/resources/files?file=readme.md', isKnown)).toMatchObject({ section: 'files' });
+    expect(filesHash()).toBe('#console/resources/files');
   });
 
   it('drops a query that belongs to another section', () => {

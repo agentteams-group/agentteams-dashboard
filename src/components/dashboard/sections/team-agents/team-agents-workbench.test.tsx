@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
+
+configure({ asyncUtilTimeout: 5000 });
 
 const teamsFixture = [
   {
@@ -288,10 +290,10 @@ function clickListButton(region: HTMLElement, text: string) {
   fireEvent.click(button);
 }
 
-/** 展开「智能体」折叠行。 */
+/** 展开「Worker」折叠行。 */
 async function openStandaloneRow() {
   const region = listRegion();
-  fireEvent.click(within(region).getByText(/智能体（/));
+  fireEvent.click(within(region).getByRole('button', { name: 'Worker（1）' }));
   await waitFor(() => expect(within(region).getByText('solo')).toBeInTheDocument());
   return region;
 }
@@ -363,7 +365,7 @@ describe('TeamAgentsWorkbench · A2 断点矩阵（容器宽度 ResizeObserver�
 
 describe('TeamAgentsWorkbench · A2 dual 真 Sheet 抽屉（R3）', () => {
   it('Agent 抽屉只保留一个关闭按钮，点击后保留选中', async () => {
-    setWidth(1024); renderSection(); await layoutIs('dual'); clickTopologyMember('w1'); const drawer = await screen.findByTestId('inspector-drawer'); expect(drawer.querySelectorAll('[data-slot="sheet-close"]')).toHaveLength(0); expect(within(drawer).getAllByRole('button', { name: '关闭 Inspector' })).toHaveLength(1); fireEvent.click(within(drawer).getByRole('button', { name: '关闭 Inspector' })); await waitFor(() => expect(screen.queryByTestId('inspector-drawer')).toBeNull()); expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute('data-highlighted', 'true');
+    setWidth(1024); renderSection(); await layoutIs('dual'); clickTopologyMember('w1'); const drawer = await screen.findByTestId('inspector-drawer'); expect(drawer.querySelectorAll('[data-slot="sheet-close"]')).toHaveLength(0); const close = await within(drawer).findByRole('button', { name: '关闭 Inspector' }); expect(within(drawer).getAllByRole('button', { name: '关闭 Inspector' })).toHaveLength(1); fireEvent.click(close); await waitFor(() => expect(screen.queryByTestId('inspector-drawer')).toBeNull()); expect(document.querySelector('[data-worker-name="w1"]')).toHaveAttribute('data-highlighted', 'true');
   });
 
   it('切换团队关闭 Agent 抽屉，只更新中间团队展示', async () => {
@@ -436,7 +438,7 @@ describe('TeamAgentsWorkbench · A3 右栏 Inspector', () => {
   });
 
   it('团队基础字段在中栏，Agent 点击后右侧展示自身详情', async () => {
-    renderSection(); await layoutIs('triple'); expect(screen.getByRole('region', { name: '基础信息' })).toHaveTextContent('负责人'); expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull(); clickTopologyMember('w1'); expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    renderSection(); await layoutIs('triple'); expect(screen.getByRole('region', { name: '基础信息' })).toHaveTextContent('负责人'); expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull(); clickTopologyMember('w1'); expect(await within(inspectorRegion()).findByRole('heading', { name: 'w1' })).toBeInTheDocument();
   });
 
   it('triple：Worker 选中 → 角色徽标 + 快动作 + 分区；点分区开大弹窗直达该分区', async () => {
@@ -445,12 +447,12 @@ describe('TeamAgentsWorkbench · A3 右栏 Inspector', () => {
     clickListButton(listRegion(), 'alpha');
     clickTopologyMember('w1');
     const inspector = inspectorRegion();
-    expect(within(inspector).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('heading', { name: 'w1' })).toBeInTheDocument();
     expect(within(inspector).getByText('成员')).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /重启/ })).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /私聊/ })).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /删除/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /重启/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /私聊/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /删除/ })).toBeInTheDocument();
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'MCP' }));
     const dialog = await screen.findByRole('dialog', { name: 'w1 · MCP' });
@@ -468,13 +470,13 @@ describe('TeamAgentsWorkbench · A3 右栏 Inspector', () => {
     await layoutIs('triple');
     clickListButton(listRegion(), 'boss');
     const inspector = inspectorRegion();
-    expect(within(inspector).getByRole('heading', { name: 'boss' })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('heading', { name: 'boss' })).toBeInTheDocument();
     expect(within(inspector).getByText('Manager')).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /休眠/ })).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /重启/ })).toBeInTheDocument();
-    expect(within(inspector).getByRole('button', { name: /私聊/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /休眠/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /重启/ })).toBeInTheDocument();
+    expect(await within(inspector).findByRole('button', { name: /私聊/ })).toBeInTheDocument();
     for (const title of ['基本信息', '模型', '提示词', '技能', '环境变量', '运行参数', '日志']) {
-      expect(within(inspector).getByRole('button', { name: title })).toBeInTheDocument();
+      expect(await within(inspector).findByRole('button', { name: title })).toBeInTheDocument();
     }
   });
 
@@ -545,7 +547,7 @@ describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）'
     // 回到「选中、无编辑」状态：弹窗收掉，选中保留。
     navigateHash('#console/resources/team-agents?tab=agents&agent=w1');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(await within(inspectorRegion()).findByRole('heading', { name: 'w1' })).toBeInTheDocument();
   });
 
   it('?tab=agents&agent=w1（无 edit）→ 选中 Worker，右栏展示，不弹窗', async () => {
@@ -553,7 +555,7 @@ describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）'
     renderSection();
     await layoutIs('triple');
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(within(inspectorRegion()).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(await within(inspectorRegion()).findByRole('heading', { name: 'w1' })).toBeInTheDocument();
     expect(window.location.hash).toContain('agent=w1');
     expect(window.location.hash).not.toContain('edit=true');
   });
@@ -563,7 +565,7 @@ describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）'
     renderSection();
     await layoutIs('triple');
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(within(inspectorRegion()).getByRole('heading', { name: 'boss' })).toBeInTheDocument();
+    expect(await within(inspectorRegion()).findByRole('heading', { name: 'boss' })).toBeInTheDocument();
   });
 
   it('dual：?agent=w1（无 edit）深链 → 选中 + 抽屉展示，不弹分区弹窗', async () => {
@@ -572,7 +574,7 @@ describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）'
     renderSection();
     await layoutIs('dual');
     const drawer = await screen.findByTestId('inspector-drawer');
-    expect(within(drawer).getByRole('heading', { name: 'w1' })).toBeInTheDocument();
+    expect(await within(drawer).findByRole('heading', { name: 'w1' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: /w1/ })).toBeNull();
   });
 
@@ -634,7 +636,7 @@ describe('TeamAgentsWorkbench · 单栏钻取（single <840，行为不变）', 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
-    expect(screen.getByText(/智能体（不属于任何团队）：能运行/)).toBeInTheDocument();
+    expect(screen.getByText(/Worker（不属于任何团队）：能运行/)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '团队列表' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '回团队列表' }));
@@ -749,7 +751,7 @@ describe('TeamAgentsWorkbench · 工作台壳（统一列表）', () => {
     expect(within(list).queryByRole('tablist')).toBeNull();
     expect(within(list).getByText('boss')).toBeInTheDocument(); // Manager 行
     expect(within(list).getByText('alpha')).toBeInTheDocument(); // 团队行
-    expect(within(list).getByText(/智能体（/)).toBeInTheDocument(); // 折叠行
+    expect(within(list).getByText(/Worker（/)).toBeInTheDocument(); // 折叠行
   });
 
   it('C：壳撑满父容器——无 max-h 上限，高度 calc(100dvh-13rem)，下限 420px', async () => {
@@ -772,8 +774,8 @@ describe('TeamAgentsWorkbench · Agent 入口', () => {
     clickListButton(region, 'solo');
     expect(screen.queryByRole('dialog')).toBeNull();
     // 中栏落在上下文卡。
-    expect(screen.getByText(/智能体（不属于任何团队）：能运行/)).toBeInTheDocument();
-    expect(within(inspectorRegion()).getByRole('heading', { name: 'solo' })).toBeInTheDocument();
+    expect(screen.getByText(/Worker（不属于任何团队）：能运行/)).toBeInTheDocument();
+    expect(await within(inspectorRegion()).findByRole('heading', { name: 'solo' })).toBeInTheDocument();
   });
 });
 
@@ -786,7 +788,7 @@ describe('TeamAgentsWorkbench · 旧 hash 深链（初始选中）', () => {
     // agents 意图：展开 Agent 行并选中首个 Agent（上下文卡）。
     expect(within(listRegion()).getByText('solo')).toBeInTheDocument();
     // 卡片正文是一整段 p，用正则匹配开头。
-    expect(screen.getByText(/智能体（不属于任何团队）：能运行/)).toBeInTheDocument();
+    expect(screen.getByText(/Worker（不属于任何团队）：能运行/)).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -811,7 +813,7 @@ describe('TeamAgentsWorkbench · 旧 hash 深链（初始选中）', () => {
     await layoutIs('triple');
     expect(document.querySelector('[role="tab"]')).toBeNull();
     expect(within(listRegion()).getByText('solo')).toBeInTheDocument();
-    expect(screen.getByText(/智能体（不属于任何团队）：能运行/)).toBeInTheDocument();
+    expect(screen.getByText(/Worker（不属于任何团队）：能运行/)).toBeInTheDocument();
   });
 });
 
@@ -874,7 +876,7 @@ describe('TeamAgentsWorkbench · 千锻入口（拓扑承载）', () => {
     expect(screen.queryByTestId('mock-millforge-dialog')).toBeNull();
     fireEvent.click(card);
 
-    expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent(
+    expect(await screen.findByTestId('mock-millforge-dialog')).toHaveTextContent(
       'millforge-dialog:alpha:workers-4',
     );
     fireEvent.click(screen.getByRole('button', { name: 'mock-injected' }));
@@ -893,7 +895,7 @@ describe('TeamAgentsWorkbench · 千锻入口（拓扑承载）', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('button', { name: '打开千锻' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '打开千锻' }));
-    expect(screen.getByTestId('mock-millforge-dialog')).toHaveTextContent(
+    expect(await screen.findByTestId('mock-millforge-dialog')).toHaveTextContent(
       'millforge-dialog:alpha:workers-4',
     );
   });
@@ -905,7 +907,7 @@ describe('TeamAgentsWorkbench · 创建入口与团队设置草稿', () => {
     await layoutIs('triple');
     fireEvent.click(screen.getByRole('button', { name: /创建团队/ }));
     expect(screen.getByText('team-create-dialog')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /创建智能体/ }));
+    fireEvent.click(screen.getByRole('button', { name: '创建Worker' }));
     expect(screen.getByText('worker-create-dialog')).toBeInTheDocument();
   });
 

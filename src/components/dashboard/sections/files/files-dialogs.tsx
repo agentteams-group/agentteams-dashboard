@@ -38,6 +38,11 @@ export interface FileOpTarget {
   size?: number;
 }
 
+export const DIRECTORY_MOVE_UNSUPPORTED =
+  '目录移动暂不支持：当前 Controller 没有原子 move 端点。源目录未做任何修改，请升级 Controller。';
+export const DIRECTORY_RENAME_UNSUPPORTED =
+  '目录重命名暂不支持：当前 Controller 没有原子 move 端点。源目录未做任何修改，请升级 Controller。';
+
 interface ShellProps {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
@@ -177,13 +182,17 @@ export function RenameDialog({
   useEffect(() => {
     if (open && target) {
       setName(target.name);
-      setError('');
+      setError(target.isDir ? DIRECTORY_RENAME_UNSUPPORTED : '');
       setBusy(false);
     }
   }, [open, target]);
 
   const submit = async () => {
     if (!target) return;
+    if (target.isDir) {
+      setError(DIRECTORY_RENAME_UNSUPPORTED);
+      return;
+    }
     const plan = renamePath(target.path, name);
     if (!plan.ok) {
       const text =
@@ -217,7 +226,7 @@ export function RenameDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             取消
           </Button>
-          <Button onClick={() => void submit()} disabled={busy || !name.trim()}>
+          <Button onClick={() => void submit()} disabled={busy || !name.trim() || target?.isDir === true}>
             {busy && <Loader2 className="size-4 animate-spin" />}
             保存
           </Button>
@@ -230,6 +239,7 @@ export function RenameDialog({
           id="hf-rename"
           autoFocus
           value={name}
+          disabled={target?.isDir === true}
           onChange={(e) => {
             setName(e.target.value);
             setError('');
@@ -267,13 +277,17 @@ export function MoveDialog({
   useEffect(() => {
     if (open && target) {
       setDir(currentDir);
-      setError('');
+      setError(target.isDir ? DIRECTORY_MOVE_UNSUPPORTED : '');
       setBusy(false);
     }
   }, [open, target, currentDir]);
 
   const submit = async () => {
     if (!target) return;
+    if (target.isDir) {
+      setError(DIRECTORY_MOVE_UNSUPPORTED);
+      return;
+    }
     const plan = movePath(target.path, dir, { isDir: target.isDir });
     if (!plan.ok) {
       const text =
@@ -307,7 +321,7 @@ export function MoveDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             取消
           </Button>
-          <Button onClick={() => void submit()} disabled={busy}>
+          <Button onClick={() => void submit()} disabled={busy || target?.isDir === true}>
             {busy && <Loader2 className="size-4 animate-spin" />}
             移动
           </Button>
@@ -321,6 +335,7 @@ export function MoveDialog({
           autoFocus
           value={dir}
           list="hf-move-dirs"
+          disabled={target?.isDir === true}
           onChange={(e) => {
             setDir(e.target.value);
             setError('');
@@ -347,21 +362,24 @@ export function DeleteConfirmDialog({
   onOpenChange,
   target,
   count = 1,
+  bulk = false,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
   target: FileOpTarget | null;
   count?: number;
-  onConfirm: (_purge: boolean) => Promise<void>;
+  bulk?: boolean;
+  onConfirm: (_recoverable: boolean) => Promise<void>;
 }) {
-  const [soft, setSoft] = useState(true);
+  const forceRecoverable = bulk || count > 1;
+  const [recoverable, setRecoverable] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open) {
-      setSoft(true);
+      setRecoverable(true);
       setBusy(false);
       setError('');
     }
@@ -370,7 +388,7 @@ export function DeleteConfirmDialog({
   const submit = async () => {
     setBusy(true);
     try {
-      await onConfirm(count > 1 ? true : soft);
+      await onConfirm(forceRecoverable ? true : recoverable);
       onOpenChange(false);
     } catch (err) {
       setError(filesErrorText(err));
@@ -383,7 +401,7 @@ export function DeleteConfirmDialog({
     <DialogShell
       open={open}
       onOpenChange={onOpenChange}
-      title={count > 1 ? `删除 ${count} 项` : '删除文件'}
+      title={forceRecoverable ? `删除 ${count} 项` : '删除文件'}
       description={target ? target.path : undefined}
       footer={
         <>
@@ -402,19 +420,19 @@ export function DeleteConfirmDialog({
           <input
             type="checkbox"
             className="size-4 accent-primary"
-            checked={soft}
-            disabled={count > 1}
-            onChange={(e) => setSoft(e.target.checked)}
+            checked={recoverable}
+            disabled={forceRecoverable}
+            onChange={(e) => setRecoverable(e.target.checked)}
           />
           移入回收站（可恢复）
         </label>
-        {!soft && count === 1 && (
+        {!recoverable && !forceRecoverable && (
           <p className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             将立即彻底删除，不可恢复。
           </p>
         )}
-        {count > 1 && (
+        {forceRecoverable && (
           <p className="text-xs text-muted-foreground">
             批量删除统一移入回收站；目录会被跳过并提示。
           </p>

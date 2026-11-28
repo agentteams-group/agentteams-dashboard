@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { useTeams } from '@/hooks/use-agentteams-teams';
@@ -23,7 +24,6 @@ import { MatrixLoginForm } from './matrix-login-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChatRoomSidebar, InviteInbox } from './chat-room-sidebar';
 import { ChatEmptyState } from './chat-empty-state';
-import { ChatPanel, type ChatContextPanel } from './ChatPanel';
 import { MatrixStatusBanner } from './matrix-status-banner';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { ChatProvider } from './ChatStore';
@@ -36,10 +36,23 @@ import { assistantTaskNotes, attentionCounts } from '@/lib/assistant-task-notes'
 import { RelatedConversationButton } from './conversation-switcher';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useHoverOpen } from '@/lib/desktop-interactions';
-import { useApiTaskBoard } from '@/hooks/use-projects';
+import { useAggregatedTaskBoard } from '@/hooks/use-aggregate-task-board';
 import { isTeamAdmin } from '@/lib/team-access';
 import { AssistantRoomList } from './assistant-room-list';
 import { TeamRoomList } from './team-room-list';
+import type { ChatContextPanel } from './ChatPanel';
+
+const ChatPanel = dynamic(
+  () => import('./ChatPanel').then((module) => ({ default: module.ChatPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载对话…
+      </div>
+    ),
+  },
+);
 
 function projectionHint(label: string, err: unknown): string {
   const status = err instanceof ApiError ? err.status : undefined;
@@ -129,7 +142,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   // source_room_id 仍能补齐侧栏房间。这里始终拉取（enabled=true），同一份
   // taskFeed 继续驱动 attention 徽标，不额外发起第二套 projects 查询。
   const taskFeed = useAssistantTaskFeed(undefined, true);
-  const taskBoard = useApiTaskBoard();
+  const taskBoard = useAggregatedTaskBoard();
   const availableRooms = useMemo(
     () => {
       const projected = buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows);

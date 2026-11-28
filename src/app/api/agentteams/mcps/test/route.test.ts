@@ -1,15 +1,9 @@
 // @vitest-environment node
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
-const rbacMock = vi.fn<
-  (_request: NextRequest, _action: string, _resource: string, _name: string) => Promise<NextResponse | null>
->();
-vi.mock('@/lib/server-auth', () => ({
-  enforceLevelOnlyRbac: (_request: NextRequest, _action: string, _resource: string, _name: string) =>
-    rbacMock(_request, _action, _resource, _name),
-}));
+vi.mock('@/lib/audit-log', () => ({ appendAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { POST } from './route';
 
@@ -51,13 +45,17 @@ afterAll(async () => {
 
 afterEach(() => {
   receivedRequests.length = 0;
-  rbacMock.mockClear();
+  vi.unstubAllEnvs();
 });
 
-function testRequest(body: unknown): NextRequest {
+function testRequest(body: unknown, level = 1): NextRequest {
   return new NextRequest('http://localhost:3000/api/agentteams/mcps/test', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-agentteams-user': `user-${level}`,
+      'x-agentteams-user-level': String(level),
+    },
     body: JSON.stringify(body),
   });
 }
@@ -68,6 +66,8 @@ async function postJson(body: unknown): Promise<{ status: number; json: Record<s
 }
 
 describe('POST /api/agentteams/mcps/test', () => {
+  beforeEach(() => vi.stubEnv('DASHBOARD_STATELESS', '1'));
+
   it('completes the initialize handshake against a streamable-HTTP endpoint', async () => {
     const { status, json } = await postJson({
       url: baseUrl,
@@ -180,12 +180,14 @@ describe('POST /api/agentteams/mcps/test', () => {
     expect(receivedRequests).toHaveLength(0);
   });
 
-  it('denies access when RBAC rejects the caller', async () => {
-    rbacMock.mockResolvedValueOnce(
-      NextResponse.json({ error: 'forbidden' }, { status: 403 })
-    );
-    const response = await POST(testRequest({ url: baseUrl, transport: 'streaminghttp' }));
-    expect(response.status).toBe(403);
-    expect(receivedRequests).toHaveLength(0);
+  it.each([1, 2, 3])('allows MCP connection tests at level %i', async (level) => {
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ result: { protocolVersion: '2025-03-26', serverInfo: { name: 'test-mcp' } } }));
+    };
+    const response = await POST(testRequest({ url: baseUrl, transport: 'streaminghttp' }, level));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true });
+    expect(receivedRequests).toHaveLength(1);
   });
 });

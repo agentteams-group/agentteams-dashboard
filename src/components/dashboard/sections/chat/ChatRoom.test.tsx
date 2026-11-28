@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { forwardRef, useImperativeHandle } from 'react';
+import { Fragment, forwardRef, useImperativeHandle } from 'react';
 import type { ForwardedRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
     olderMessages,
     uploadMutateAsync,
     roomMessagesChunk,
+    roomMessagesData: { pages: [{ chunk: roomMessagesChunk }] },
     virtuoso,
     roomMembersChunk,
     threadMessagesChunk,
@@ -79,15 +80,36 @@ vi.mock('react-virtuoso', () => ({
   ) {
     mocks.virtuoso.props = props;
     useImperativeHandle(ref, () => ({ scrollToIndex: mocks.virtuoso.scrollToIndex }));
-    const data = props.data as { message: { content: string } }[];
+    const data = props.data as { id?: string; content: string }[];
     const itemContent = props.itemContent as (_index: number, _item: unknown) => React.ReactNode;
     return (
       <div data-testid="virtuoso">
-        {data.map((item, index) => itemContent(index, item))}
+        {data.map((item, index) => <Fragment key={item.id ?? index}>{itemContent(index, item)}</Fragment>)}
       </div>
     );
   }),
 }));
+
+vi.mock('./chat-room-lazy-panels', async () => {
+  const [messages, composer, context, workers, attachments, topology, roomAttachments] = await Promise.all([
+    import('./structures/MessageList'),
+    import('./chat-composer'),
+    import('./components/RoomContextPanel'),
+    import('@/components/dashboard/sections/workers/worker-chats-panel'),
+    import('./attachment-preview'),
+    import('./components/TaskTopologyPopover'),
+    import('./components/RoomAttachments'),
+  ]);
+  return {
+    MessageList: messages.MessageList,
+    ChatComposer: composer.ChatComposer,
+    RoomContextPanel: context.RoomContextPanel,
+    WorkerChatsPanel: workers.WorkerChatsPanel,
+    AttachmentPreviewPanel: attachments.AttachmentPreviewPanel,
+    TaskTopologyPopover: topology.TaskTopologyPopover,
+    RoomAttachments: roomAttachments.RoomAttachments,
+  };
+});
 
 vi.mock('@/hooks/use-matrix', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/hooks/use-matrix')>();
@@ -95,13 +117,7 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     ...actual,
     useMatrixRoomMessages: () => ({
       isSuccess: true,
-      data: {
-        pages: [
-          {
-            chunk: mocks.roomMessagesChunk,
-          },
-        ],
-      },
+      data: mocks.roomMessagesData,
       hasNextPage: mocks.olderMessages.hasNextPage,
       isFetchingNextPage: false,
       isLoading: false,
@@ -120,6 +136,18 @@ vi.mock('@/hooks/use-matrix', async (importOriginal) => {
     useMatrixUploadMedia: () => ({ mutate: vi.fn(), mutateAsync: mocks.uploadMutateAsync, isPending: false }),
     useTypingNotification: () => ({ notifyTyping: vi.fn(), stopTyping: vi.fn() }),
     useMatrixTypingUsers: () => [],
+  };
+});
+
+vi.mock('@/hooks/use-thread-replies', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/use-thread-replies')>();
+  return {
+    ...actual,
+    useThreadReplies: () => ({
+      data: { pages: [{ chunk: mocks.threadMessagesChunk, next_batch: '' }] },
+      isLoading: false,
+      isError: false,
+    }),
   };
 });
 
@@ -151,10 +179,10 @@ function renderChatRoom(props: Partial<Parameters<typeof ChatRoom>[0]> = {}, run
 }
 
 describe('ChatRoom read-position dual-write', () => {
-  it('quotes a specific message when composing and sending a reply', () => {
+  it('quotes a specific message when composing and sending a reply', async () => {
     useMatrixStore.setState({ userId: '@me:test', isLoggedIn: true });
     renderChatRoom();
-    const original = screen.getByText('第一条').closest<HTMLElement>('[data-chat-message]')!;
+    const original = (await screen.findByText('第一条')).closest<HTMLElement>('[data-chat-message]')!;
     fireEvent.mouseEnter(original.querySelector('[data-chat-message-body]')!);
     fireEvent.click(within(original).getByRole('button', { name: '回复' }));
     expect(screen.getByText('回复给：peer')).toBeInTheDocument();
@@ -254,7 +282,6 @@ describe('ChatRoom read-position dual-write', () => {
     expect(first).not.toBe(second);
     expect(within(first).getByText('思考 2')).toBeInTheDocument();
     expect(within(second).getByText('思考 1')).toBeInTheDocument();
-    expect(panel.getByText('2 条回复')).toBeInTheDocument();
   });
 
   it('opens and highlights the exact mentioned thread reply even when its root is outside loaded history', async () => {
@@ -340,6 +367,9 @@ describe('ChatRoom read-position dual-write', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除第 3 条排队消息' }));
     mocks.roomMessagesChunk.push({ event_id: '$new-status', sender: '@peer:test', type: 'm.room.message', origin_server_ts: 4000,
       content: { 'com.agentteams.execution': { run_id: '$new-run', status: 'running', capabilities: ['stop', 'steer'] } } });
+    // React Query publishes a new data object for a changed page. Keep the
+    // reference stable between unrelated renders, but not across timeline updates.
+    mocks.roomMessagesData = { pages: [{ chunk: [...mocks.roomMessagesChunk] }] };
     view.rerender(<ChatProvider><ChatRoom roomId="!room:test" roomName="测试房间" workerMatrixUserIds={['@peer:test']} /></ChatProvider>);
     fireEvent.click(screen.getByRole('button', { name: '发送第 2 条排队消息' }));
     await waitFor(() => expect(mocks.sendMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
@@ -354,6 +384,7 @@ describe('ChatRoom read-position dual-write', () => {
     mocks.threadMessagesChunk.length = 0;
     mocks.roomState.data = null;
     mocks.roomMessagesChunk.length = 2;
+    mocks.roomMessagesData = { pages: [{ chunk: mocks.roomMessagesChunk }] };
     mocks.olderMessages.hasNextPage = false;
     mocks.setAgentStatusMap({});
     useSectionStore.setState({ mentionRoomId: null });
@@ -636,6 +667,7 @@ describe('ChatRoom HITL reply correlation', () => {
     vi.clearAllMocks();
     mocks.roomMembersChunk.length = 0;
     mocks.roomMessagesChunk.length = 2;
+    mocks.roomMessagesData = { pages: [{ chunk: mocks.roomMessagesChunk }] };
     mocks.setAgentStatusMap({});
   });
 

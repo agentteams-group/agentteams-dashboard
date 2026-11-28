@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import axe from 'axe-core';
 import '@testing-library/jest-dom/vitest';
 import { FileDetailCard } from './file-detail';
 
@@ -22,5 +23,23 @@ describe('FileDetailCard document preview', () => {
     expect(preview).toBeEnabled();
     fireEvent.click(preview);
     expect(await screen.findByTestId('slides')).toHaveAttribute('data-url', `/api/agentteams/humans/alice/files/docs/report.${extension}`);
+  });
+
+  it('traps focus in the preview dialog, closes with Escape and restores focus', async () => {
+    render(<FileDetailCard
+      humanName="alice" entry={{ name: 'report.pdf', type: 'file', size: 1024 }}
+      path="docs/report.pdf" dirPath="docs" canAdmin={false}
+      onClose={vi.fn()} onDownload={vi.fn()} onRename={vi.fn()} onMove={vi.fn()}
+      onEdit={vi.fn()} onDelete={vi.fn()} onOpenDir={vi.fn()}
+    />);
+    const trigger = screen.getByRole('button', { name: '预览' });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: 'report.pdf' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const result = await axe.run(dialog, { resultTypes: ['violations'] });
+    expect(result.violations.filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([]);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
   });
 });

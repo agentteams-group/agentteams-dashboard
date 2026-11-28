@@ -6,7 +6,7 @@ import type { AttachmentPayload, ParsedA2uiBlock } from '@/lib/a2ui/parser';
 import { AttachmentCard } from '../attachment-card';
 import { ThinkingCard } from '../thinking-card';
 import { StreamingCard } from '../streaming-card';
-import { MarkdownMessage } from '../markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '../lazy-markdown-message';
 import { ToolCallView, type ToolCallPayload } from './toolcalls';
 
 interface RunProcessDisclosureProps {

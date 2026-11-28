@@ -48,7 +48,13 @@ describe('speech settings API', () => {
     const disk = JSON.parse(await readFile(join(directory, 'speech.json'), 'utf8'));
     expect(disk.apiKey).toBe('private-speech-key');
     expect(disk.model).toBe('qwen3-asr-flash-new');
-    expect((await stat(join(directory, 'speech.json'))).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect((await stat(join(directory, 'speech.json'))).mode & 0o777).toBe(0o600);
+    } else {
+      // NTFS does not expose POSIX mode bits; private ACL behavior is covered
+      // by the POSIX CI job instead of asserting a platform-specific fiction.
+      expect(await stat(join(directory, 'speech.json'))).toBeTruthy();
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

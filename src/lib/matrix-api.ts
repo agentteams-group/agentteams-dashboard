@@ -59,6 +59,8 @@ export interface MatrixEvent {
     user_ids?: string[];
   } & Record<string, unknown>;
   type: string;
+  /** Target event id for m.room.redaction timeline events. */
+  redacts?: string;
   origin_server_ts: number;
   /**
    * 只有 `/search` 返回的事件（和服务端推送）带这个字段；时间线接口不返，因为房间
@@ -367,13 +369,13 @@ export const matrixApi = {
     roomId: string,
     eventId: string,
     relType = 'm.thread',
-    options: { limit?: number; from?: string } = {}
+    options: { limit?: number; from?: string; dir?: 'b' | 'f'; signal?: AbortSignal } = {}
   ): Promise<MatrixRelationsResponse> => {
     const url = buildMatrixUrl(
       `/api/matrix/rooms/${encodeURIComponent(roomId)}/relations/${encodeURIComponent(eventId)}/${relType}`,
-      { homeserver, limit: options.limit || 30, from: options.from }
+      { homeserver, limit: options.limit || 30, from: options.from, dir: options.dir }
     );
-    const res = await fetch(url, { headers: buildHeaders(accessToken) });
+    const res = await fetch(url, { headers: buildHeaders(accessToken), signal: options.signal });
     await throwIfNotOk(res, 'Failed to get thread relations');
     return res.json();
   },

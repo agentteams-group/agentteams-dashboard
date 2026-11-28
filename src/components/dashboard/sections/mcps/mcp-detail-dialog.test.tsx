@@ -5,11 +5,12 @@ import { McpDetailDialog } from './mcp-detail-dialog';
 import { mcpManagementApi } from '@/lib/mcp-management-api';
 import { emptyMcpConnection } from '@/lib/mcp-management';
 import type { McpServerConfig } from '@/lib/agentteams-api';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 vi.mock('@/lib/mcp-management-api', () => ({ mcpManagementApi: { call: vi.fn(), authorize: vi.fn(), verify: vi.fn() } }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({ useWorkers: () => ({ data: [{ name: 'docs-worker', team: 'demo', role: 'worker' }], isLoading: false }) }));
-afterEach(cleanup);
-beforeEach(() => vi.clearAllMocks());
+afterEach(() => { cleanup(); useAgentTeamsStore.setState({ userLevel: 3 }); });
+beforeEach(() => { vi.clearAllMocks(); useAgentTeamsStore.setState({ userLevel: 3 }); });
 const server: McpServerConfig = { name: 'docs', url: 'http://gateway/mcp-servers/docs', transport: 'streaminghttp', managed: true, gatewayState: 'ready', createdAt: '', updatedAt: '', connection: emptyMcpConnection(), authorizedWorkers: [], verification: { success: true, message: '已验证', tools: [{ name: 'search', inputSchema: { properties: { query: { type: 'string' }, limit: { type: 'number' }, options: { type: 'object' } }, required: ['query'] } }] } };
 
 it('validates required and JSON parameters before making an explicit tool call', async () => {
@@ -35,6 +36,16 @@ it('does not show a failed Agent authorization as granted', async () => {
   await screen.findByText('配置同步失败，请重试。');
   expect(screen.getByText('未授权')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '验证权限' })).not.toBeInTheDocument();
+});
+
+it.each([1, 2, 3])('keeps verification readable while gating MCP detail writes at level %i', (level) => {
+  useAgentTeamsStore.setState({ userLevel: level });
+  render(<McpDetailDialog server={server} onClose={() => {}} onEdit={() => {}} onChanged={() => {}} />);
+  expect(screen.getByRole('button', { name: '重新验证工具' })).toBeEnabled();
+  expect(Boolean(screen.queryByRole('button', { name: '运行工具' }))).toBe(level === 3);
+  expect(Boolean(screen.queryByRole('tab', { name: 'Agent 授权' }))).toBe(level === 3);
+  fireEvent.mouseDown(screen.getByRole('tab', { name: '连接配置' }), { button: 0, ctrlKey: false });
+  expect(Boolean(screen.queryByRole('button', { name: '编辑连接' }))).toBe(level === 3);
 });
 
 it('allows retrying revoked access cleanup even when no Agent remains selected', async () => {

@@ -118,6 +118,8 @@ const TEXT_PAIRS: [string, string][] = [
   ['--secondary-foreground', '--secondary'],
   ['--accent-foreground', '--accent'],
   ['--card-foreground', '--card'],
+  ['--sidebar-foreground', '--sidebar'],
+  ['--sidebar-accent-foreground', '--sidebar-accent'],
 ];
 
 describe.each([

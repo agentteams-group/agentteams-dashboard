@@ -14,13 +14,18 @@
 
 import { describe, it, expect } from 'vitest';
 
-const BASE_URL = 'http://127.0.0.1:3000';
+const BASE_URL = process.env.INTEGRATION_BASE_URL || 'http://127.0.0.1:3000';
+const liveDescribe = process.env.MODEL_SKILL_AUDIT === '1' ? describe : describe.skip;
+const nacosDescribe = process.env.MODEL_SKILL_AUDIT === '1'
+  && process.env.NACOS_AUDIT_ALLOW_MUTATION === '1'
+  ? describe
+  : describe.skip;
 
 // ============================================================
 // T1: Higress Console 代理端点认证门控
 // ============================================================
 
-describe('Higress Console 代理端点认证门控', () => {
+liveDescribe('Higress Console 代理端点认证门控', () => {
   it('GET /api/higress/ai-providers — 无会话时返回 401', async () => {
     const res = await fetch(`${BASE_URL}/api/higress/ai-providers`, { redirect: 'follow' });
     expect(res.status).toBe(401);
@@ -40,7 +45,7 @@ describe('Higress Console 代理端点认证门控', () => {
 // T2: AgentTeams API 端点认证门控
 // ============================================================
 
-describe('AgentTeams API 端点认证门控', () => {
+liveDescribe('AgentTeams API 端点认证门控', () => {
   const endpoints = [
     '/api/agentteams/skills',
     '/api/agentteams/infrastructure',
@@ -84,7 +89,7 @@ describe('AgentTeams API 端点认证门控', () => {
 // T3: 公开端点无需认证
 // ============================================================
 
-describe('公开端点无需认证', () => {
+liveDescribe('公开端点无需认证', () => {
   // SEC-06: setup/status now sits behind the session gate — it proxies the
   // controller's setup state with the server-side SA credential attached,
   // so it must never be reachable anonymously.
@@ -190,7 +195,7 @@ describe('技能存储常量', () => {
 // T8: Nacos 配置读写
 // ============================================================
 
-describe('Nacos 配置读写', () => {
+nacosDescribe('Nacos 配置读写', () => {
   it('getNacosConfig 无配置文件时返回 null', async () => {
     const { getNacosConfig } = await import('@/lib/skill-center-config');
     const config = await getNacosConfig();

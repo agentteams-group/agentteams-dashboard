@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-base';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { Lock, LogIn, RefreshCw, AlertCircle, ArrowUpRight, ShieldCheck, Settings2 } from 'lucide-react';
@@ -20,6 +21,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejected = false }: LoginPageProps) {
+  const router = useRouter();
   const [username, setUsername] = useState(defaultUsername);
   const [password, setPassword] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
@@ -36,7 +38,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
   }, []);
 
   const handleLogin = async () => {
-    if (!username || !password) return;
+    if (!username.trim() || !password) return;
     setIsLoading(true);
     setError(null);
 
@@ -46,12 +48,12 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username,
+          username: username.trim(),
           password,
           // Optional L1 administrator verification for the old Controller:
           // sent only when both fields are filled, so the body for ordinary
           // L2/L3 accounts stays exactly {username, password}.
-          ...(adminUsername && adminPassword ? { adminUsername, adminPassword } : {}),
+          ...(adminUsername.trim() && adminPassword ? { adminUsername: adminUsername.trim(), adminPassword } : {}),
         }),
       });
 
@@ -78,7 +80,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
   // is admin-grade on its own (single-operator deployments may have neither a
   // Console admin nor a Matrix Human account).
   const handleTokenLogin = async () => {
-    if (!tokenOnlyToken) return;
+    if (!tokenOnlyToken.trim()) return;
     setIsLoading(true);
     setError(null);
 
@@ -87,7 +89,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ controllerToken: tokenOnlyToken }),
+        body: JSON.stringify({ controllerToken: tokenOnlyToken.trim() }),
       });
 
       const data = await res.json();
@@ -166,6 +168,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
             </button>
             {adminVisible && (
               <div className="space-y-2">
+                <Label htmlFor="admin-username">L1 管理员账号</Label>
                 <Input
                   id="admin-username"
                   placeholder="管理员账号"
@@ -174,6 +177,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
                   onChange={(e) => setAdminUsername(e.target.value)}
                   disabled={isLoading}
                 />
+                <Label htmlFor="admin-password">L1 管理员密码</Label>
                 <Input
                   id="admin-password"
                   type="password"
@@ -200,6 +204,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
             </button>
             {tokenOnlyVisible && (
               <div className="space-y-2">
+                <Label htmlFor="controller-token-only">Controller 管理员 token</Label>
                 <Input
                   id="controller-token-only"
                   type="password"
@@ -213,7 +218,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
                   type="button"
                   variant="outline"
                   onClick={handleTokenLogin}
-                  disabled={isLoading || !tokenOnlyToken}
+                  disabled={isLoading || !tokenOnlyToken.trim()}
                   className="w-full h-10 rounded-xl"
                 >
                   {isLoading ? (
@@ -236,15 +241,15 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-destructive text-sm">
+            <div role="alert" className="flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
           <Button
             onClick={handleLogin}
-            disabled={isLoading || !username || !password}
-            className="w-full h-11 rounded-xl bg-[#1bc67b] text-[#092b20] hover:bg-[#6cdda8]"
+            disabled={isLoading || !username.trim() || !password}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isLoading ? (
               <>
@@ -267,7 +272,7 @@ export function LoginPage({ onLoginSuccess, defaultUsername = '', dataPlaneRejec
               variant="ghost"
               size="sm"
               className="text-xs text-muted-foreground h-9"
-              onClick={() => window.location.assign(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/?setup=1`)}
+              onClick={() => router.push('/?setup=1')}
             >
               <Settings2 className="w-3.5 h-3.5 mr-1" />
               配置后端地址

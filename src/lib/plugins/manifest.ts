@@ -1,4 +1,4 @@
-import type { ExtensionPointId, PluginManifest } from './types';
+import type { ExtensionPointId, PluginManifest, PluginManifestContributions } from './types';
 import { EXTENSION_POINTS } from './types';
 import { satisfies } from './semver';
 
@@ -92,6 +92,24 @@ export function validatePluginManifest(
       points.push(p as ExtensionPointId);
     }
     manifest.extensionPoints = points;
+  }
+
+  if (input.contributions !== undefined) {
+    if (!isRecord(input.contributions)) {
+      throw new PluginManifestError(`插件 ${id}: contributions 必须是 JSON 对象`);
+    }
+    const contributions: PluginManifestContributions = {};
+    for (const point of ['menuItems', 'routes', 'widgets'] as const) {
+      const list = input.contributions[point];
+      if (list === undefined) continue;
+      if (!Array.isArray(list) || list.some((item) => (
+        !isRecord(item) || typeof item.id !== 'string' || !/^[a-z0-9][a-z0-9-_]{0,63}$/i.test(item.id)
+      ))) {
+        throw new PluginManifestError(`插件 ${id}: contributions.${point} 必须是带合法 id 的对象数组`);
+      }
+      Object.assign(contributions, { [point]: list });
+    }
+    manifest.contributions = contributions;
   }
 
   if (input.permissions !== undefined) {

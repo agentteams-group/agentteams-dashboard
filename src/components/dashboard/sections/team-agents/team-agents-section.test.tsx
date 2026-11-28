@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ManagerResponse, TeamResponse, WorkerResponse } from '@/lib/agentteams-api';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
+
+configure({ asyncUtilTimeout: 5000 });
 
 const teamsFixture = [
   {
@@ -90,20 +92,26 @@ const mockState = vi.hoisted(() => ({
   searchQuery: '',
   userLevel: 3,
   modelOptions: [] as ModelSelectionOption[],
+  teamsError: null as Error | null,
+  workersError: null as Error | null,
+  teamsLoading: false,
+  workersLoading: false,
 }));
 const refetchTeams = vi.hoisted(() => vi.fn());
+const refetchWorkers = vi.hoisted(() => vi.fn());
 
 vi.mock('@/hooks/use-agentteams-teams', () => ({
   useTeams: () => ({
     data: teamsFixture,
-    isLoading: false,
-    isError: false,
+    isError: !!mockState.teamsError,
+    error: mockState.teamsError,
+    isLoading: mockState.teamsLoading,
     refetch: refetchTeams,
     isRefetching: false,
   }),
 }));
 vi.mock('@/hooks/use-agentteams-workers', () => ({
-  useWorkers: () => ({ data: workersFixture }),
+  useWorkers: () => ({ data: workersFixture, isError: !!mockState.workersError, error: mockState.workersError, isLoading: mockState.workersLoading, refetch: refetchWorkers }),
 }));
 vi.mock('@/hooks/use-agentteams-managers', () => ({
   useManagers: () => ({ data: managersFixture }),
@@ -206,8 +214,40 @@ function renderSection(hash = '#console/resources/team-agents?tab=teams', view?:
 function selectTab(name: RegExp) {
   fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0, ctrlKey: false });
 }
-beforeEach(() => { mockState.searchQuery = ''; mockState.userLevel = 3; localStorage.clear(); vi.stubGlobal('innerWidth', 1440); });
+beforeEach(() => {
+  mockState.searchQuery = '';
+  mockState.userLevel = 3;
+  mockState.teamsError = null;
+  mockState.workersError = null;
+  mockState.teamsLoading = false;
+  mockState.workersLoading = false;
+  refetchTeams.mockReset();
+  refetchWorkers.mockReset();
+  localStorage.clear();
+  vi.stubGlobal('innerWidth', 1440);
+});
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+vi.mock('@/hooks/use-chat-room-access', () => ({
+  useChatRoomAccess: () => ({ joinedRooms: [], state: 'joined', refetch: vi.fn() }),
+}));
+
+it('request errors take precedence over empty states even while connected, and retry both resources', async () => {
+  mockState.teamsError = new Error('teams unavailable');
+  renderSection('#console/resources/team-agents?tab=teams');
+  expect(screen.getByRole('alert')).toHaveTextContent('团队与 Agent 数据加载失败');
+  expect(screen.queryByText('暂无团队，创建团队开始协作。')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(refetchTeams).toHaveBeenCalledOnce());
+  await waitFor(() => expect(refetchWorkers).toHaveBeenCalledOnce());
+});
+
+it('announces loading before rendering an empty resource state', () => {
+  mockState.teamsLoading = true;
+  renderSection('#console/resources/team-agents?tab=teams');
+  expect(screen.getByRole('status')).toHaveTextContent('正在加载团队与 Agent');
+  expect(screen.queryByText('暂无团队，创建团队开始协作。')).not.toBeInTheDocument();
+});
 
 it('opens the development squad template from the routed teams view', () => {
   renderSection('#console/resources/teams', 'teams');
@@ -225,7 +265,7 @@ describe('Teams page view switch', () => {
     renderSection('#console/resources/teams', 'teams');
     expect(screen.getByLabelText('团队卡片')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '拓扑' }));
-    expect(await screen.findByTestId('team-agents-shell')).toBeInTheDocument();
+    expect(await screen.findByTestId('team-agents-shell', {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.queryByLabelText('团队卡片')).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: '团队列表' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '团队拓扑' })).toBeInTheDocument();
@@ -247,7 +287,7 @@ describe('Teams page view switch', () => {
   it('keeps topology selection in the workbench and opens the selected detail section', async () => {
     renderSection('#console/resources/teams?view=topology&team=beta', 'teams');
     expect(screen.queryByRole('region', { name: '实体详情' })).toBeNull();
-    const graph = screen.getByRole('region', { name: '团队拓扑' });
+    const graph = await screen.findByRole('region', { name: '团队拓扑' }, { timeout: 5000 });
     fireEvent.click(within(graph).getByRole('button', { name: /lead2.*负责人/ }));
     const inspector = await screen.findByRole('region', { name: '实体详情' });
     await waitFor(() => expect(within(inspector).getByRole('heading', { name: 'lead2' })).toBeInTheDocument());
@@ -262,7 +302,7 @@ describe('Teams page view switch', () => {
   it('restores topology preference only on the Teams page', async () => {
     localStorage.setItem('teamAgents.view', 'topology');
     const teams = renderSection('#console/resources/teams', 'teams');
-    expect(await screen.findByTestId('team-agents-shell')).toBeInTheDocument();
+    expect(await screen.findByTestId('team-agents-shell', {}, { timeout: 5000 })).toBeInTheDocument();
     teams.unmount();
     renderSection('#console/resources/workers', 'agents');
     expect(screen.queryByTestId('team-agents-shell')).not.toBeInTheDocument();

@@ -258,6 +258,9 @@ export function BackendTab() {
   const queryClient = useQueryClient();
   const [state, setState] = useState<BackendsState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [readbackError, setReadbackError] = useState<string | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, BackendForm>>({});
   const [rows, setRows] = useState<Record<string, TestRow[]>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
@@ -266,7 +269,8 @@ export function BackendTab() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ switched: string[]; unchanged: string[] } | null>(null);
 
-  const load = useCallback(async (refill = false) => {
+  const load = useCallback(async (refill = false, initial = false) => {
+    if (initial) setLoadError(null);
     try {
       const res = await fetch(apiUrl('/api/agentteams/setup/backends/'), { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -277,18 +281,25 @@ export function BackendTab() {
       setFields((prev) =>
         refill || Object.keys(prev).length === 0 ? initialFields(data, !refill) : prev,
       );
+      if (!initial) setReadbackError(null);
+    } catch (error) {
+      const message = `读取后端配置失败（${error instanceof Error ? error.message : '网络错误'}）`;
+      if (initial) setLoadError(message);
+      else setReadbackError(`${message}；配置已保存，但暂时无法确认服务端回读结果。`);
     } finally {
-      setLoading(false);
+      if (initial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load(false, true);
   }, [load]);
 
   const clearFeedback = (backend: string) => {
     setSaved(false);
     setSaveError(null);
+    setTestError(null);
+    setReadbackError(null);
     setBanner(null);
     setRows((prev) => {
       const rest = { ...prev };
@@ -333,10 +344,11 @@ export function BackendTab() {
   const runTest = useCallback(
     async (backends: Record<string, DraftAddrs>) => {
       if (Object.keys(backends).length === 0) {
-        setSaveError('请先在内部或外部地址栏填写地址，再点「测试」。');
+        setTestError('请先在内部或外部地址栏填写地址，再点「测试」。');
         return;
       }
       setTesting(Object.fromEntries(Object.keys(backends).map((n) => [n, true])));
+      setTestError(null);
       try {
         const res = await fetch(apiUrl('/api/agentteams/setup/backends/test/'), {
           method: 'POST',
@@ -344,7 +356,7 @@ export function BackendTab() {
           body: JSON.stringify({ backends }),
         });
         if (!res.ok) {
-          setSaveError(`测试失败（HTTP ${res.status}）`);
+          setTestError(`测试失败（HTTP ${res.status}）`);
           return;
         }
         const data = (await res.json().catch(() => null)) as {
@@ -352,13 +364,11 @@ export function BackendTab() {
         } | null;
         if (data?.results) {
           setRows((prev) => ({ ...prev, ...data.results }));
-          setSaved(true);
-          setSaveError(null);
         } else {
-          setSaveError('测试无结果返回');
+          setTestError('测试无结果返回');
         }
       } catch {
-        setSaveError('测试请求失败（网络错误）');
+        setTestError('测试请求失败（网络错误）');
       } finally {
         setTesting((prev) => {
           const next = { ...prev };
@@ -373,7 +383,7 @@ export function BackendTab() {
   const handleTestBackend = (name: string) => {
     const form = fields[name];
     if (!form) {
-      setSaveError('该后端没有待测草稿地址——先在内部/外部地址栏填写后再点「测试」。');
+      setTestError('该后端没有待测草稿地址——先在内部/外部地址栏填写后再点「测试」。');
       return;
     }
     // 草稿凭据随请求发送：门后的地址不带表单里刚填的 Basic/Bearer 永远 401。
@@ -384,6 +394,8 @@ export function BackendTab() {
     setSaving(true);
     setSaved(false);
     setSaveError(null);
+    setTestError(null);
+    setReadbackError(null);
     setBanner(null);
     const draftFields: Record<string, BackendForm> = {};
     for (const name of BACKEND_NAMES) {
@@ -411,8 +423,9 @@ export function BackendTab() {
       } | null;
       if (res.ok && data?.ok) {
         setSaved(true);
+        setReadbackError(null);
         // 重新 GET 回填 entries：确认 Basic/Bearer 凭据仍以 stored（'***'）
-        // 形态存在，而不是被降级成纯 URL。
+        // 形态存在，而不是被降级成纯 URL。失败不会撤销已保存状态。
         await load(true);
         // The overview infrastructure panel re-resolves per request; nudge it
         // so the health tiles reflect the new addresses promptly.
@@ -436,11 +449,23 @@ export function BackendTab() {
     }
   };
 
-  if (loading || !state) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
+      <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" />
         加载后端配置…
+      </div>
+    );
+  }
+
+  if (loadError || !state) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12 text-center" role="alert">
+        <p className="font-medium">后端配置加载失败</p>
+        <p className="max-w-md text-sm text-muted-foreground">{loadError || '未收到有效的后端配置。'}</p>
+        <Button variant="outline" onClick={() => { setLoading(true); void load(false, true); }}>
+          <RefreshCw className="mr-2 size-4" aria-hidden="true" />重试读取
+        </Button>
       </div>
     );
   }
@@ -633,11 +658,18 @@ export function BackendTab() {
           保存配置
         </Button>
         {saved && (
-          <span className="text-xs text-status-done flex items-center gap-2">
+          <span role="status" className="text-xs text-status-done flex items-center gap-2">
             <CheckCircle2 className="w-3.5 h-3.5" /> 已保存，立即生效
           </span>
         )}
-        {saveError && <span className="text-xs text-destructive">{saveError}</span>}
+        {saveError && <span role="alert" className="text-xs text-status-failed">{saveError}</span>}
+        {testError && <span role="alert" className="text-xs text-status-failed">{testError}</span>}
+        {readbackError && (
+          <span role="alert" className="text-xs text-status-waiting">
+            {readbackError}
+            <Button variant="link" className="h-auto p-0 px-1 text-xs" onClick={() => void load(true)}>重试回读</Button>
+          </span>
+        )}
       </div>
     </div>
   );

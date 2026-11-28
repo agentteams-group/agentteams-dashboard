@@ -117,9 +117,10 @@ describe('queryKeysForWrite', () => {
   const keyStrings = (scope: Parameters<typeof queryKeysForWrite>[0]) =>
     queryKeysForWrite(scope).map((key) => JSON.stringify(key));
 
-  it('重命名：当前目录 + 递归 + 配额；不碰搜索与回收站', () => {
+  it('重命名：当前目录 + 回收站 + 递归 + 配额；不碰搜索', () => {
     expect(keyStrings({ kind: 'rename', human: 'alice', dir: 'docs' })).toEqual([
       JSON.stringify(filesQueryKeys.dir('alice', 'docs')),
+      JSON.stringify(filesQueryKeys.trash('alice')),
       JSON.stringify(filesQueryKeys.recursive('alice')),
       JSON.stringify(filesQueryKeys.quota('alice')),
     ]);
@@ -132,6 +133,7 @@ describe('queryKeysForWrite', () => {
     expect(keyStrings({ kind: 'move', human: 'alice', dir: 'docs', destDir: 'archive' })).toEqual([
       JSON.stringify(filesQueryKeys.dir('alice', 'docs')),
       JSON.stringify(filesQueryKeys.dir('alice', 'archive')),
+      JSON.stringify(filesQueryKeys.trash('alice')),
       JSON.stringify(filesQueryKeys.recursive('alice')),
       JSON.stringify(filesQueryKeys.quota('alice')),
     ]);

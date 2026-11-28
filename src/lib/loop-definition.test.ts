@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LOOP_STATE_EVENT,
   LOOP_TEMPLATES,
+  buildLoopRollback,
   canPublish,
   canRollback,
   isValidLoopDefinition,
+  loopDefinitionStateEvent,
+  loopStateEventKey,
+  nextLoopDraftVersion,
+  readStableLoopVersions,
   simulateLoopDryRun,
   templateToDraft,
+  type LoopDefinition,
 } from './loop-definition';
 
 describe('loop-definition（F5.2/F5.3/F5.5 模型）', () => {
@@ -83,6 +90,62 @@ describe('loop-definition（F5.2/F5.3/F5.5 模型）', () => {
 
     const publishedV2 = { ...draft, status: 'published' as const, version: 2 };
     expect(canRollback(publishedV2).ok).toBe(true);
+  });
+
+  it('publishes v1 → v2 and builds a v3 rollback from the v1 Matrix snapshot', () => {
+    const v1: LoopDefinition = {
+      ...templateToDraft(LOOP_TEMPLATES[0], 'admin'),
+      name: 'v1 稳定定义',
+      status: 'published',
+      publishedAt: 100,
+    };
+    const v2: LoopDefinition = {
+      ...v1,
+      name: 'v2 稳定定义',
+      version: 2,
+      nodes: v1.nodes.map((node) => node.id === 'arch' ? { ...node, label: 'v2 架构' } : node),
+      publishedAt: 200,
+    };
+    const state = [v2, v1].map((definition) => ({
+      type: LOOP_STATE_EVENT,
+      state_key: loopStateEventKey(definition),
+      content: definition as unknown as Record<string, unknown>,
+    }));
+
+    expect(readStableLoopVersions(state, v1.id).map((item) => item.version)).toEqual([1, 2]);
+    const result = buildLoopRollback(v2, readStableLoopVersions(state, v1.id), 'rollback-admin', 300);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.definition).toMatchObject({
+      id: v1.id,
+      name: 'v1 稳定定义',
+      version: 3,
+      status: 'rolled_back',
+      restoredVersion: 1,
+      rolledFromVersion: 2,
+      updatedAt: 300,
+    });
+    expect(result.definition.nodes).toEqual(v1.nodes);
+    expect(loopDefinitionStateEvent(result.definition)).toEqual({
+      eventType: LOOP_STATE_EVENT,
+      stateKey: `loop:${v1.id}:v3`,
+      content: result.definition,
+    });
+  });
+
+  it('refuses rollback without the current stable Matrix version and allocates fresh draft versions', () => {
+    const v1: LoopDefinition = {
+      ...templateToDraft(LOOP_TEMPLATES[0], 'admin'),
+      status: 'published',
+    };
+    const v2: LoopDefinition = { ...v1, version: 2, status: 'published' };
+    expect(buildLoopRollback(v2, [v1], 'admin')).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('未在绑定空间发布'),
+    });
+    expect(nextLoopDraftVersion(v2, [v1, v2])).toBe(3);
+    expect(nextLoopDraftVersion({ ...v2, version: 3, status: 'draft' }, [v1, v2])).toBe(3);
+    expect(nextLoopDraftVersion({ ...v2, version: 3, status: 'draft' }, [v1, v2, { ...v2, version: 4 }])).toBe(5);
   });
 
   it('simulateLoopDryRun：推演主干步骤序列并标出分支警告', () => {

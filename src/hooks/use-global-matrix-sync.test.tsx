@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGlobalMatrixSync } from './use-global-matrix-sync';
+import { useChatRoomAccess } from './use-chat-room-access';
 import { matrixApi, type MatrixEvent, type MatrixJoinedRoom, type MatrixRoomStateEvent, type MatrixSyncResponse } from '@/lib/matrix-api';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useReceiptStore, useRoomMetaStore, useTypingStore } from './use-matrix';
@@ -20,6 +21,7 @@ vi.mock('@/lib/matrix-api', async () => {
       getJoinedRooms: vi.fn(),
       getRoomMessages: vi.fn(),
       getRoomState: vi.fn(),
+      getRoomEvent: vi.fn(),
     },
   };
 });
@@ -126,6 +128,7 @@ describe('useGlobalMatrixSync', () => {
     (matrixApi.sync as ReturnType<typeof vi.fn>).mockReset();
     (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: [] });
     (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (matrixApi.getRoomEvent as ReturnType<typeof vi.fn>).mockImplementation(async (_hs, _token, _rid, eventId) => msgEvent(eventId, 400));
   });
 
   afterEach(() => {
@@ -183,7 +186,9 @@ describe('useGlobalMatrixSync', () => {
     unmount();
   });
 
-  it('parses m.receipt ephemeral events into the receipt store for any room', async () => {
+  it('parses m.receipt ephemeral events into the receipt store for the active room', async () => {
+    const rid = '!r1:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
     (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(
       syncWith({
         '!r1:test': joinedRoom({
@@ -211,8 +216,91 @@ describe('useGlobalMatrixSync', () => {
     });
 
     const receipts = useReceiptStore.getState().receipts['!r1:test'];
-    expect(receipts['@alice:test']).toEqual({ eventId: '$evt:test', ts: 555 });
+    expect(receipts['@alice:test']).toEqual({ eventId: '$evt:test', ts: 555, eventTimestamp: 400 });
 
+    unmount();
+  });
+
+  it('does not resolve receipts for inactive rooms', async () => {
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      '!inactive:test': joinedRoom({ ephemeral: { events: [readReceipt('$inactive-target', 500)] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useReceiptStore.getState().receipts['!inactive:test']).toBeUndefined();
+    expect(matrixApi.getRoomEvent).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('merges each reader to the newest receipt and resolves an event only once', async () => {
+    const rid = '!receipt-merge:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [
+        readReceipt('$old', 500),
+        readReceipt('$latest', 700),
+        { ...readReceipt('$latest', 700), event_id: '$duplicate' },
+        {
+          event_id: '$bob-receipt', sender: '@agent:test', type: 'm.receipt', origin_server_ts: 650,
+          content: { '$bob-target': { 'm.read': { '@bob:test': { ts: 650 } } } },
+        } as MatrixEvent,
+      ] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledTimes(2);
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledWith(
+      'https://matrix.test', 'tok', rid, '$latest',
+    );
+    expect(useReceiptStore.getState().receipts[rid]).toMatchObject({
+      '@alice:test': { eventId: '$latest', ts: 700, eventTimestamp: 400 },
+      '@bob:test': { eventId: '$bob-target', ts: 650, eventTimestamp: 400 },
+    });
+    unmount();
+  });
+
+  it('bounds concurrent receipt target lookups to four', async () => {
+    const rid = '!receipt-concurrency:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    const resolvers: Array<(_event: MatrixEvent) => void> = [];
+    let active = 0;
+    let maxActive = 0;
+    (matrixApi.getRoomEvent as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      return new Promise<MatrixEvent>((resolve) => {
+        resolvers.push((event) => {
+          active -= 1;
+          resolve(event);
+        });
+      });
+    });
+    const ephemeral = Array.from({ length: 8 }, (_, index) => ({
+      event_id: `$receipt-${index}`, sender: '@agent:test', type: 'm.receipt', origin_server_ts: 500 + index,
+      content: { [`$target-${index}`]: { 'm.read': { [`@reader-${index}:test`]: { ts: 500 + index } } } },
+    } as unknown as MatrixEvent));
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: ephemeral } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(maxActive).toBe(4);
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      for (const resolve of resolvers.splice(0)) resolve(msgEvent('$target', 400));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledTimes(8);
+    await act(async () => {
+      for (const resolve of resolvers.splice(0)) resolve(msgEvent('$target', 400));
+      await vi.advanceTimersByTimeAsync(0);
+    });
     unmount();
   });
 
@@ -327,6 +415,158 @@ describe('useGlobalMatrixSync', () => {
     expect(consumeBufferedEvents('!r3:test').map((e) => e.event_id)).toContain('$new3');
     expect(consumeBufferedEvents('!r3:test')).toEqual([]);
 
+    unmount();
+  });
+
+  function cachedIds(queryClient: QueryClient, roomId: string) {
+    const data = queryClient.getQueryData<{ pages: Array<{ chunk: MatrixEvent[] }> }>(['matrix-messages', roomId]);
+    return data?.pages.flatMap((page) => page.chunk.map((event) => event.event_id)) ?? [];
+  }
+
+  function redaction(target: string, ts = Date.now()): MatrixEvent {
+    return {
+      event_id: `$redact-${target}`, sender: '@mod:test', type: 'm.room.redaction',
+      origin_server_ts: ts, redacts: target, content: {},
+    };
+  }
+
+  function readReceipt(eventId: string, ts: number, threadId?: string): MatrixEvent {
+    return {
+      event_id: `$receipt-${eventId}-${ts}`, sender: '@agent:test', type: 'm.receipt', origin_server_ts: ts,
+      content: { [eventId]: { 'm.read': { '@alice:test': { ts, ...(threadId ? { thread_id: threadId } : {}) } } } },
+    } as MatrixEvent;
+  }
+
+  it('removes a redacted message and its revisions in the active room', async () => {
+    const rid = '!open:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ timeline: { events: [redaction('$root')], limited: false, prev_batch: 'p' } }),
+    }));
+    const queryClient = getQueryClientMock();
+    setRoomCache(queryClient, rid, [
+      msgEvent('$root', 100),
+      msgEvent('$revision', 200, { 'm.relates_to': { rel_type: 'm.replace', event_id: '$root' } }),
+      msgEvent('$kept', 50),
+    ]);
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(cachedIds(queryClient, rid)).toEqual(['$kept']);
+    unmount();
+  });
+
+  it('applies redactions to a recently visited room even when another room is active', async () => {
+    useRoomMetaStore.getState().setActiveRoomId('!active:test');
+    const rid = '!recent:test';
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ timeline: { events: [redaction('$old')], limited: false, prev_batch: 'p' } }),
+    }));
+    const queryClient = getQueryClientMock();
+    setRoomCache(queryClient, rid, [msgEvent('$old', 100), msgEvent('$kept', 50)]);
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(cachedIds(queryClient, rid)).toEqual(['$kept']);
+    unmount();
+  });
+
+  it('invalidates a cached room when a redaction target is outside the loaded window', async () => {
+    const rid = '!unknown:test';
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ timeline: { events: [redaction('$outside-window')], limited: false, prev_batch: 'p' } }),
+    }));
+    const queryClient = getQueryClientMock();
+    setRoomCache(queryClient, rid, [msgEvent('$kept', 100)]);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['matrix-messages', rid], exact: true, refetchType: 'none' });
+    unmount();
+  });
+
+  it('buffers a redaction for a room whose message cache is not mounted yet', async () => {
+    const rid = '!unopened:test';
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ timeline: { events: [redaction('$outside-window')], limited: false, prev_batch: 'p' } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(getQueryClientMock()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(consumeBufferedEvents(rid).map((event) => event.redacts)).toEqual(['$outside-window']);
+    unmount();
+  });
+
+  it('resolves a receipt to the target event timestamp and keeps unknown positions unread', async () => {
+    const rid = '!receipt-target:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    (matrixApi.getRoomEvent as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('not found'));
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$unknown', 500)] } }),
+    })).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$known', 600)] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(getQueryClientMock()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useReceiptStore.getState().receipts[rid]['@alice:test']).toEqual({ eventId: '$unknown', ts: 500 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(useReceiptStore.getState().receipts[rid]['@alice:test']).toEqual({
+      eventId: '$known', ts: 600, eventTimestamp: 400,
+    });
+    unmount();
+  });
+
+  it('keeps thread receipts separate from room-level read positions', async () => {
+    const rid = '!thread-receipt:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$root', 500, '$thread-root')] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(getQueryClientMock()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(useReceiptStore.getState().receipts[rid]).toEqual({
+      '@alice:test|$thread-root': { eventId: '$root', ts: 500, eventTimestamp: 400, threadId: '$thread-root' },
+    });
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('does not move a reader backwards when an older receipt arrives later', async () => {
+    const rid = '!receipt-order:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$newer', 700)] } }),
+    })).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$older', 600)] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(getQueryClientMock()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(useReceiptStore.getState().receipts[rid]['@alice:test']).toMatchObject({ eventId: '$newer', ts: 700 });
+    expect(matrixApi.getRoomEvent).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('ignores a delayed target lookup after a newer receipt has been accepted', async () => {
+    const rid = '!receipt-delay:test';
+    useRoomMetaStore.getState().setActiveRoomId(rid);
+    let resolveOld!: (_event: MatrixEvent) => void;
+    const oldTarget = new Promise<MatrixEvent>((resolve) => { resolveOld = resolve; });
+    (matrixApi.getRoomEvent as ReturnType<typeof vi.fn>).mockImplementation((_hs, _token, _rid, eventId) =>
+      eventId === '$old' ? oldTarget : Promise.resolve(msgEvent(eventId, 400)),
+    );
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$old', 600)] } }),
+    })).mockResolvedValueOnce(syncWith({
+      [rid]: joinedRoom({ ephemeral: { events: [readReceipt('$new', 700)] } }),
+    }));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), { wrapper: wrapWithQueryClient(getQueryClientMock()) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    await act(async () => {
+      resolveOld(msgEvent('$old', 50));
+      await Promise.resolve();
+    });
+    expect(useReceiptStore.getState().receipts[rid]['@alice:test']).toEqual({
+      eventId: '$new', ts: 700, eventTimestamp: 400,
+    });
     unmount();
   });
 
@@ -552,17 +792,81 @@ describe('useGlobalMatrixSync — room name / member count backfill', () => {
     return hook;
   }
 
-  it('probes every joined room, with no 80-room cap', async () => {
-    const ids = Array.from({ length: 85 }, (_, i) => `!r${i}:test`);
+  it('prioritizes the active and 19 most recent rooms, then defers the rest', async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `!r${i}:test`);
+    useRoomMetaStore.getState().setActiveRoomId('!r24:test');
+    for (let i = 0; i < ids.length; i += 1) {
+      useRoomMetaStore.getState().setRoomMeta(ids[i], { lastMessageTs: i });
+    }
     (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ids });
     (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    let probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[2]);
+    expect(probed).toHaveLength(20);
+    expect(probed[0]).toBe('!r24:test');
+    expect(new Set(probed)).toEqual(new Set(ids.slice(5)));
+    expect(matrixApi.sync).not.toHaveBeenCalled();
 
-    const { unmount } = await mountAndSettle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(matrixApi.sync).toHaveBeenCalledTimes(1);
+    probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[2]);
+    expect(probed).toHaveLength(20);
 
-    const probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[2]);
-    expect(probed).toHaveLength(85);
-    for (const id of ids) expect(probed).toContain(id);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    probed = (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[2]);
+    expect(probed).toHaveLength(25);
+    expect(new Set(probed)).toEqual(new Set(ids));
+    unmount();
+  });
 
+  it('never runs more than six room metadata probes at once', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `!bounded${i}:test`);
+    let active = 0;
+    let maxActive = 0;
+    const resolvers: Array<() => void> = [];
+    (matrixApi.getRoomState as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      return new Promise<MatrixRoomStateEvent[]>((resolve) => {
+        resolvers.push(() => {
+          active -= 1;
+          resolve([]);
+        });
+      });
+    });
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ids });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+    const { unmount } = renderHook(() => useGlobalMatrixSync(), {
+      wrapper: wrapWithQueryClient(getQueryClientMock()),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(maxActive).toBe(6);
+    expect(matrixApi.getRoomState).toHaveBeenCalledTimes(6);
+    await act(async () => {
+      for (const resolve of resolvers.splice(0)) resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(matrixApi.getRoomState).toHaveBeenCalledTimes(12);
+    await act(async () => {
+      for (const resolve of resolvers.splice(0)) resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    unmount();
+  });
+
+  it('shares the joined-room request with room access through the query cache', async () => {
+    (matrixApi.getJoinedRooms as ReturnType<typeof vi.fn>).mockResolvedValue({ joined_rooms: ['!shared:test'] });
+    (matrixApi.sync as ReturnType<typeof vi.fn>).mockResolvedValue(syncWith({}));
+    const queryClient = getQueryClientMock();
+    const { unmount } = renderHook(() => ({
+      sync: useGlobalMatrixSync(),
+      access: useChatRoomAccess(),
+    }), { wrapper: wrapWithQueryClient(queryClient) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(matrixApi.getJoinedRooms).toHaveBeenCalledTimes(1);
     unmount();
   });
 

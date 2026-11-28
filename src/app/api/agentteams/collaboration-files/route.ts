@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdtemp, open, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Client } from 'minio';
@@ -15,12 +19,239 @@ function error(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+export const CHAT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+export const CHAT_ATTACHMENT_TEAM_QUOTA_BYTES = 200 * 1024 * 1024;
+export const CHAT_ATTACHMENT_TENANT_QUOTA_BYTES = 1024 * 1024 * 1024;
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+const MAX_MULTIPART_HEADER_BYTES = 8192;
+const MAX_MULTIPART_PARTS = 4;
+
+class UploadError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) { super(message); this.status = status; }
+}
+
+// Serialize quota check + upload in this Dashboard process so concurrent
+// chunked requests cannot all spend the same remaining quota.
+let uploadQueue: Promise<unknown> = Promise.resolve();
+async function withUploadLock<T>(work: () => Promise<T>): Promise<T> {
+  const previous = uploadQueue;
+  let release!: () => void;
+  uploadQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try { return await work(); } finally { release(); }
+}
+
 function safeSegment(value: string): boolean {
   return !!value && value !== '.' && value !== '..' && !/[\/\\\x00-\x1f\x7f]/.test(value);
 }
 
 function safeRelative(path: string): boolean {
   return path === '' || path.replace(/\/$/, '').split('/').every(safeSegment);
+}
+
+interface SpooledUpload {
+  directory: string;
+  path: string;
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+class MultipartCursor {
+  private buffer = Buffer.alloc(0);
+  private ended = false;
+
+  private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+  private readonly countBytes: (_size: number) => void;
+
+  constructor(reader: ReadableStreamDefaultReader<Uint8Array>, countBytes: (_size: number) => void) {
+    this.reader = reader;
+    this.countBytes = countBytes;
+  }
+
+  private async fill(): Promise<boolean> {
+    if (this.ended) return this.buffer.length > 0;
+    const { done, value } = await this.reader.read();
+    if (done) { this.ended = true; return this.buffer.length > 0; }
+    this.countBytes(value.byteLength);
+    this.buffer = this.buffer.length ? Buffer.concat([this.buffer, value]) : Buffer.from(value);
+    return true;
+  }
+
+  private consume(size: number): void {
+    this.buffer = this.buffer.subarray(size);
+  }
+
+  async until(delimiter: Buffer, sink?: (_chunk: Buffer) => Promise<void>, captureLimit = 0): Promise<Buffer> {
+    const captured: Buffer[] = [];
+    let capturedBytes = 0;
+    for (;;) {
+      if (!await this.fill()) throw new UploadError('multipart 请求不完整', 400);
+      const index = this.buffer.indexOf(delimiter);
+      if (index >= 0) {
+        const before = this.buffer.subarray(0, index);
+        if (before.length) {
+          if (sink) await sink(before);
+          else if (captureLimit) {
+            capturedBytes += before.length;
+            if (capturedBytes > captureLimit) throw new UploadError('multipart 请求头过大', 400);
+            captured.push(Buffer.from(before));
+          }
+        }
+        this.consume(index + delimiter.length);
+        return Buffer.concat(captured);
+      }
+      // Retain a possible delimiter prefix split across network chunks.
+      const flushSize = Math.max(0, this.buffer.length - delimiter.length + 1);
+      if (flushSize > 0) {
+        const chunk = this.buffer.subarray(0, flushSize);
+        if (sink) await sink(chunk);
+        else if (captureLimit) {
+          capturedBytes += chunk.length;
+          if (capturedBytes > captureLimit) throw new UploadError('multipart 请求头过大', 400);
+          captured.push(Buffer.from(chunk));
+        }
+        this.consume(flushSize);
+      }
+    }
+  }
+
+  async exactly(size: number): Promise<Buffer> {
+    const parts: Buffer[] = [];
+    let remaining = size;
+    while (remaining > 0) {
+      if (!await this.fill()) throw new UploadError('multipart 请求不完整', 400);
+      const take = Math.min(remaining, this.buffer.length);
+      parts.push(Buffer.from(this.buffer.subarray(0, take)));
+      this.consume(take);
+      remaining -= take;
+    }
+    return Buffer.concat(parts);
+  }
+
+  /** Count the complete request body and reject undeclared multipart epilogues. */
+  async finish(): Promise<void> {
+    if (this.buffer.length) throw new UploadError('multipart 边界后存在多余数据', 400);
+    for (;;) {
+      const { done, value } = await this.reader.read();
+      if (done) return;
+      this.countBytes(value.byteLength);
+      if (value.byteLength) throw new UploadError('multipart 边界后存在多余数据', 400);
+    }
+  }
+}
+
+function multipartBoundary(request: NextRequest): string {
+  const contentType = request.headers.get('content-type') ?? '';
+  const match = /^multipart\/form-data\s*;.*\bboundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
+  const boundary = match?.[1] ?? match?.[2];
+  if (!boundary || boundary.length > 200 || !/^[\x20-\x7e]+$/.test(boundary)) {
+    throw new UploadError('请求须为有效的 multipart/form-data', 400);
+  }
+  return boundary;
+}
+
+function dispositionValues(header: string): { name: string; filename?: string } {
+  const utf8 = /\bfilename\*=UTF-8''([^;]+)/i.exec(header)?.[1];
+  const plain = /\bfilename="([^"]*)"/i.exec(header)?.[1] ?? /\bfilename=([^;]+)/i.exec(header)?.[1];
+  const filename = utf8 ? decodeURIComponent(utf8) : plain;
+  if (filename && /[\\/\x00-\x1f\x7f]/.test(filename)) throw new UploadError('文件名无效', 400);
+  return {
+    name: /\bname="([^"]*)"/i.exec(header)?.[1] ?? /\bname=([^;]+)/i.exec(header)?.[1] ?? '',
+    filename,
+  };
+}
+
+/** Parse one file with bounded headers/bytes and spool to disk, never FormData/arrayBuffer. */
+async function spoolMultipartFile(request: NextRequest): Promise<SpooledUpload> {
+  const boundary = multipartBoundary(request);
+  if (!request.body) throw new UploadError('请求体为空', 400);
+  const reader = request.body.getReader();
+  let requestBytes = 0;
+  const counted = new MultipartCursor(reader, (size) => {
+    requestBytes += size;
+    if (requestBytes > CHAT_ATTACHMENT_MAX_BYTES + MULTIPART_OVERHEAD_BYTES) {
+      throw new UploadError('上传请求超过 11MB 上限', 413);
+    }
+  });
+  const directory = await mkdtemp(join(tmpdir(), 'agentteams-chat-'));
+  let file: Awaited<ReturnType<typeof open>> | undefined;
+  let result: SpooledUpload | undefined;
+  let parts = 0;
+  try {
+    const delimiter = Buffer.from(`--${boundary}`);
+    await counted.until(delimiter);
+    for (;;) {
+      const ending = (await counted.exactly(2)).toString('ascii');
+      if (ending === '--') { await counted.exactly(2); await counted.finish(); break; }
+      if (ending !== '\r\n') throw new UploadError('multipart 边界无效', 400);
+      parts += 1;
+      if (parts > MAX_MULTIPART_PARTS) throw new UploadError('multipart 字段过多', 400);
+      const headerLines: string[] = [];
+      let headerBytes = 0;
+      for (;;) {
+        const line = (await counted.until(Buffer.from('\r\n'), undefined, MAX_MULTIPART_HEADER_BYTES)).toString('utf8');
+        headerBytes += line.length + 2;
+        if (headerBytes > MAX_MULTIPART_HEADER_BYTES) throw new UploadError('multipart 请求头过大', 400);
+        if (!line) break;
+        headerLines.push(line);
+      }
+      const disposition = headerLines.find((line) => /^content-disposition:/i.test(line));
+      if (!disposition) throw new UploadError('multipart 缺少 Content-Disposition', 400);
+      const fields = dispositionValues(disposition);
+      const contentType = headerLines.find((line) => /^content-type:/i.test(line))?.split(':').slice(1).join(':').trim();
+      if (fields.name !== 'file' || fields.filename === undefined) {
+        await counted.until(Buffer.from(`\r\n${delimiter}`));
+        continue;
+      }
+      if (result || !safeSegment(fields.filename)) throw new UploadError('文件名无效', 400);
+      const path = join(directory, 'upload');
+      file = await open(path, 'wx');
+      let size = 0;
+      await counted.until(Buffer.from(`\r\n${delimiter}`), async (chunk) => {
+        size += chunk.length;
+        if (size > CHAT_ATTACHMENT_MAX_BYTES) throw new UploadError('单个聊天附件超过 10MB 上限', 413);
+        await file!.write(chunk);
+      });
+      result = {
+        directory,
+        path,
+        name: fields.filename,
+        size,
+        contentType: contentType && /^[\w.+-]+\/[\w.+-]+$/.test(contentType)
+          ? contentType
+          : 'application/octet-stream',
+      };
+    }
+    if (!result) throw new UploadError('缺少 file 字段', 400);
+    await file?.close();
+    file = undefined;
+    return result;
+  } catch (err) {
+    await reader.cancel().catch(() => undefined);
+    await file?.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    if (err instanceof UploadError) throw err;
+    if (err instanceof URIError) throw new UploadError('文件名编码无效', 400);
+    throw err;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function attachmentUsage(client: Client, bucket: string, prefix: string, tenant = false): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    let total = 0;
+    const stream = client.listObjects(bucket, prefix, true);
+    stream.on('data', (object: { name?: string; size?: number }) => {
+      if (typeof object.name !== 'string') return;
+      if (tenant && !object.name.includes(`/shared/${CHAT_ATTACHMENT_DIRECTORY}`)) return;
+      total += object.size ?? 0;
+    });
+    stream.on('error', reject);
+    stream.on('end', () => resolve(total));
+  });
 }
 
 async function controllerGet<T>(request: NextRequest, path: string): Promise<T | NextResponse> {
@@ -123,6 +354,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const maxRequestBytes = CHAT_ATTACHMENT_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
+  const declared = request.headers.get('content-length');
+  if (declared !== null) {
+    if (!/^\d+$/.test(declared) || !Number.isSafeInteger(Number(declared))) return error('Content-Length 无效', 400);
+    if (Number(declared) > maxRequestBytes) return error('上传请求超过 11MB 上限', 413);
+  }
   const teamName = request.nextUrl.searchParams.get('team') || '';
   const prefix = request.nextUrl.searchParams.get('prefix') ?? '';
   if (!safeRelative(prefix)) return error('文件路径无效', 400);
@@ -134,18 +371,47 @@ export async function POST(request: NextRequest) {
   if (attachment ? !belongsToTeam(team, actor.name) : actor.level < 3) return error('无权保存到此团队目录', 403);
   const bucket = getMinioBucket();
   if (!bucket) return error('文件存储未配置', 503);
+
+  let spool: SpooledUpload | undefined;
   try {
-    const file = (await request.formData()).get('file');
-    if (!(file instanceof File) || !safeSegment(file.name)) return error('文件名无效', 400);
-    const dir = prefix ? prefix.replace(/\/$/, '') + '/' : '';
-    const key = `${dir}${attachment ? `${randomUUID()}-` : ''}${file.name}`;
-    const object = `teams/${team.teamName || team.name}/shared/${key}`;
-    if (isSensitiveObjectKey(object)) return error('不支持保存到此路径', 400);
-    await createMinioClient().putObject(bucket, object, Buffer.from(await file.arrayBuffer()), file.size, {
-      'content-type': file.type || 'application/octet-stream',
+    return await withUploadLock(async () => {
+      const client = createMinioClient();
+      const teamRoot = `teams/${team.teamName || team.name}/shared/`;
+      const attachmentPrefix = `${teamRoot}${CHAT_ATTACHMENT_DIRECTORY}`;
+      const [teamUsed, tenantUsed] = attachment
+        ? await Promise.all([
+          attachmentUsage(client, bucket, attachmentPrefix),
+          attachmentUsage(client, bucket, 'teams/', true),
+        ])
+        : [0, 0];
+      if (teamUsed >= CHAT_ATTACHMENT_TEAM_QUOTA_BYTES || tenantUsed >= CHAT_ATTACHMENT_TENANT_QUOTA_BYTES) {
+        throw new UploadError('聊天附件配额已用尽', 413);
+      }
+
+      spool = await spoolMultipartFile(request);
+      if (attachment && (
+        teamUsed + spool.size > CHAT_ATTACHMENT_TEAM_QUOTA_BYTES ||
+        tenantUsed + spool.size > CHAT_ATTACHMENT_TENANT_QUOTA_BYTES
+      )) throw new UploadError('聊天附件超出团队或租户配额', 413);
+
+      const dir = prefix ? prefix.replace(/\/$/, '') + '/' : '';
+      const key = `${dir}${attachment ? `${randomUUID()}-` : ''}${spool.name}`;
+      const object = `teams/${team.teamName || team.name}/shared/${key}`;
+      if (isSensitiveObjectKey(object)) return error('不支持保存到此路径', 400);
+      try {
+        await client.putObject(bucket, object, createReadStream(spool.path), spool.size, {
+          'content-type': spool.contentType,
+        });
+      } catch (err) {
+        await client.removeObject(bucket, object).catch(() => undefined);
+        throw err;
+      }
+      return NextResponse.json({ key });
     });
-    return NextResponse.json({ key });
-  } catch {
+  } catch (err) {
+    if (err instanceof UploadError) return error(err.message, err.status);
     return error('保存团队文件失败', 502);
+  } finally {
+    if (spool) await rm(spool.directory, { recursive: true, force: true }).catch(() => undefined);
   }
 }

@@ -114,7 +114,10 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
     text.split('\n').map((s) => s.trim()).filter(Boolean);
 
   const handleLogin = async () => {
-    if (!username || !password) return;
+    if (!username.trim() || !password) {
+      setError('请输入用户名和密码');
+      return;
+    }
     setError(null);
 
     const matrixHomeservers = splitLines(homeserverText);
@@ -141,7 +144,7 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
         sglang: stored?.sglang ?? { enabled: false, urls: [] },
       });
 
-      const outcome = await loginWithFailover(matrixHomeservers, username, password);
+      const outcome = await loginWithFailover(matrixHomeservers, username.trim(), password);
       if (!outcome.ok) {
         setError(outcome.message);
         return;
@@ -181,7 +184,7 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
         </CardHeader>
         <CardContent className="space-y-4">
           {reason === 'unauthorized' && (
-            <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400 text-sm">
+            <div role="alert" className="flex items-start gap-2 text-status-waiting text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>
                 {fromData401
@@ -191,7 +194,7 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
             </div>
           )}
           {reason === 'invalid' && (
-            <div className="flex items-center gap-2 text-destructive text-sm">
+            <div role="alert" className="flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{detail || '凭据无效或已失效，请重新登录'}</span>
             </div>
@@ -272,15 +275,15 @@ export function StatelessLoginPage({ onLoginSuccess, reason, detail, defaultHome
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-destructive text-sm">
+            <div role="alert" className="flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
           <Button
             onClick={handleLogin}
-            disabled={isLoading || !username || !password}
-            className="w-full h-11 rounded-xl bg-[#1bc67b] text-[#092b20] hover:bg-[#6cdda8]"
+            disabled={isLoading || !username.trim() || !password}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isLoading ? (
               <>

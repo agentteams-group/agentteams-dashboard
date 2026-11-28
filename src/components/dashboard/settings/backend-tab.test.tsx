@@ -200,6 +200,72 @@ describe('BackendTab（设置 → 后端）', () => {
     });
   });
 
+  it('初次 GET 失败可重试，且不会永久停留在加载态', async () => {
+    let reads = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes(TEST_URL)) return json({ results: { controller: [] } });
+      if (init?.method === 'POST') return json({ ok: true });
+      reads += 1;
+      return reads === 1 ? json({}, 503) : json(savedState());
+    }));
+    renderTab();
+    expect(await screen.findByText('后端配置加载失败')).toBeInTheDocument();
+    expect(screen.queryByText('加载后端配置…')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
+    expect(await screen.findByLabelText('AgentTeams Controller 内网 地址')).toHaveValue('http://int:8090');
+  });
+
+  it('测试失败不会显示已保存，也不会清除草稿', async () => {
+    const fetchMock = installFetch(savedState());
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes(TEST_URL)) return json({}, 502);
+      if (init?.method === 'POST') return json({ ok: true });
+      return json(savedState());
+    });
+    renderTab();
+    const password = await screen.findByLabelText('AgentTeams Controller 内网 密码');
+    fireEvent.change(password, { target: { value: 'keep-this-draft' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试 AgentTeams Controller' }));
+    expect(await screen.findByText('测试失败（HTTP 502）')).toBeInTheDocument();
+    expect(screen.queryByText(/已保存，立即生效/)).not.toBeInTheDocument();
+    expect(password).toHaveValue('keep-this-draft');
+  });
+
+  it('保存成功但回读失败时保留已保存状态和草稿，并可单独重试回读', async () => {
+    let reads = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes(TEST_URL)) return json({ results: { controller: [] } });
+      if (init?.method === 'POST') return json({ ok: true });
+      reads += 1;
+      return reads === 1 ? json(savedState()) : json({}, 500);
+    }));
+    renderTab();
+    const password = await screen.findByLabelText('AgentTeams Controller 内网 密码');
+    fireEvent.change(password, { target: { value: 'keep-this-draft' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    expect(await screen.findByText(/配置已保存，但暂时无法确认/)).toBeInTheDocument();
+    expect(screen.getByText(/已保存，立即生效/)).toBeInTheDocument();
+    expect(password).toHaveValue('keep-this-draft');
+    expect(screen.queryByText('保存请求失败')).not.toBeInTheDocument();
+  });
+
+  it('保存 POST 失败不会自动测试或显示已保存', async () => {
+    const fetchMock = installFetch(savedState());
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes(TEST_URL)) return json({ results: { controller: [] } });
+      if (init?.method === 'POST') return json({ error: 'save rejected' }, 500);
+      return json(savedState());
+    });
+    renderTab();
+    await screen.findByLabelText('AgentTeams Controller 内网 地址');
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    expect(await screen.findByText('save rejected')).toBeInTheDocument();
+    expect(screen.queryByText(/已保存，立即生效/)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(TEST_URL))).toBe(false);
+  });
+
   it('选了 Basic 但既没填密码也没已存凭据 → 拦住保存并给可读提示（不静默降级成纯 URL）', async () => {
     installFetch({
       configured: true,

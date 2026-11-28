@@ -13,16 +13,23 @@ vi.mock('@/lib/server-auth', async (original) => ({
 let server: Server;
 let base: string;
 let ifMatch: string | undefined;
+let humanIfMatch: string | undefined;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    if (req.url === '/api/v1/humans/alice') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url === '/api/v1/humans/alice' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', ETag: '"human-v1"' });
       res.end(JSON.stringify({ name: 'alice', initialPassword: 'owned-detail-fixture' }));
       return;
     }
-    if (req.method === 'PUT') ifMatch = req.headers['if-match'] as string | undefined;
-    res.writeHead(200, { 'Content-Type': 'application/json', ETag: '"config-v1"' });
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+      if (req.url === '/api/v1/humans/alice') humanIfMatch = req.headers['if-match'] as string | undefined;
+      else ifMatch = req.headers['if-match'] as string | undefined;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      ETag: req.url === '/api/v1/humans/alice' ? '"human-v1"' : '"config-v1"',
+    });
     res.end('{"max_iters":20}');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -49,5 +56,23 @@ it('provides the individual Human GET instead of relying on list credentials', a
   const url = `http://localhost/api/agentteams/humans/alice?controllerUrl=${encodeURIComponent(base)}`;
   const response = await humanRoute.GET(new NextRequest(url), { params: Promise.resolve({ name: 'alice' }) });
   expect(response.status).toBe(200);
+  expect(response.headers.get('ETag')).toBe('"human-v1"');
   expect(await response.json()).toEqual({ name: 'alice', initialPassword: 'owned-detail-fixture' });
+});
+
+it('forwards Human PATCH and conditional PUT headers through the proxy', async () => {
+  const url = `http://localhost/api/agentteams/humans/alice?controllerUrl=${encodeURIComponent(base)}`;
+  const params = { params: Promise.resolve({ name: 'alice' }) };
+  const patch = await humanRoute.PATCH(new NextRequest(url, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'If-Match': '"human-v1"' }, body: '{"spec":{"modelAccess":{"scopes":[]}}}',
+  }), params);
+  expect(patch.status).toBe(200);
+  expect(humanIfMatch).toBe('"human-v1"');
+  expect(patch.headers.get('ETag')).toBe('"human-v1"');
+  const put = await humanRoute.PUT(new NextRequest(url, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': '"human-v1"' }, body: '{"spec":{}}',
+  }), params);
+  expect(put.status).toBe(200);
+  expect(humanIfMatch).toBe('"human-v1"');
+  expect(put.headers.get('ETag')).toBe('"human-v1"');
 });

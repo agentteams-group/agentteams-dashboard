@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from './route';
@@ -12,9 +13,13 @@ vi.mock('@/lib/skill-center-config', () => ({
   }),
 }));
 
-vi.mock('@/lib/nacos-fetcher', () => ({
-  getNacosAccessToken: vi.fn().mockResolvedValue('token-xyz'),
-}));
+vi.mock('@/lib/nacos-fetcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/nacos-fetcher')>();
+  return {
+    ...actual,
+    getNacosAccessToken: vi.fn().mockResolvedValue('token-xyz'),
+  };
+});
 
 function makeRequest(name: string | null, version: string | null) {
   const params = new URLSearchParams();
@@ -103,5 +108,22 @@ describe('GET /api/agentteams/agentspecs/nacos/detail', () => {
 
     const r = await GET(makeRequest('zk-steward', '0.0.1'));
     expect(r.status).toBe(502);
+  });
+
+  it.each(['500', 'invalid-json', 'timeout'] as const)('never leaks the token on %s failures', async (failure) => {
+    const token = 'token-xyz';
+    fetchMock.mockImplementation(async () => {
+      if (failure === 'timeout') throw new DOMException('timed out', 'TimeoutError');
+      if (failure === 'invalid-json') return new Response(token, { status: 200 });
+      return new Response(`boom ${token} ${encodeURIComponent(token)}`, { status: 500 });
+    });
+    const response = await GET(makeRequest('zk-steward', '0.0.1'));
+    const body = await response.text();
+    expect(response.status).toBe(502);
+    expect(body).not.toContain(token);
+    expect(body).not.toContain(encodeURIComponent(token));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).not.toContain('accessToken');
+    expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${token}`);
   });
 });

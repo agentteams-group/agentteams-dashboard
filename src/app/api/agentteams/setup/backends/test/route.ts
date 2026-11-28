@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   BACKEND_NAMES,
   backendCandidatesSync,
+  configExists,
   effectiveUrl,
+  isEgressPolicyError,
   isHttpUrl,
   isSetupTokenEnforced,
-  isTestTargetAllowed,
   listMatchesSaved,
+  mergeAddressEntry,
   probeBackend,
+  readConfigSync,
   selectAndMark,
   toProbeRow,
+  validateEgressTarget,
   verifySetupToken,
   type BackendAuth,
   type BackendName,
@@ -32,17 +36,10 @@ import { isAddressLike, resolveBackendUrl } from '@/lib/backend-url-resolve';
 // - Rows carry the two-layer model: ok = network connected (401/403 count),
 //   httpOk = status < 400 (only these are election-eligible).
 //
-// Access (PR-91 review, Block 2): the probe is NO LONGER an unauthenticated
-// fetch proxy — same door as POST /setup/backends:
-//   - any authenticated session (post-login settings tab, L1 and L2),
-//   - pre-login: the setup token in the body (token-gated, repeatable,
-//     exactly like the pre-login write); with
-//     DASHBOARD_SETUP_TOKEN_ENFORCE=0 (installer opt-out, trusted-LAN) the
-//     gate is off — the same documented posture as the unauthenticated
-//     config writes that opt-out already accepts (startup warn).
-// SSRF hardening: DASHBOARD_ALLOWED_HOSTS (empty = allow for the
-// session/token holders above, strict allowlist when set) plus an
-// unconditional deny of the cloud metadata sentinel (169.254.169.254).
+// Access (SEC-03): every authenticated probe requires level 3 in standalone
+// and shared modes. Before first config, the setup token (or explicit ENFORCE=0
+// trusted-LAN bootstrap) remains available. Once config exists, pre-login probes
+// are closed. All targets and redirect hops share the save-path egress policy.
 
 type DraftAddrs = { internal?: DraftSlot; external?: DraftSlot };
 /** 草稿槽位：URL 字符串（服务自身认证）或 {url, auth?}（草稿凭据参与探测）。 */
@@ -99,7 +96,25 @@ function parseDrafts(body: unknown): Partial<Record<BackendName, DraftAddrs>> | 
   return out;
 }
 
+async function targetDenied(url: string, backend: BackendName): Promise<boolean> {
+  try {
+    await validateEgressTarget(url, backend);
+    return false;
+  } catch (err) {
+    if (isEgressPolicyError(err)) return true;
+    throw err;
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const session = getSessionFromRequest(request);
+  if (session && session.level < 3) {
+    return NextResponse.json({ ok: false, error: 'only admin (L1) may test backend config' }, { status: 403 });
+  }
+  const existed = await configExists();
+  if (!session && existed) {
+    return NextResponse.json({ ok: false, error: 'admin-required' }, { status: 403 });
+  }
   const raw = (await request.json().catch(() => null)) as unknown;
   const body = (raw ?? {}) as { token?: unknown; backends?: unknown };
   const drafts = parseDrafts(raw);
@@ -107,19 +122,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid-request' }, { status: 400 });
   }
 
-  // PR-91 review: same door as POST /setup/backends — a pre-login caller
-  // must hold the setup token (when the gate is enforced). No session, no
-  // probe: the endpoint used to be an unauthenticated fetch proxy.
-  const session = getSessionFromRequest(request);
-  if (!session) {
-    if (isSetupTokenEnforced()) {
-      const token = typeof body.token === 'string' ? body.token : undefined;
-      if (!token) {
-        return NextResponse.json({ ok: false, error: 'token-required' }, { status: 403 });
-      }
-      if (!(await verifySetupToken(token))) {
-        return NextResponse.json({ ok: false, error: 'invalid-token' }, { status: 403 });
-      }
+  // Pre-login bootstrap is first-config-only; no session and an existing
+  // config was rejected above before parsing or probing.
+  if (!session && isSetupTokenEnforced()) {
+    const token = typeof body.token === 'string' ? body.token : undefined;
+    if (!token) {
+      return NextResponse.json({ ok: false, error: 'token-required' }, { status: 403 });
+    }
+    if (!(await verifySetupToken(token))) {
+      return NextResponse.json({ ok: false, error: 'invalid-token' }, { status: 403 });
     }
   }
 
@@ -132,7 +143,7 @@ export async function POST(request: NextRequest) {
       const raw = draftSlotUrl(slot);
       if (!raw) continue;
       const probeUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`;
-      if (!isTestTargetAllowed(probeUrl)) {
+      if (await targetDenied(probeUrl, name)) {
         return NextResponse.json({ ok: false, error: 'host-not-allowed', url: raw }, { status: 403 });
       }
     }
@@ -147,25 +158,30 @@ export async function POST(request: NextRequest) {
   const sources: Partial<
     Record<BackendName, Array<{ url: string; from?: string; auth?: BackendAuth }>>
   > = {};
-  await Promise.all(
+  try {
+    await Promise.all(
     BACKEND_NAMES.map(async (name) => {
       const draft = drafts[name];
-      const slots = draft
-        ? [draft.internal, draft.external].filter((v): v is DraftSlot => v !== undefined)
-        : [];
+      const slots = (['internal', 'external'] as const).flatMap((slotName) =>
+        draft?.[slotName] ? [[slotName, draft[slotName]] as const] : [],
+      );
       if (slots.length === 0) {
         const saved = backendCandidatesSync(name);
         if (saved.length > 0) targets[name] = saved;
         return;
       }
       const rows: Array<{ url: string; from?: string; auth?: BackendAuth }> = [];
-      for (const slot of slots) {
+      const saved = readConfigSync()?.backends[name];
+      for (const [slotName, slot] of slots) {
         const raw = draftSlotUrl(slot);
         if (!raw) continue;
-        const resolved = await resolveBackendUrl(raw);
+        const resolved = await resolveBackendUrl(raw, 3000, name);
         if (!isHttpUrl(resolved.url)) continue;
         if (rows.some((r) => r.url === resolved.url)) continue;
-        const auth = typeof slot === 'object' ? slot.auth : undefined;
+        // Draft redaction inherits only under the same origin/type contract as
+        // save. A changed origin can never receive the old slot's credential.
+        const merged = typeof slot === 'object' ? mergeAddressEntry(saved?.[slotName], slot) : undefined;
+        const auth = typeof merged === 'object' ? merged.auth : undefined;
         rows.push({
           url: resolved.url,
           ...(resolved.changed ? { from: raw } : {}),
@@ -180,7 +196,13 @@ export async function POST(request: NextRequest) {
       targets[name] = rows.map((r) => r.url);
       sources[name] = rows;
     }),
-  );
+    );
+  } catch (err) {
+    if (isEgressPolicyError(err)) {
+      return NextResponse.json({ ok: false, error: 'host-not-allowed' }, { status: 403 });
+    }
+    throw err;
+  }
   if (Object.keys(targets).length === 0) {
     return NextResponse.json(
       { ok: false, error: 'nothing-to-test', message: 'no addresses provided or configured' },
@@ -191,7 +213,7 @@ export async function POST(request: NextRequest) {
   // SSRF filter: reject the whole request if any target is disallowed.
   for (const name of Object.keys(targets) as BackendName[]) {
     for (const url of targets[name]!) {
-      if (!isTestTargetAllowed(url)) {
+      if (await targetDenied(url, name)) {
         return NextResponse.json({ ok: false, error: 'host-not-allowed', url }, { status: 403 });
       }
     }

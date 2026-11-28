@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { humanFilesApi } from '@/lib/human-files-api';
+import axe from 'axe-core';
 import { DirectoryPickerDialog, dirRulePath, pickerRows } from './directory-picker-dialog';
 
 function renderPicker(overrides: {
@@ -77,11 +78,13 @@ describe('DirectoryPickerDialog', () => {
     expect(humanFilesApi.listDirectory).toHaveBeenCalledTimes(1);
     expect(humanFilesApi.listDirectory).toHaveBeenCalledWith('alice', '');
 
-    fireEvent.click(screen.getByRole('button', { name: '展开 docs' }));
+    const docs = screen.getByRole('treeitem', { name: 'docs' });
+    docs.focus();
+    fireEvent.keyDown(docs, { key: 'ArrowRight' });
     expect(await screen.findByRole('treeitem', { name: 'specs' })).toBeInTheDocument();
     expect(humanFilesApi.listDirectory).toHaveBeenCalledWith('alice', 'docs');
 
-    fireEvent.click(screen.getByRole('button', { name: '收起 docs' }));
+    fireEvent.keyDown(docs, { key: 'ArrowLeft' });
     await waitFor(() =>
       expect(screen.queryByRole('treeitem', { name: 'specs' })).not.toBeInTheDocument(),
     );
@@ -114,6 +117,16 @@ describe('DirectoryPickerDialog', () => {
 
     fireEvent.keyDown(docs, { key: 'Enter' });
     expect(onPick).toHaveBeenCalledWith('files/docs');
+  });
+
+  it('目录树无语义嵌套交互、暴露选中状态且通过 axe', async () => {
+    const { container } = (() => { renderPicker(); return { container: document.body }; })();
+    const root = await screen.findByRole('treeitem', { name: '根目录' });
+    await waitFor(() => expect(root).toHaveFocus());
+    expect(root).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tree')).toHaveAttribute('aria-label', '工作区目录');
+    const result = await axe.run(container, { resultTypes: ['violations'] });
+    expect(result.violations.filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([]);
   });
 
   it('403/404 → 目录列表不可用（不抛错）', async () => {

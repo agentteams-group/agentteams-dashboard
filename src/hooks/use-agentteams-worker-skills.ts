@@ -86,19 +86,13 @@ export function useUploadWorkerSkill() {
         restart: false,
       });
 
-      // 2) Re-read the worker from the controller so we merge against the
-      //    latest spec.skills instead of a stale page snapshot. This makes
-      //    concurrent dashboard sessions safe.
+      // 2) Append through the controller's atomic operation when available.
+      //    agentteamsApi falls back to bounded ETag/If-Match reconciliation on
+      //    older controllers, preserving concurrent A/B skill uploads.
       let specUpdated = false;
       let specError: string | undefined;
       try {
-        const latest = await agentteamsApi.getWorker(workerName);
-        const currentSkills = Array.isArray(latest.skills) ? latest.skills : [];
-        if (!currentSkills.includes(upload.skillName)) {
-          await agentteamsApi.updateWorker(workerName, {
-            skills: [...currentSkills, upload.skillName],
-          });
-        }
+        await agentteamsApi.appendWorkerSkill(workerName, upload.skillName);
         specUpdated = true;
       } catch (err) {
         specError = err instanceof Error ? err.message : 'spec.skills 更新失败';

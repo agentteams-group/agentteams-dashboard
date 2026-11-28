@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   Download,
   Eye,
@@ -19,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
 import {
   TEXT_EDIT_MAX_BYTES,
   fileTypeLabel,
@@ -73,12 +72,14 @@ export function PreviewDialog({
   humanName,
   entry,
   path,
+  triggerRef,
 }: {
   open: boolean;
   onOpenChange: (_open: boolean) => void;
   humanName: string;
   entry: HumanFileEntry | null;
   path: string;
+  triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   const [state, setState] = useState<PreviewState>({ kind: 'idle' });
 
@@ -124,7 +125,13 @@ export function PreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={entry && isSlideDocument(entry.name)
+      <DialogContent
+        aria-modal="true"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerRef.current?.focus();
+        }}
+        className={entry && isSlideDocument(entry.name)
         ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none sm:max-w-none'
         : 'flex max-h-[85vh] flex-col sm:max-w-2xl'}>
         <DialogHeader>
@@ -137,7 +144,7 @@ export function PreviewDialog({
         {!(entry && isSlideDocument(entry.name)) && (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/20 p-2">
           {state.kind === 'loading' && (
-            <p className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
+            <p className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status" aria-live="polite">
               <Loader2 className="size-4 animate-spin" /> 加载中…
             </p>
           )}
@@ -197,23 +204,24 @@ export function FileDetailCard({
   onOpenDir,
 }: FileDetailProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewTriggerRef = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
   if (!entry) return null;
   const isDir = entry.type === 'directory';
   const editable = !isDir && isEditableText(entry.name, entry.size);
   const previewable = !isDir && (isSlideDocument(entry.name) || isImageName(entry.name) || isEditableText(entry.name, entry.size));
 
   return (
-    <div
-      className={cn(
-        'flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-xl border bg-card p-3',
-      )}
+    <section
+      aria-labelledby={headingId}
+      className="flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-xl border bg-card p-3"
       data-testid="file-detail-card"
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium" title={entry.name}>
+          <h2 id={headingId} className="truncate text-sm font-medium" title={entry.name}>
             {entry.name}
-          </p>
+          </h2>
           <p className="truncate text-xs text-muted-foreground" title={path || dirPath}>
             {path || dirPath || '根目录'}
           </p>
@@ -259,6 +267,7 @@ export function FileDetailCard({
               <Download className="size-4" /> 下载
             </Button>
             <Button
+              ref={previewTriggerRef}
               className="h-11"
               variant="outline"
               disabled={!previewable}
@@ -295,8 +304,9 @@ export function FileDetailCard({
         humanName={humanName}
         entry={entry}
         path={path}
+        triggerRef={previewTriggerRef}
       />
-    </div>
+    </section>
   );
 }
 
@@ -312,7 +322,7 @@ export function DetailPlaceholder({
 }) {
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center rounded-xl border bg-card p-3 text-xs text-muted-foreground">
+      <div className="flex h-full items-center justify-center rounded-xl border bg-card p-3 text-xs text-muted-foreground" role="status" aria-live="polite">
         <Loader2 className="mr-2 size-4 animate-spin" /> 加载中…
       </div>
     );

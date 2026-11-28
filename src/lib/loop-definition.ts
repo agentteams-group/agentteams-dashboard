@@ -51,6 +51,10 @@ export interface LoopDefinition {
   publishedAt?: number;
   updatedBy?: string;
   updatedAt: number;
+  /** 回滚产物：从哪个已发布版本回滚。 */
+  rolledFromVersion?: number;
+  /** 回滚产物：恢复内容的稳定版本。 */
+  restoredVersion?: number;
 }
 
 export const LOOP_STATE_EVENT = 'com.agentteams.loop.definition';
@@ -250,6 +254,103 @@ export function canRollback(def: LoopDefinition): { ok: boolean; reason?: string
     return { ok: false, reason: '当前为初始版本 (v1)，无更早版本可回滚' };
   }
   return { ok: true };
+}
+
+/** Matrix room-state shape needed to reconstruct immutable loop history. */
+export interface LoopVersionStateEvent {
+  type: string;
+  state_key: string;
+  content: Record<string, unknown>;
+}
+
+export function loopStateEventKey(def: Pick<LoopDefinition, 'id' | 'version'>): string {
+  return `loop:${def.id}:v${def.version}`;
+}
+
+export function loopDefinitionStateEvent(def: LoopDefinition): {
+  eventType: string;
+  stateKey: string;
+  content: LoopDefinition;
+} {
+  return {
+    eventType: LOOP_STATE_EVENT,
+    stateKey: loopStateEventKey(def),
+    content: def,
+  };
+}
+
+/**
+ * Only published and rollback snapshots are stable history. Validate both the
+ * state key and content so a malformed/unrelated state event cannot authorize
+ * a rollback or overwrite an immutable version.
+ */
+export function readStableLoopVersions(
+  events: readonly LoopVersionStateEvent[],
+  loopId: string,
+): LoopDefinition[] {
+  const versions = new Map<number, LoopDefinition>();
+  for (const event of events) {
+    if (event.type !== LOOP_STATE_EVENT) continue;
+    const def = event.content;
+    if (!isValidLoopDefinition(def) || def.id !== loopId) continue;
+    if (def.status !== 'published' && def.status !== 'rolled_back') continue;
+    if (event.state_key !== loopStateEventKey(def)) continue;
+    versions.set(def.version, def);
+  }
+  return [...versions.values()].sort((left, right) => left.version - right.version);
+}
+
+export function nextLoopDraftVersion(
+  def: LoopDefinition,
+  history: readonly LoopDefinition[],
+): number {
+  const latest = history.reduce((max, item) => Math.max(max, item.version), 0);
+  return def.status === 'draft'
+    ? Math.max(def.version, latest + 1)
+    : Math.max(def.version, latest) + 1;
+}
+
+export type BuildLoopRollbackResult =
+  | { ok: true; definition: LoopDefinition }
+  | { ok: false; reason: string };
+
+/** Build a new rollback version whose content comes from the prior stable snapshot. */
+export function buildLoopRollback(
+  current: LoopDefinition,
+  history: readonly LoopDefinition[],
+  actor: string,
+  now = Date.now(),
+): BuildLoopRollbackResult {
+  const check = canRollback(current);
+  if (!check.ok) return { ok: false, reason: check.reason ?? '无法回滚' };
+  const stable = readStableLoopVersions(
+    history.map((definition) => ({
+      type: LOOP_STATE_EVENT,
+      state_key: loopStateEventKey(definition),
+      content: definition as unknown as Record<string, unknown>,
+    })),
+    current.id,
+  );
+  if (!stable.some((definition) => definition.version === current.version && definition.status === 'published')) {
+    return { ok: false, reason: '当前版本未在绑定空间发布，无法回滚' };
+  }
+  const previous = stable.filter((definition) => definition.version < current.version).at(-1);
+  if (!previous) return { ok: false, reason: '绑定空间没有更早的稳定版本' };
+  const nextVersion = stable.reduce((max, definition) => Math.max(max, definition.version), current.version) + 1;
+  return {
+    ok: true,
+    definition: {
+      ...previous,
+      version: nextVersion,
+      status: 'rolled_back',
+      publishedBy: actor,
+      publishedAt: now,
+      updatedBy: actor,
+      updatedAt: now,
+      rolledFromVersion: current.version,
+      restoredVersion: previous.version,
+    },
+  };
 }
 
 export interface DryRunStep {

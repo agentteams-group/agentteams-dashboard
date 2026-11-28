@@ -8,6 +8,10 @@ import type { MatrixEvent } from '@/lib/matrix-api';
 import { MessageBubble } from './views/MessageBubble';
 import { markStoppedMessages } from '@/lib/direct-execution';
 
+vi.mock('./lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('./markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('./markdown-message', () => ({ MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div> }));
 afterEach(cleanup);
 

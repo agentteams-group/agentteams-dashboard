@@ -9,6 +9,14 @@ import {
   CUSTOM_SKILL_MARKER,
 } from './skill-center-types';
 import { isValidNameSegment, parseSkillFrontmatter } from './skill-package';
+import {
+  getNacosAccessToken,
+  nacosFetch,
+  readNacosErrorText,
+  readNacosJson,
+  redactNacosUrl,
+  sanitizeNacosText,
+} from './nacos-fetcher';
 
 export { SKILLS_BUCKET, SKILLS_METADATA_PREFIX, SKILL_NAME_PATTERN, GLOBAL_SKILLS_PREFIX, CUSTOM_SKILL_MARKER };
 
@@ -280,62 +288,34 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
   const mode = config.mode || 'services';
   const apiBase = `${protocol}://${hostPort}`;
 
-  // Login is always at /v1/auth/login regardless of mode
-  let accessToken = '';
-  let loginInfo = '';
-  if (config.username && config.password) {
-    try {
-      const loginUrl = `${apiBase}/v1/auth/login`;
-      const loginRes = await fetch(loginUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ username: config.username, password: config.password }),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (loginRes.ok) {
-        const loginData = await loginRes.json() as { accessToken?: string };
-        accessToken = loginData.accessToken || '';
-        loginInfo = accessToken ? '已认证' : '登录成功但无 token';
-      } else {
-        loginInfo = `登录失败 HTTP ${loginRes.status}`;
-      }
-    } catch (err) {
-      loginInfo = `登录异常: ${err instanceof Error ? err.message : 'unknown'}`;
-    }
-  } else {
-    loginInfo = '无凭据，跳过登录';
-  }
+  const accessToken = await getNacosAccessToken(config);
+  const loginInfo = accessToken ? '已认证' : '无有效 token（匿名请求）';
+  const headers = { 'Content-Type': 'application/json' };
 
-  const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
-  const nsParam = `namespaceId=${encodeURIComponent(namespace)}`;
-
-  let listUrl: string;
-  if (mode === 'skills') {
-    // Nacos 3.2+ Skill Registry: /v3/console/ai/skills/list
-    listUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
-  } else {
-    // Traditional service discovery: {prefix}/v1/ns/catalog/services
-    listUrl = `${apiBase}${prefix}/v1/ns/catalog/services?pageNo=1&pageSize=500&${nsParam}${tokenParam}`;
-  }
+  const listUrl = mode === 'skills'
+    ? `${apiBase}/v3/console/ai/skills/list?${new URLSearchParams({ filterableForm: 'true', pageNo: '1', pageSize: '500', namespaceId: namespace })}`
+    : `${apiBase}${prefix}/v1/ns/catalog/services?${new URLSearchParams({ pageNo: '1', pageSize: '500', namespaceId: namespace })}`;
 
   let nacosSkills: SkillEntry[] = [];
   try {
-    const response = await fetch(listUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
+    const response = await nacosFetch(listUrl, { accessToken, headers, timeoutMs: 10000 });
     if (!response.ok) {
-      let errorBody = '';
-      try { errorBody = await response.text(); } catch { /* ignore */ }
+      const errorBody = await readNacosErrorText(response, accessToken);
       return {
         nacosSkills: [],
         updatedConfig: {
           ...config,
           lastSyncAt: new Date().toISOString(),
           lastSyncStatus: 'error' as const,
-          lastSyncError: `Nacos 请求失败: HTTP ${response.status}\n模式: ${mode}\n登录: ${loginInfo}\nURL: ${listUrl}\n响应: ${errorBody.substring(0, 500)}`,
+          lastSyncError: `Nacos 请求失败: HTTP ${response.status}\n模式: ${mode}\n登录: ${loginInfo}\nURL: ${redactNacosUrl(listUrl, [accessToken])}\n响应: ${errorBody.substring(0, 500)}`,
         },
       };
     }
 
-    const data = await response.json();
+    const data = await readNacosJson<{
+      code?: number;
+      data?: { pageItems?: Record<string, unknown>[]; pagesAvailable?: number; serviceList?: Record<string, unknown>[] };
+    }>(response, accessToken);
     const allItems: Record<string, unknown>[] = [];
 
     if (mode === 'skills') {
@@ -345,10 +325,10 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
         allItems.push(...(body.data.pageItems || []));
         // Fetch remaining pages
         for (let page = 2; page <= (body.data.pagesAvailable || 1); page++) {
-          const pagedUrl = `${apiBase}/v3/console/ai/skills/list?filterableForm=true&pageNo=${page}&pageSize=500&${nsParam}${tokenParam}`;
-          const pagedRes = await fetch(pagedUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
+          const pagedUrl = `${apiBase}/v3/console/ai/skills/list?${new URLSearchParams({ filterableForm: 'true', pageNo: String(page), pageSize: '500', namespaceId: namespace })}`;
+          const pagedRes = await nacosFetch(pagedUrl, { accessToken, headers, timeoutMs: 10000 });
           if (pagedRes.ok) {
-            const pagedData = await pagedRes.json() as { data?: { pageItems?: Record<string, unknown>[] } };
+            const pagedData = await readNacosJson<{ data?: { pageItems?: Record<string, unknown>[] } }>(pagedRes, accessToken);
             if (pagedData.data?.pageItems) {
               allItems.push(...pagedData.data.pageItems);
             }
@@ -381,7 +361,7 @@ export async function syncNacosSkills(config: NacosConfig): Promise<{
       }))
       .filter((s) => !!s.name);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Nacos 连接失败';
+    const message = sanitizeNacosText(err instanceof Error ? err.message : 'Nacos 连接失败', [accessToken]);
     return {
       nacosSkills: [],
       updatedConfig: { ...config, lastSyncAt: new Date().toISOString(), lastSyncStatus: 'error' as const, lastSyncError: message },

@@ -43,6 +43,12 @@ function authorizationOf(init: RequestInit | undefined): string | null {
   return new Headers(init?.headers).get('authorization');
 }
 
+async function fillRequiredAddresses() {
+  const inputs = await screen.findAllByPlaceholderText('host:port（自动识别 https / http）');
+  fireEvent.change(inputs[0], { target: { value: 'http://controller:8090' } });
+  fireEvent.change(inputs[2], { target: { value: 'http://matrix:6167' } });
+}
+
 const TOKEN_PLACEHOLDER = '见服务器日志或 DASHBOARD_SETUP_TOKEN';
 
 beforeEach(() => {
@@ -88,6 +94,8 @@ describe('BackendSetupPage: setup token 在会话内记住（重开回填）', (
     render(<BackendSetupPage onDone={onDone} />);
 
     const tokenInput = await screen.findByPlaceholderText(TOKEN_PLACEHOLDER);
+    expect(tokenInput).toHaveAttribute('type', 'password');
+    await fillRequiredAddresses();
     fireEvent.change(tokenInput, { target: { value: 'tok-save' } });
     fireEvent.click(screen.getByRole('button', { name: /保存并进入登录/ }));
 
@@ -109,6 +117,7 @@ describe('BackendSetupPage: setup token 在会话内记住（重开回填）', (
     await screen.findByDisplayValue('http://10.0.0.5:8090', undefined, { timeout: 3000 });
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe('tok-stale');
 
+    await fillRequiredAddresses();
     fireEvent.click(screen.getByRole('button', { name: /保存并进入登录/ }));
     await screen.findByText(/首次启动 token 不正确/);
     await waitFor(() => expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull());
@@ -194,6 +203,39 @@ describe('BackendSetupPage: 地址按槽位回填（外网不猜进内网）', (
   });
 });
 
+describe('BackendSetupPage: required fields and failed probe', () => {
+  it('gives credential fields unique accessible names and masks secrets', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GATE_SHAPE)));
+    render(<BackendSetupPage onDone={() => {}} />);
+    const authType = await screen.findByRole('combobox', { name: 'AgentTeams Controller 内网地址 认证方式' });
+    fireEvent.change(authType, { target: { value: 'basic' } });
+    expect(screen.getByLabelText('AgentTeams Controller 内网地址 用户名')).toBeRequired();
+    const password = screen.getByLabelText('AgentTeams Controller 内网地址 密码');
+    expect(password).toBeRequired();
+    expect(password).toHaveAttribute('type', 'password');
+  });
+
+  it('does not submit an empty form and exposes required-field errors', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(GATE_SHAPE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<BackendSetupPage onDone={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /保存并进入登录/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('请填写');
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+  });
+
+  it('shows a failed test response as an error instead of a successful empty result', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'POST' ? jsonResponse({ error: 'probe failed' }, 502) : jsonResponse(GATE_SHAPE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<BackendSetupPage onDone={() => {}} />);
+    const address = (await screen.findAllByPlaceholderText('host:port（自动识别 https / http）'))[0];
+    fireEvent.change(address, { target: { value: 'http://controller:8090' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '测试' })[0]);
+    expect(await screen.findByText('probe failed')).toBeInTheDocument();
+  });
+});
+
 describe('BackendSetupPage: 草稿凭据参与「测试」', () => {
   it('点「测试」时把表单里刚填的 Basic 凭据一起送出（否则门后地址永远 401）', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -215,7 +257,7 @@ describe('BackendSetupPage: 草稿凭据参与「测试」', () => {
 
     const addrInput = (await screen.findAllByPlaceholderText('host:port（自动识别 https / http）'))[0];
     fireEvent.change(addrInput, { target: { value: 'http://10.0.0.5:8090' } });
-    fireEvent.change(screen.getAllByLabelText('内网地址认证方式')[0], {
+    fireEvent.change(screen.getAllByLabelText('AgentTeams Controller 内网地址 认证方式')[0], {
       target: { value: 'basic' },
     });
     fireEvent.change(screen.getAllByPlaceholderText('用户名')[0], { target: { value: 'ops' } });
