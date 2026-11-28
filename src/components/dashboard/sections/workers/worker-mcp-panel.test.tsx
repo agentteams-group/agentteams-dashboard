@@ -4,7 +4,6 @@ import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ApiError } from '@/lib/api-error';
 import type { WorkerResponse } from '@/lib/agentteams-api';
-import type { WorkerMcpResult } from '@/lib/worker-mcp';
 
 const mocks = vi.hoisted(() => ({
   fetchWorkerMcp: vi.fn(),
@@ -44,12 +43,12 @@ function makeWorker(mcpServers: Array<{ name: string; url: string; transport: st
 
 function renderPanel(
   mcpServers: Array<{ name: string; url: string; transport: string }> = [],
-  options: { canEdit?: boolean; onChanged?: () => void } = {},
+  options: { canEdit?: boolean; onChanged?: () => void; runtime?: WorkerResponse["runtime"] } = {},
 ) {
   return render(
     <TooltipProvider>
       <WorkerMcpPanel
-        worker={makeWorker(mcpServers)}
+        worker={{ ...makeWorker(mcpServers), runtime: options.runtime ?? "qwenpaw" }}
         workerName="worker-a"
         workerTeam="team-alpha"
         canEdit={options.canEdit ?? false}
@@ -80,143 +79,47 @@ afterEach(() => {
 });
 
 describe('WorkerMcpPanel', () => {
-  it('merges declared and self-registered rows by name, with self-registered winning conflicts', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: true,
-      items: [
-        { name: 'ctx7', url: 'https://self.example/sse', transport: 'sse' },
-        { name: 'teamharness', url: 'http://teamharness.example/mcp', transport: 'http' },
-      ],
-    } satisfies WorkerMcpResult);
+  it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)(
+    'uses Core assignments without a native registry lookup for %s', async (runtime) => {
+      mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [{ name: 'native-only' }] });
+      renderPanel([{ name: 'github-long-service-name', url: 'https://gateway/private', transport: 'http' }], { runtime, canEdit: true });
+      expect(screen.getByTitle('github-long-service-name')).toHaveClass('truncate');
+      expect(screen.getByRole('combobox', { name: '添加 MCP 服务' })).toBeVisible();
+      expect(screen.getByRole('button', { name: '移除 github-long-service-name' })).toBeVisible();
+      expect(screen.getByRole('button', { name: '审批策略' })).toBeVisible();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(mocks.fetchWorkerMcp).not.toHaveBeenCalled();
+      expect(screen.queryByText('native-only')).not.toBeInTheDocument();
+      expect(screen.queryByText(/https?:\/\//)).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    },
+  );
 
-    renderPanel([
-      { name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' },
-      { name: 'declared-only', url: 'http://declared-only.example/mcp', transport: 'http' },
-    ]);
-
-    expect(await screen.findByText('https://self.example/sse')).toBeInTheDocument();
-    // 同 name 只一行：声明侧的旧 endpoint 不再出现（自注册优先）。
-    expect(screen.queryByText('http://declared.example/mcp')).not.toBeInTheDocument();
-    expect(screen.getByText('http://declared-only.example/mcp')).toBeInTheDocument();
-    expect(screen.getAllByText('声明')).toHaveLength(2);
-    expect(screen.getAllByText('注册')).toHaveLength(2);
-    expect(screen.getByText('teamharness')).toBeInTheDocument();
-  });
-
-  it('shows env/header key names only, with values masked', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: true,
-      items: [
-        {
-          name: 'teamharness',
-          transport: 'stdio',
-          command: '~/bin/mcp-server',
-          args: ['--flag'],
-          envKeys: ['AGENTTEAMS_WORKER_MATRIX_TOKEN'],
-          headerKeys: ['Authorization'],
-        },
-      ],
-    } satisfies WorkerMcpResult);
-
+  it('shows an empty assignment list without waiting for a running Agent', () => {
     renderPanel();
-
-    expect(await screen.findByText(/env: AGENTTEAMS_WORKER_MATRIX_TOKEN=\*\*\*/)).toBeInTheDocument();
-    expect(screen.getByText(/headers: Authorization=\*\*\*/)).toBeInTheDocument();
-    expect(screen.getByText('~/bin/mcp-server --flag')).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('secret');
-  });
-
-  it('degrades to one info line on 404 while still showing declared servers', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: false,
-      reason: 'controller_too_old',
-      items: [],
-    } satisfies WorkerMcpResult);
-
-    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }]);
-
-    expect(await screen.findByText(/需升级 controller/)).toBeInTheDocument();
-    expect(screen.getByText('ctx7')).toBeInTheDocument();
-    expect(screen.getByText('http://declared.example/mcp')).toBeInTheDocument();
-    expect(screen.queryByText('无 MCP server')).not.toBeInTheDocument();
-  });
-
-  it('degrades to one info line on 403 without hiding declared servers', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: false,
-      reason: 'forbidden',
-      items: [],
-    } satisfies WorkerMcpResult);
-
-    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }]);
-
-    expect(await screen.findByText(/无权限读取 worker 自注册 MCP/)).toBeInTheDocument();
-    expect(screen.getByText('ctx7')).toBeInTheDocument();
-  });
-
-  it('shows the empty state only when both paths are genuinely empty', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: true,
-      items: [],
-    } satisfies WorkerMcpResult);
-
-    renderPanel();
-
-    expect(await screen.findByText('无 MCP server')).toBeInTheDocument();
-  });
-
-  it('keeps declared servers visible when the self-registered read fails', async () => {
-    mocks.fetchWorkerMcp.mockRejectedValue(new Error('boom'));
-
-    renderPanel([{ name: 'declared-only', url: 'http://declared-only.example/mcp', transport: 'http' }]);
-
-    expect(await screen.findByText(/读取 worker 自注册 MCP 失败/)).toBeInTheDocument();
-    expect(screen.getByText('declared-only')).toBeInTheDocument();
-    expect(screen.queryByText('无 MCP server')).not.toBeInTheDocument();
-  });
-
-  it('labels declared rows editable and self-registered-only rows read-only', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({
-      available: true,
-      items: [{ name: 'mm-bridge', url: 'http://self.example/mcp', transport: 'http' }],
-    } satisfies WorkerMcpResult);
-
-    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }], {
-      canEdit: true,
-    });
-
-    expect(await screen.findByText('运行时注册，只读')).toBeInTheDocument();
-    expect(screen.getByText('可在上方编辑')).toBeInTheDocument();
-    // 编辑入口只有 declared 区顶部那一个，自注册行没有单独入口。
-    expect(screen.getAllByRole('button', { name: '编辑分配' })).toHaveLength(1);
+    expect(screen.getByText('尚未分配 MCP 服务')).toBeVisible();
+    expect(mocks.fetchWorkerMcp).not.toHaveBeenCalled();
   });
 
   it('hides the edit entry without update permission', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] } satisfies WorkerMcpResult);
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
 
     renderPanel([], { canEdit: false });
 
-    expect(await screen.findByText('无 MCP server')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '编辑分配' })).not.toBeInTheDocument();
+    expect(await screen.findByText('尚未分配 MCP 服务')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '添加 MCP 服务' })).not.toBeInTheDocument();
   });
 
-  it('opens the edit dialog with the declared allocation preloaded', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] } satisfies WorkerMcpResult);
-
-    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }], {
-      canEdit: true,
-    });
-
-    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
-
-    expect(await screen.findByText('MCP 分配 — worker-a')).toBeInTheDocument();
-    // McpSelector 的 value 初值 = declared（选择器触发按钮上显示已选数量）。
-    expect(screen.getByRole('button', { name: /1 个 MCP 服务器已选择/ })).toBeInTheDocument();
-    expect(screen.getByText(/所属团队：team-alpha/)).toBeInTheDocument();
+  it('shows inline allocation without opening a dialog', async () => {
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
+    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }], { canEdit: true });
+    expect(screen.getByRole('combobox', { name: '添加 MCP 服务' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '移除 ctx7' })).toBeInTheDocument();
   });
 
-  it('saves only mcpServers and refreshes both views on success', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] } satisfies WorkerMcpResult);
+  it('saves only mcpServers and refreshes Core detail on success', async () => {
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
     mocks.updateWorker.mockResolvedValue({ name: 'worker-a' });
     const onChanged = vi.fn();
 
@@ -225,11 +128,8 @@ describe('WorkerMcpPanel', () => {
       onChanged,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
-    fireEvent.click(await screen.findByRole('button', { name: /1 个 MCP 服务器已选择/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /github/ }));
-    fireEvent.click(screen.getByRole('button', { name: '确定 (2 个)' }));
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.focus(screen.getByRole('combobox', { name: '添加 MCP 服务' }));
+    fireEvent.mouseDown(await screen.findByRole('option', { name: 'github' }));
 
     await waitFor(() =>
       expect(mocks.updateWorker).toHaveBeenCalledWith('worker-a', {
@@ -245,12 +145,23 @@ describe('WorkerMcpPanel', () => {
     ]);
     await waitFor(() => expect(screen.queryByText('MCP 分配 — worker-a')).not.toBeInTheDocument());
     expect(onChanged).toHaveBeenCalledTimes(1);
-    // 合并视图刷新：初次挂载 1 次 + 保存成功后 1 次。
-    await waitFor(() => expect(mocks.fetchWorkerMcp).toHaveBeenCalledTimes(2));
+    expect(mocks.fetchWorkerMcp).not.toHaveBeenCalled();
+  });
+
+  it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)('saves the standard wildcard approval for %s', async (runtime) => {
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
+    const server = { name: 'github', url: 'http://gateway/mcp/github', transport: 'http' };
+    renderPanel([server], { canEdit: true, runtime });
+    fireEvent.click(await screen.findByRole('button', { name: '审批策略' }));
+    fireEvent.change(screen.getByLabelText('github · 全部工具审批'), { target: { value: 'ask' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mocks.updateWorker).toHaveBeenCalledWith('worker-a', {
+      mcpServers: [{ ...server, approvals: { tools: '*', mode: 'ask' } }],
+    }));
   });
 
   it('keeps the dialog open and shows the backend message when save fails', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] } satisfies WorkerMcpResult);
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
     mocks.updateWorker.mockRejectedValue(
       new ApiError('forbidden: 需要团队管理员才能修改 mcpServers', 403, 'PUT /workers/worker-a'),
     );
@@ -261,28 +172,21 @@ describe('WorkerMcpPanel', () => {
       onChanged,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
-    fireEvent.click(await screen.findByRole('button', { name: '保存' }));
+    fireEvent.click(await screen.findByRole('button', { name: '移除 ctx7' }));
 
     expect(
       await screen.findByText(/forbidden: 需要团队管理员才能修改 mcpServers/),
     ).toBeInTheDocument();
-    expect(screen.getByText('MCP 分配 — worker-a')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '移除 ctx7' })).toBeInTheDocument();
     expect(onChanged).not.toHaveBeenCalled();
-    expect(mocks.fetchWorkerMcp).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchWorkerMcp).not.toHaveBeenCalled();
   });
 
-  it('does not write anything when the dialog is cancelled', async () => {
-    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] } satisfies WorkerMcpResult);
-
-    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }], {
-      canEdit: true,
-    });
-
-    fireEvent.click(await screen.findByRole('button', { name: '编辑分配' }));
-    fireEvent.click(await screen.findByRole('button', { name: '取消' }));
-
-    await waitFor(() => expect(screen.queryByText('MCP 分配 — worker-a')).not.toBeInTheDocument());
-    expect(mocks.updateWorker).not.toHaveBeenCalled();
+  it('removes a declared allocation directly from the list', async () => {
+    mocks.fetchWorkerMcp.mockResolvedValue({ available: true, items: [] });
+    mocks.updateWorker.mockResolvedValue({});
+    renderPanel([{ name: 'ctx7', url: 'http://declared.example/mcp', transport: 'http' }], { canEdit: true });
+    fireEvent.click(screen.getByRole('button', { name: '移除 ctx7' }));
+    await waitFor(() => expect(mocks.updateWorker).toHaveBeenCalledWith('worker-a', { mcpServers: [] }));
   });
 });

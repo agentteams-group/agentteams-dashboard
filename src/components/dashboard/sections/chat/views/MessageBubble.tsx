@@ -394,29 +394,21 @@ export function MessageBubble({
   const firstTextIndex = parsedBlocks.findIndex(block => block.type === 'text' && block.text && !isProcessBlock(block));
   const mentionedUserIds = (message.rawContent?.['m.mentions'] as { user_ids?: string[] } | undefined)?.user_ids;
 
-  // Worker messages fold their whole process (thinking + tool calls) into one
-  // disclosure per contiguous segment: the avatar anchors a compact summary
-  // and the result output stays visible below it. Own messages keep the raw
-  // rendering so an edited/echoed bubble never hides what the user typed.
+  // Keep one process disclosure per turn, including steps separated by file cards.
+  // Business conclusions and attachments remain visible outside the disclosure.
   const processSegments = useMemo(() => {
     const runs = new Map<number, ParsedA2uiBlock[]>();
     const folded = new Set<number>();
     if (message.isMe) return { runs, folded };
-    let idx = 0;
-    while (idx < parsedBlocks.length) {
-      if (!isProcessBlock(parsedBlocks[idx])) {
-        idx += 1;
-        continue;
+    const process: ParsedA2uiBlock[] = [];
+    parsedBlocks.forEach((block, index) => {
+      if (isProcessBlock(block)) {
+        folded.add(index);
+        process.push(block);
       }
-      const start = idx;
-      const run: ParsedA2uiBlock[] = [];
-      while (idx < parsedBlocks.length && isProcessBlock(parsedBlocks[idx])) {
-        run.push(parsedBlocks[idx]);
-        folded.add(idx);
-        idx += 1;
-      }
-      runs.set(start, run);
-    }
+    });
+    const first = folded.values().next().value;
+    if (first !== undefined) runs.set(first, process);
     return { runs, folded };
   }, [parsedBlocks, message.isMe]);
 

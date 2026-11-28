@@ -13,7 +13,7 @@ vi.mock('@/components/dashboard/document-preview', () => ({
   DocumentPreview: ({ filename }: { filename: string }) => <div>分页预览 {filename}</div>,
 }));
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 function render(ui: React.ReactElement) {
   return renderComponent(ui, {
@@ -94,6 +94,17 @@ describe('AttachmentCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看 plan.md' }));
     expect(await screen.findByRole('heading', { name: '项目计划' })).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveTextContent('完成');
+  });
+
+  it('shows authenticated screenshots inside the report preview without separate file cards', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/agentteams');
+    const source = '/api/agentteams/tasks/exec-test/files?team=own&artifactId=image&version=frozen';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(`# 测试报告\n\n![桌面功能界面](${source})`)));
+    render(<AttachmentCard payload={makePayload({ filename: 'test-report.md', mimetype: 'text/markdown' })} />);
+    fireEvent.click(screen.getByRole('button', { name: '查看 test-report.md' }));
+    expect(await screen.findByRole('img', { name: '桌面功能界面' })).toHaveAttribute('src',
+      '/agentteams/api/agentteams/tasks/exec-test/files/?team=own&artifactId=image&version=frozen');
+    expect(screen.queryByRole('button', { name: '查看 desktop.png' })).toBeNull();
   });
 
   it('bounds text preview size', async () => {

@@ -78,13 +78,16 @@ async function resolveRoot(request: NextRequest): Promise<string | NextResponse>
   return error('尚未找到此房间的任务目录', 404);
 }
 
-function listFiles(client: Client, bucket: string, root: string, base: string): Promise<StorageObject[]> {
+const taskSourceFile = /(?:^|\/)(?:Dockerfile|Makefile|go\.(?:mod|sum)|yarn\.lock)$|\.(?:html?|css|scss|less|[cm]?js|jsx|[cm]?ts|tsx|vue|astro|svelte|py|go|rs|c|cc|cpp|h|hpp|java|kt|swift|cs|rb|php|sh|bash|sql|json|ya?ml|toml|patch|diff|bundle)$/i;
+
+function listFiles(client: Client, bucket: string, root: string, base: string, taskRoom: boolean): Promise<StorageObject[]> {
   return new Promise((resolve, reject) => {
     const objects: StorageObject[] = [];
     const stream = client.listObjects(bucket, base, false);
     stream.on('data', obj => {
       const key = obj.prefix ?? obj.name;
       if (!key || key === base || !key.startsWith(base) || isSensitiveObjectKey(key)) return;
+      if (taskRoom && !obj.prefix && taskSourceFile.test(key)) return;
       objects.push({ key: key.slice(root.length), size: obj.size ?? 0, isPrefix: !!obj.prefix });
     });
     stream.on('error', reject);
@@ -116,7 +119,7 @@ export async function GET(request: NextRequest) {
       } });
     }
     const base = root + (prefix ? prefix.replace(/\/$/, '') + '/' : '');
-    return NextResponse.json({ root, objects: await listFiles(client, bucket, root, base) });
+    return NextResponse.json({ root, objects: await listFiles(client, bucket, root, base, !request.nextUrl.searchParams.has('team')) });
   } catch {
     return error(key === null ? '无法读取文件列表' : '无法读取该文件', 502);
   }

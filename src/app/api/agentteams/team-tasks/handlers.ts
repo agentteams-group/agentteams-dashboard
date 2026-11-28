@@ -54,6 +54,7 @@ export type TaskStatus =
   | 'revision'
   | 'completed'
   | 'failed'
+  | 'cancelled'
   | 'blocked'
   | 'unknown';
 
@@ -227,7 +228,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * Align raw meta.json statuses with the AgentTeams controller's
  * normalizeTaskStatus (project_handler.go): planned→pending,
  * assigned/delegated→assigned (delegated), in_progress/submitted→in_progress,
- * revision keeps its own state (需修订), cancelled→blocked. Legacy worker
+ * revision and cancelled keep their own states. Legacy worker
  * spellings (queued/todo/open/running/…) stay supported.
  */
 function normalizeStatus(raw?: string): TaskStatus {
@@ -252,7 +253,8 @@ function normalizeStatus(raw?: string): TaskStatus {
   if (lower === 'completed' || lower === 'success' || lower === 'done' || lower === 'finished')
     return 'completed';
   if (lower === 'failed' || lower === 'error') return 'failed';
-  if (lower === 'blocked' || lower === 'cancelled' || lower === 'canceled' || lower === 'paused' || lower === 'waiting')
+  if (lower === 'cancelled' || lower === 'canceled') return 'cancelled';
+  if (lower === 'blocked' || lower === 'paused' || lower === 'waiting')
     return 'blocked';
   return 'unknown';
 }

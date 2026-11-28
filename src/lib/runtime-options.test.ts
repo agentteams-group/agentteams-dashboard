@@ -10,17 +10,12 @@ import {
 describe('runtime options', () => {
   it('does not offer copaw when creating a worker', () => {
     expect(CREATABLE_WORKER_RUNTIMES.map((item) => item.value)).toEqual([
-      'openclaw',
-      'hermes',
-      'qwenpaw',
-      'deepseek-harness',
-      'codex',
-      'openhuman',
+      'codex', 'qwenpaw', 'claudecode', 'hermes', 'deepseek-harness', 'openhuman', 'openclaw',
     ]);
   });
 
   it('does not offer copaw when creating a manager', () => {
-    expect(CREATABLE_MANAGER_RUNTIMES.map((item) => item.value)).toEqual(['openclaw', 'qwenpaw']);
+    expect(CREATABLE_MANAGER_RUNTIMES.map((item) => item.value)).toEqual(['qwenpaw', 'deepseek-harness', 'codex', 'hermes', 'claudecode']);
   });
 
   it('recognises leftover copaw instances as legacy', () => {

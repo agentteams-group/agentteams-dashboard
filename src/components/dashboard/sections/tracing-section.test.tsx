@@ -191,3 +191,16 @@ it('does not query traces when the account resource scope cannot be resolved', a
   expect(fetcher.mock.calls[0][0]).toContain('options=resources');
   view.unmount(); client.clear();
 });
+
+it.each(['codex', 'claudecode'])('queries the %s runtime without selecting an Agent first', async (runtime) => {
+  const fetcher = vi.fn().mockImplementation((url: string) => Promise.resolve(traceResponse(url,
+    { data: [], meta: { page: 1, totalPages: 0, totalItems: 0 } })));
+  vi.stubGlobal('fetch', fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><TracingSection /></QueryClientProvider>);
+  fireEvent.keyDown(await screen.findByRole('combobox', { name: '运行时' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: runtime }));
+  fireEvent.click(screen.getByRole('button', { name: '查询' }));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes(`runtime=${runtime}`))).toBe(true));
+  view.unmount(); client.clear();
+});

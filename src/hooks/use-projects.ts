@@ -210,8 +210,10 @@ function workflowStatusToTaskStatus(status?: string): TaskStatus {
     case 'failed':
     case 'error':
       return 'failed';
-    case 'blocked':
     case 'cancelled':
+    case 'canceled':
+      return 'cancelled';
+    case 'blocked':
       return 'blocked';
     default:
       return 'unknown';

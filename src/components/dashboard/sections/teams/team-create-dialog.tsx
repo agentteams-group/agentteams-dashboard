@@ -38,7 +38,7 @@ export function parseWorkerNames(value: string): string[] {
 }
 
 const RUNTIME_OPTIONS: { value: WorkerRuntime; label: string }[] = CREATABLE_WORKER_RUNTIMES.map((option) =>
-  option.value === 'openclaw' ? { ...option, label: 'OpenClaw（默认）' } : option,
+  option.value === 'codex' ? { ...option, label: 'Codex（默认）' } : option,
 );
 
 /** 建队内联新建 Worker 的空白表单（对齐插件 nw 初始态）。
@@ -47,7 +47,7 @@ const RUNTIME_OPTIONS: { value: WorkerRuntime; label: string }[] = CREATABLE_WOR
  * 只能从现有的选，应参考插件允许新建即 leader）。 */
 const EMPTY_NEW_WORKER = {
   name: '',
-  runtime: 'openclaw' as WorkerRuntime,
+  runtime: 'codex' as WorkerRuntime,
   model: '',
   modelProvider: '',
   soul: '',

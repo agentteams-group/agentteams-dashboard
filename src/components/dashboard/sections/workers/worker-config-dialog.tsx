@@ -39,7 +39,7 @@ export function WorkerConfigDialog({
           <Textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder='{"name": "worker-x", "runtime": "openclaw", "model": "gpt-4"}'
+            placeholder='{"name": "worker-x", "runtime": "qwenpaw", "model": "gpt-4"}'
             rows={12}
             className="font-mono text-xs"
           />

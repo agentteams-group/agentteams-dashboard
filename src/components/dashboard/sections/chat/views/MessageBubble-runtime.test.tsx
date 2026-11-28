@@ -133,6 +133,24 @@ describe('MessageBubble live run progress', () => {
     expect(screen.getByText('先拆解需求')).toBeInTheDocument();
   });
 
+  it('keeps one process disclosure across a visible delivery file and conclusion', () => {
+    renderBubble(makeMessage({
+      runtime: 'codex', turnState: 'finalized',
+      precomputedBlocks: [
+        { type: 'thinking', content: '检查交付' },
+        { type: 'attachment', payload: { url: 'mxc://server/report', filename: 'test-report.md', mimetype: 'text/markdown' } },
+        { type: 'thinking', content: '确认测试结论' },
+        { type: 'text', text: '独立测试通过，交给开发转为待审核。' },
+      ],
+    }));
+    expect(screen.getAllByTestId('run-process')).toHaveLength(1);
+    expect(screen.getByText('test-report.md')).toBeVisible();
+    expect(screen.getByText('独立测试通过，交给开发转为待审核。')).toBeVisible();
+    expandProcess();
+    expect(screen.getByText('检查交付')).toBeVisible();
+    expect(screen.getByText('确认测试结论')).toBeVisible();
+  });
+
   it('folds a long-message attachment into the process panel', () => {
     renderBubble(
       makeMessage({

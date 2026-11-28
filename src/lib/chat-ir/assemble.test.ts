@@ -65,6 +65,52 @@ function assemble(
 }
 
 describe('ChatIR turn assembly', () => {
+  it('keeps an explicitly final edited answer after an earlier standalone process tile', () => {
+    const run = { 'org.agentteams.run_id': 'native-run' };
+    const events = [
+      notice('$placeholder', '@w:server', '处理中...', 0, { ...run, 'org.agentteams.progress_only': true }),
+      notice('$process', '@w:server', '执行过程', 10, { ...run, 'org.agentteams.progress_only': true,
+        'org.agentteams.run': { version: '1', run_id: 'native-run', blocks: [{ type: 'tool_call', tool_call_id: 'pwd', tool_name: 'terminal', status: 'succeeded' }] } }),
+      ev('$final', '@w:server', '* Manager 工具验收 OK', 20, {
+        ...replaceOf('$placeholder', 'Manager 工具验收 OK'),
+        'm.new_content': { msgtype: 'm.text', body: 'Manager 工具验收 OK', ...run, 'org.agentteams.progress_only': false },
+      }),
+    ];
+    const result = assemble(events, 'qwenpaw');
+    expect(result.messages.at(-1)?.content).toBe('Manager 工具验收 OK');
+  });
+
+  it('retains a previous runtime answer when the same account is now QwenPaw', () => {
+    const run = { 'org.agentteams.run_id': 'previous-runtime-run' };
+    const events = [
+      notice('$thinking', '@w:server', '核对路径', 0, { ...run, 'org.agentteams.progress_only': true }),
+      ev('$answer', '@w:server', '已完成工具调用', 20, { ...run, 'org.agentteams.progress_only': false }),
+    ];
+    expect(assemble(events, 'qwenpaw').messages.at(-1)?.content).toBe('已完成工具调用');
+  });
+
+  for (const runtime of ['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex']) {
+    it(`${runtime}: places the completed answer after an interleaved handoff`, () => {
+      const run = (block: Record<string, unknown>) => ({
+        'org.agentteams.run': { version: '1', run_id: 'test-run', blocks: [block] },
+        'org.agentteams.progress_only': true,
+      });
+      const events = [
+        notice('$test-start', '@w:server', '检查页面', 100, run({ type: 'thinking', content: '检查页面' })),
+        ev('$handoff', '@developer:server', '@w:server 开发已交付，请独立测试', 200),
+        ev('$test-result', '@w:server', '独立测试通过', 500, run({ type: 'text', text: '独立测试通过' })),
+      ];
+      for (const ordered of [events, events.toReversed()]) {
+        const { messages } = assemble(ordered, runtime);
+        expect(messages.map(message => message.content)).toEqual([
+          '@w:server 开发已交付，请独立测试', '独立测试通过',
+        ]);
+        expect(messages[1]).toMatchObject({ timestamp: BASE_TS + 500, canonicalEventId: '$test-start' });
+        expect(messages[1].sourceEventIds).toContain('$test-result');
+      }
+    });
+  }
+
   it('finalizes a QwenPaw task run whose first top-level event is a tool and whose report is a new Matrix event', () => {
     const run = (blocks: unknown[]) => ({ 'org.agentteams.run': { version: '1', run_id: 'qwenpaw:task:one', blocks },
       'org.agentteams.progress_only': true });
@@ -159,6 +205,51 @@ describe('ChatIR turn assembly', () => {
   it('does not create an empty receipt bubble for a quiet turn with no process', () => {
     expect(assemble([notice('$quiet', '@w:server', '已处理', 0)], 'qwenpaw').messages).toEqual([]);
   });
+
+  for (const runtime of ['codex', 'qwenpaw', 'hermes', 'deepseek-harness', 'claudecode']) {
+    it(`${runtime}: retains a text-only answer when its run ends quietly`, () => {
+      const events = [
+        ev('$prompt', ME, '任务状态？', 0),
+        ev('$answer', '@w:server', '任务已完成，PR #60 待审核。', 1000, {
+          'org.agentteams.run_id': '$prompt',
+          'org.agentteams.reply_txn': 'matrix-reply:answer',
+          'm.relates_to': { 'm.in_reply_to': { event_id: '$prompt' } },
+        }),
+        notice('$end', '@w:server', '执行过程', 2000, {
+          'org.agentteams.progress_only': true,
+          'org.agentteams.run': { version: '1', run_id: '$prompt', blocks: [{ type: 'error', kind: 'quiet', title: '已处理' }] },
+        }),
+      ];
+      const answerAfterEnding = events.map(event => event.event_id === '$answer'
+        ? { ...event, origin_server_ts: BASE_TS + 3000 } : event);
+      for (const ordered of [events, [...events].reverse(), answerAfterEnding, [...answerAfterEnding].reverse()]) {
+        expect(assemble(ordered, runtime).messages.find(message => message.content === '任务已完成，PR #60 待审核。'))
+          .toMatchObject({ replyToEventId: '$prompt', turnState: 'finalized' });
+      }
+    });
+  }
+
+  for (const runtime of ['codex', 'qwenpaw', 'hermes', 'deepseek-harness', 'claudecode']) {
+    for (const kind of ['quiet', 'failed', 'cancelled']) {
+      it(`${runtime}: uses the latest ending after a recovered attempt (${kind})`, () => {
+        const wire = (block: Record<string, unknown>) => ({
+          'org.agentteams.progress_only': true,
+          'org.agentteams.run': { version: '1', run_id: 'recovered-task-run', blocks: [block] },
+        });
+        const events = [
+          notice('$tool', '@w:server', '工具执行失败', 0, wire({ type: 'tool_call', tool_call_id: 'call-1', tool_name: 'terminal', status: 'failed' })),
+          notice('$failed', '@w:server', '执行失败', 100, wire({ type: 'error', kind: 'failed', title: '旧失败' })),
+          notice('$latest', '@w:server', '运行已结束', 200, wire({ type: 'error', kind, title: '最新状态' })),
+        ];
+        for (const ordered of [events, [...events].reverse()]) {
+          const { messages } = assemble(ordered, runtime);
+          const blocks = messages.flatMap(message => message.precomputedBlocks ?? []);
+          expect(blocks.filter(block => block.type === 'error')).toEqual(kind === 'quiet' ? [] : [expect.objectContaining({ payload: { kind, title: '最新状态' } })]);
+          expect(blocks).toContainEqual(expect.objectContaining({ type: 'tool_call', payload: expect.objectContaining({ status: 'failed' }) }));
+        }
+      });
+    }
+  }
 
   it('retains failure endings and genuinely interrupted runs', () => {
     const events = [
@@ -297,9 +388,10 @@ describe('ChatIR turn assembly', () => {
       ev('answer', '@w:server', '* 最终答案', 3_000, replaceOf('root', '最终答案')),
     ];
     const { messages } = assemble(events, 'qwenpaw');
-    expect(messages.map(({ turnState }) => turnState)).toEqual(['finalized', undefined]);
-    expect(messages[0].content).toBe('最终答案');
-    expect(messages[0].sourceEventIds).toEqual(expect.arrayContaining(['root', 'step', 'answer']));
+    expect(messages.map(({ turnState }) => turnState)).toEqual([undefined, 'finalized']);
+    expect(messages[0].content).toBe('项目已验收');
+    expect(messages[1].content).toBe('最终答案');
+    expect(messages[1].sourceEventIds).toEqual(expect.arrayContaining(['root', 'step', 'answer']));
   });
 
   it('keeps qwenpaw thread narration inside the process fold', () => {
@@ -724,13 +816,13 @@ describe('ChatIR turn assembly', () => {
 
     const { messages, turns } = assemble(events, 'qwenpaw');
 
-    expect(messages.map((message) => message.id)).toEqual(['root', 'file']);
-    expect(messages[0]).toMatchObject({ turnState: 'finalized', content: '交付完成：deliverable.html' });
-    const text = messages[0].precomputedBlocks?.map((block) => block.text ?? '').join('\n') ?? '';
+    expect(messages.map((message) => message.id)).toEqual(['file', 'root']);
+    expect(messages[1]).toMatchObject({ turnState: 'finalized', content: '交付完成：deliverable.html' });
+    const text = messages[1].precomputedBlocks?.map((block) => block.text ?? '').join('\n') ?? '';
     expect(text).toContain('先做研究');
     expect(text).toContain('文件已发送');
     expect(turns).toHaveLength(1);
-    expect(messages[1]).toMatchObject({ mediaUrl: 'mxc://server/opaqueId' });
+    expect(messages[0]).toMatchObject({ mediaUrl: 'mxc://server/opaqueId' });
   });
 
   it('associates an mxc image with the turn that names its filename', () => {

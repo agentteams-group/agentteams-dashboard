@@ -29,6 +29,7 @@ export type TaskStatus =
   | 'revision'
   | 'completed'
   | 'failed'
+  | 'cancelled'
   | 'blocked'
   | 'unknown';
 

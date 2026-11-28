@@ -25,6 +25,7 @@ import {
 import { unwrapFencedTables, convertFencedTablesInHtml } from './fenced-table';
 import { AttachmentCard } from './attachment-card';
 import { parseObservabilityLink } from '@/lib/observability-links';
+import { markdownUrl } from '@/lib/markdown-url';
 
 interface MarkdownMessageProps {
   content: string;
@@ -408,6 +409,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     <div className="matrix-message-content text-sm space-y-1">
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
+        urlTransform={markdownUrl}
         remarkPlugins={[remarkGfm, remarkMath, remarkMentions(memberMap, evidenceHtml ? undefined : mentionPrefix)]}
         rehypePlugins={[
           rehypeRaw,

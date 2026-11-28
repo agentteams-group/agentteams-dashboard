@@ -28,7 +28,14 @@ export type { MetaReadResult } from '@/lib/meta-api';
 
 export type WorkerPhase = 'Pending' | 'Running' | 'Sleeping' | 'Updating' | 'Stopped' | 'Failed' | 'Ready';
 export type WorkerState = 'Running' | 'Sleeping' | 'Stopped';
-export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex';
+export interface WorkerMcpServer {
+  name: string;
+  url: string;
+  transport: string;
+  approvals?: { tools: '*'; mode: 'allow' | 'ask' };
+}
+
+export type WorkerRuntime = 'openclaw' | 'copaw' | 'hermes' | 'openhuman' | 'qwenpaw' | 'deepseek-harness' | 'codex' | 'claudecode';
 export type TeamPhase = 'Pending' | 'Active' | 'Degraded' | 'Failed';
 export type HumanPhase = 'Pending' | 'Active' | 'Failed';
 export type ManagerPhase = 'Running' | 'Pending' | 'Failed';
@@ -57,6 +64,7 @@ export interface LlmTuningFields {
 }
 
 export interface WorkerResponse extends LlmTuningFields {
+  approvalMode?: 'ask' | 'allow';
   identity?: string;
   /** Present only when the Controller supports OpenClaw autonomous checks. */
   llmHeartbeatEnabled?: boolean;
@@ -80,7 +88,7 @@ export interface WorkerResponse extends LlmTuningFields {
   role: string;
   skills?: string[];
   agents?: string;
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   version?: string;
   /** ISO8601 time when the worker entered the current phase (optional, backend vNext). */
   stateStartedAt?: string;
@@ -282,6 +290,7 @@ export interface ManagerMcpServer {
 }
 
 export interface ManagerResponse {
+  approvalMode?: 'ask' | 'allow';
   name: string;
   phase: ManagerPhase;
   state: ManagerState;
@@ -700,7 +709,7 @@ export interface CreateWorkerRequest {
   soul?: string;
   agents?: string;
   skills?: string[];
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   package?: string;
   state?: WorkerState;
   containerManaged?: boolean;
@@ -708,6 +717,7 @@ export interface CreateWorkerRequest {
 
 // LLM 调优（#146 缺口 3）：空串 = 清除回默认；缺省 = 不改动。
 export interface UpdateWorkerRequest extends LlmTuningFields {
+  approvalMode?: 'ask' | 'allow';
   llmHeartbeatEnabled?: boolean;
   env?: Record<string, string>;
   model?: RequestModelAlias;
@@ -718,7 +728,7 @@ export interface UpdateWorkerRequest extends LlmTuningFields {
   soul?: string;
   agents?: string;
   skills?: string[];
-  mcpServers?: { name: string; url: string; transport: string }[];
+  mcpServers?: WorkerMcpServer[];
   package?: string;
   state?: WorkerState;
   containerManaged?: boolean;
@@ -805,7 +815,7 @@ export async function ensureWorkersExist(
   const existingNames = new Set(existing.map((worker) => worker.name));
   const missing = [...new Set(members.map((member) => member.name))]
     .filter((name) => name && !existingNames.has(name));
-  const runtime = options.defaultRuntime ?? ('openclaw' as WorkerRuntime);
+  const runtime = options.defaultRuntime ?? ('codex' as WorkerRuntime);
   for (const name of missing) {
     const payload: { name: string; runtime: WorkerRuntime; model?: RequestModelAlias } = {
       name,
@@ -848,6 +858,7 @@ export interface CreateManagerRequest {
 }
 
 export interface UpdateManagerRequest {
+  approvalMode?: 'ask' | 'allow';
   model?: RequestModelAlias;
   modelProvider?: string;
   runtime?: string;

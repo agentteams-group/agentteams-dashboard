@@ -65,6 +65,14 @@ describe('TeamEditDialog (plugin parity: members from existing Workers only)', (
     vi.clearAllMocks();
   });
 
+  it('preserves retired native tuning values when editing a team name', () => {
+    const { onChange } = renderDialog({ value: { teamName: 'old', llmMaxRetries: '7', llmStreamIdleTimeout: '45' } });
+    expect(screen.queryByText(/LLM 调优默认/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('显示名称'), { target: { value: 'new' } });
+    expect(onChange).toHaveBeenCalledWith({ teamName: 'new', llmMaxRetries: '7', llmStreamIdleTimeout: '45' });
+  });
+
   it('missing worker (loaded from server) → red warning + save blocked', () => {
     renderDialog({ value: { workerNames: ['ghost-w', 'real-w'] }, workers: [worker('real-w')] });
     expect(screen.getByText(/以下 Worker 不存在/)).toHaveTextContent('ghost-w');

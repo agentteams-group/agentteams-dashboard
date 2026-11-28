@@ -2,7 +2,7 @@
 
 import { NativeSelect } from '@/components/ui/native-select';
 import { OverflowText } from '@/components/dashboard/overflow-text';
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useRef, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeftRight, ArrowRight, ChevronDown, ChevronRight, Clock, Gauge, Globe, Info, Key, Link2, Loader2, Monitor, Pencil, Play, Plus, Route, Save, Server, ToggleLeft, ToggleRight, Trash2, Users, Zap } from 'lucide-react';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { InfoTip } from '@/components/dashboard/info-tip';
@@ -209,17 +209,18 @@ function ModelProbeStatus({ result, onRetry }: { result: ModelProbeResult | null
   return result ? <div role="status" className={'flex items-start gap-2 rounded-md border p-3 text-xs leading-5 ' + (result.success ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400' : 'border-destructive/30 bg-destructive/5 text-destructive')}>
     {result.success ? <Zap className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
     {result.code === 'model_probe_host_not_allowed' && result.blockedHost && onRetry ? <ModelProbeAllowlistPrompt host={result.blockedHost} onRetry={onRetry} /> : null}
-    <div className="min-w-0 break-words"><p>{result.message}</p>{result.model || result.latencyMs !== undefined ? <p className="text-muted-foreground">{result.model}{result.latencyMs !== undefined ? ` · ${result.latencyMs} ms` : ''}</p> : null}</div>
+    <div className="min-w-0 break-words"><p className="font-medium">{result.success ? '连接测试成功，可以正常使用' : '连接测试失败'}</p>{!result.success && <p>失败原因：{result.message}</p>}{result.model || result.latencyMs !== undefined ? <p className="text-muted-foreground">{result.model}{result.latencyMs !== undefined ? ` · ${result.latencyMs} ms` : ''}</p> : null}</div>
   </div> : null;
 }
 
 function ConnectionTestDialog({ provider, onClose }: { provider: LlmProviderResponse; onClose: () => void }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const models = [...new Set(mappingRules(provider.rawConfigs?.modelMapping).map((mapping) => mapping.targetModel).filter(Boolean))];
   const [model, setModel] = useState(models[0] ?? '');
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ModelProbeResult | null>(null);
   const handleTest = async () => { setTesting(true); setResult(null); const next = await probeModelConnection({ providerName: provider.name, model: model.trim() }); setResult(next); setTesting(false); };
-  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-[95vw] sm:max-w-md"><DialogHeader><DialogTitle>测试连接 - {provider.name}</DialogTitle><DialogDescription>使用已保存的 API 地址和密钥，直连所选模型进行一次短调用。</DialogDescription></DialogHeader>
+  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-[95vw] sm:max-w-md" onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus(); }}><DialogHeader><DialogTitle ref={titleRef} tabIndex={-1}>测试连接 - {provider.name}</DialogTitle><DialogDescription>使用已保存的 API 地址和密钥，直连所选模型进行一次短调用。</DialogDescription></DialogHeader>
     <div className="min-w-0 space-y-3 py-2"><Label htmlFor="saved-probe-model">模型 ID</Label><Combobox id="saved-probe-model" portal ariaLabel="测试模型 ID" value={model} options={models} disabled={testing} placeholder="选择或输入要测试的模型 ID" onChange={(next) => { setModel(next); setResult(null); }} />
       <p className="text-xs leading-5 text-muted-foreground">测试输出预算最多 256 Token，可能产生少量费用；不验证 Agent 授权或工具调用能力。</p>
       {testing ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在调用模型，最长等待 30 秒…</p> : <ModelProbeStatus result={result} onRetry={handleTest} />}

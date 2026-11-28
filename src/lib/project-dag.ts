@@ -189,7 +189,7 @@ export function buildTaskDag(tasks: BoardTask[]): ProjectDag {
 /** Map a normalized workflow node status (controller normalizeTaskStatus:
  * pending | delegated | in-progress | completed | revision | blocked) to the
  * task-board status space for the shared DAG color table. revision keeps its
- * own status (需修订 column); cancelled folds into blocked. */
+ * own status (需修订 column); cancelled remains terminal. */
 const WORKFLOW_STATUS_MAP: Record<string, TaskStatus> = {
   pending: 'pending',
   delegated: 'assigned',
@@ -198,6 +198,7 @@ const WORKFLOW_STATUS_MAP: Record<string, TaskStatus> = {
   completed: 'completed',
   blocked: 'blocked',
   failed: 'failed',
+  cancelled: 'cancelled',
   unknown: 'unknown',
 };
 

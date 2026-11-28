@@ -402,17 +402,14 @@ describe('TeamDrawer · 基本信息 / LLM 调优', () => {
     );
   });
 
-  it('团队 LLM 调优随同一次团队 PUT 提交', async () => {
-    renderDrawer();
+  it('retains old tuning values without exposing a second native editor', async () => {
+    const team = { ...teamFixture, llmMaxRetries: '7', llmStreamIdleTimeout: '45' };
+    renderWithClient(<TeamDrawer team={team} allTeams={[team]} workers={workersFixture} modelOptions={[]} userLevel={3} onOpenChange={vi.fn()} onChanged={vi.fn()} onDeleted={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '高级设置' }));
-    fireEvent.change(screen.getByLabelText('最大重试次数'), { target: { value: '5' } });
+    expect(screen.queryByLabelText('最大重试次数')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('描述'), { target: { value: '新描述' } });
     fireEvent.click(screen.getByTestId('basic-save'));
-    await waitFor(() =>
-      expect(mocks.updateTeamAsync).toHaveBeenCalledWith({
-        name: 'alpha',
-        data: { llmMaxRetries: '5' },
-      }),
-    );
+    await waitFor(() => expect(mocks.updateTeamAsync).toHaveBeenCalledWith({ name: 'alpha', data: { description: '新描述' } }));
   });
 
   it('无改动时不发 PUT', async () => {

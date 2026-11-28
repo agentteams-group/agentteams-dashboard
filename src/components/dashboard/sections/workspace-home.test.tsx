@@ -192,7 +192,7 @@ describe('WorkspaceHome — command composer', () => {
   it('seeds the assistant room draft and deep-links into the conversation on submit', () => {
     renderHome();
 
-    const input = screen.getByLabelText('向 AT 助手输入指令');
+    const input = screen.getByLabelText('向 AgentTeams助手输入指令');
     fireEvent.change(input, { target: { value: '汇总今天的阻塞项' } });
     fireEvent.click(screen.getByRole('button', { name: '发送指令' }));
 
@@ -223,7 +223,7 @@ describe('WorkspaceHome — command composer', () => {
   it('falls back to the chat section when no assistant room is reachable', () => {
     renderHome({ managers: [{ name: 'at-assistant' } as ManagerResponse] });
 
-    fireEvent.change(screen.getByLabelText('向 AT 助手输入指令'), { target: { value: '你好' } });
+    fireEvent.change(screen.getByLabelText('向 AgentTeams助手输入指令'), { target: { value: '你好' } });
     fireEvent.click(screen.getByRole('button', { name: '发送指令' }));
 
     expect(useSectionStore.getState().activeSection).toBe('chat');
@@ -235,7 +235,7 @@ describe('WorkspaceHome — command composer', () => {
     env.userLevel = 2;
     renderHome();
 
-    expect(screen.queryByLabelText('向 AT 助手输入指令')).toBeNull();
+    expect(screen.queryByLabelText('向 AgentTeams助手输入指令')).toBeNull();
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /查看任务/ })).toBeNull();
   });
@@ -297,7 +297,7 @@ describe('WorkspaceHome — today recommendations', () => {
     second.unmount();
 
     renderHome({ tasks: [] });
-    expect(within(screen.getByRole('region', { name: '今日推荐' })).getByText('今日暂无推荐，先和 AT 助手说一句吧')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: '今日推荐' })).getByText('今日暂无推荐，先和 AgentTeams助手说一句吧')).toBeInTheDocument();
   });
 });
 

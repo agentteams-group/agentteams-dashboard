@@ -526,7 +526,7 @@ describe('TeamAgentsWorkbench · A4 URL 状态（深链 / 前进后退 / Esc）'
     const dialog = await screen.findByRole('dialog', { name: 'boss · 基本信息' });
     expect(within(dialog).getByText('boss · 基本信息')).toBeInTheDocument();
     // basic 分区正文（连接信息）直接呈现。
-    expect(within(dialog).getByRole('heading', { name: '连接信息', level: 3 })).toBeInTheDocument();
+    expect(within(dialog).getByRole('region', { name: '连接信息' })).toBeInTheDocument();
   });
 
   it('成员深链在中栏展开，收起管理后清理 URL', async () => {

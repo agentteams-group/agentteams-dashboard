@@ -6,10 +6,12 @@ import { Switch } from '@/components/ui/switch';
 
 export function WorkerHeartbeatControl({
   enabled,
+  supported = true,
   disabled,
   onCheckedChange,
 }: {
   enabled?: boolean;
+  supported?: boolean;
   disabled?: boolean;
   onCheckedChange: (_enabled: boolean) => void;
 }) {
@@ -21,14 +23,14 @@ export function WorkerHeartbeatControl({
         <Switch
           id={id}
           checked={enabled ?? false}
-          disabled={disabled || typeof enabled !== 'boolean'}
+          disabled={!supported || disabled || typeof enabled !== 'boolean'}
           onCheckedChange={onCheckedChange}
         />
       </div>
       <p className="text-xs text-muted-foreground">
         定时调用模型检查待办，会产生 Token 用量。关闭后仍可处理收到的消息和任务。记忆整理等独立定时任务不受影响。
       </p>
-      {typeof enabled !== 'boolean' ? (
+      {!supported ? <p className="text-xs text-muted-foreground">当前运行时暂不支持自主巡检。</p> : typeof enabled !== 'boolean' ? (
         <p className="text-xs text-muted-foreground">当前 Controller 尚未提供此设置，请升级后使用。</p>
       ) : null}
     </section>

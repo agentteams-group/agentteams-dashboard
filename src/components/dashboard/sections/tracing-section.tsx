@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SectionHeader } from '@/components/dashboard/section-header';
 import { CopyButton } from '@/components/dashboard/copy-button';
+import { TaskTracePanel } from './task-trace-panel';
+import type { TaskTraceBundle } from '@/lib/task-tracing';
 import { TracingSettingsDialog } from './tracing-settings-dialog';
 import { apiUrl } from '@/lib/api-base';
 import { diagnoseTrace, summarizeTrace, traceRows, type TraceDetail, type TraceList, type TraceObservation, type TraceScope } from '@/lib/tracing-types';
@@ -59,12 +61,19 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
   const effectiveRuntime = workerRuntime || runtime;
   const needsConfiguration = resources.data?.tracingConfigured === false;
   const tracingReady = !needsConfiguration && resources.data?.tracingEnabled !== false;
+  const taskMode = Boolean(filters.task) && !filters.worker && !filters.session;
+  const taskBundle = useQuery({
+    queryKey: ['task-traces', filters.task, filters.team],
+    queryFn: ({ signal }) => read<TaskTraceBundle>(`/tasks/${encodeURIComponent(filters.task)}?${new URLSearchParams({ team: filters.team })}`, signal),
+    enabled: taskMode && Boolean(resources.data) && !resources.error && tracingReady,
+    retry: false,
+  });
   const list = useQuery({
     queryKey: ['traces', filters, page],
     queryFn: ({ signal }) => read<TraceList>(`?${new URLSearchParams({ ...filters, page: String(page) })}`, signal),
     refetchInterval: 10000,
     retry: false,
-    enabled: Boolean(resources.data) && !resources.error && tracingReady,
+    enabled: !taskMode && Boolean(resources.data) && !resources.error && tracingReady,
   });
   const detail = useQuery({
     queryKey: ['trace', selected],
@@ -119,8 +128,8 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
     finally { setExporting(false); }
   }
 
-  const header = <SectionHeader title="Tracing" meta={<span className="text-sm text-muted-foreground">{needsConfiguration ? '待配置' : resources.data?.tracingEnabled === false ? '未启用' : `${resources.data?.workers.length ?? 0} 个 Agent · ${list.data?.meta.totalItems ?? 0} 条执行记录`}</span>} actions={
-    <div className="flex flex-wrap items-center gap-2">{tracingReady ? <span className="hidden text-xs text-muted-foreground sm:inline">每 10 秒自动刷新</span> : null}{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} triggerLabel={needsConfiguration ? '配置 Tracing' : tracingReady ? '可观测配置' : '启用 Tracing'} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); if (tracingReady) { void list.refetch(); if (selected) void detail.refetch(); } }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
+  const header = <SectionHeader title="Tracing" meta={<span className="text-sm text-muted-foreground">{needsConfiguration ? '待配置' : resources.data?.tracingEnabled === false ? '未启用' : taskMode ? `任务链路 · ${taskBundle.data?.traces.length ?? 0} 条 Trace` : `${resources.data?.workers.length ?? 0} 个 Agent · ${list.data?.meta.totalItems ?? 0} 条执行记录`}</span>} actions={
+    <div className="flex flex-wrap items-center gap-2">{tracingReady ? <span className="hidden text-xs text-muted-foreground sm:inline">{taskMode ? '任务全量查询 · 手动刷新' : '每 10 秒自动刷新'}</span> : null}{resources.data?.canConfigure ? <TracingSettingsDialog scope={resources.data} triggerLabel={needsConfiguration ? '配置 Tracing' : tracingReady ? '可观测配置' : '启用 Tracing'} /> : null}<Button variant="outline" size="sm" onClick={() => { void resources.refetch(); if (tracingReady) { if (taskMode) void taskBundle.refetch(); else void list.refetch(); if (selected) void detail.refetch(); } }}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></div>
   } />;
 
   if (resources.data && !tracingReady) return <div className="space-y-5">
@@ -140,7 +149,7 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
     <form className="space-y-3 rounded-lg border bg-card p-3" onSubmit={(e) => {
       e.preventDefault(); setFilters({ worker, runtime: effectiveRuntime, task, hours, session, team, room }); setPage(1); setSelected(''); setObservationId('');
     }}>
-      <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(120px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(130px,1fr)_auto_auto]">
+      <div className={taskMode ? "grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(140px,1fr)_minmax(280px,2fr)_auto_auto]" : "grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(120px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(130px,1fr)_auto_auto]"}>
       <label className="flex min-w-0 flex-col gap-1 text-xs">团队<Select value={team || '__all__'} onValueChange={(value) => {
         const next = value === '__all__' ? '' : value; setTeam(next);
         if (worker && !resources.data?.workers.some((w) => w.name === worker && (!next || w.team === next))) { setWorker(''); setRuntime(''); }
@@ -150,6 +159,7 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
           <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部团队</SelectItem>{resources.data?.teams.map((t) => <SelectItem className="cursor-pointer rounded-lg py-2" key={t.name} value={t.name}>{t.label === t.name ? t.name : `${t.label} (${t.name})`}</SelectItem>)}
         </SelectContent>
       </Select></label>
+      {taskMode ? <label className="flex min-w-0 flex-col gap-1 text-xs">Task ID<Input aria-label="Task ID" className="bg-background font-mono text-xs" value={task} onChange={(event) => setTask(event.target.value)} placeholder="输入主任务 ID" /></label> : <>
       <label className="flex min-w-0 flex-col gap-1 text-xs">Agent<Select value={worker || '__all__'} onValueChange={(value) => { setWorker(value === '__all__' ? '' : value); setRuntime(''); }}>
         <SelectTrigger aria-label="Agent" className="w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
@@ -159,7 +169,7 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
       <label className="flex min-w-0 flex-col gap-1 text-xs">运行时{workerRuntime ? '（自动）' : ''}<Select value={effectiveRuntime || '__all__'} disabled={Boolean(workerRuntime)} onValueChange={(value) => setRuntime(value === '__all__' ? '' : value)}>
         <SelectTrigger aria-label="运行时" className="w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
         <SelectContent className="rounded-xl p-1 shadow-lg" sideOffset={6}>
-          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'copaw', 'hermes', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
+          <SelectItem className="cursor-pointer rounded-lg py-2" value="__all__">全部运行时</SelectItem>{['qwenpaw', 'copaw', 'hermes', 'codex', 'claudecode', 'openclaw', 'deepseek-harness', 'openhuman'].map((r) => <SelectItem className="cursor-pointer rounded-lg py-2" key={r} value={r}>{r}</SelectItem>)}
         </SelectContent>
       </Select></label>
       <label className="flex min-w-0 flex-col gap-1 text-xs">时间<Select value={hours} onValueChange={setHours}>
@@ -168,11 +178,12 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
           <SelectItem className="cursor-pointer rounded-lg py-2" value="1">最近 1 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="24">最近 24 小时</SelectItem><SelectItem className="cursor-pointer rounded-lg py-2" value="168">最近 7 天</SelectItem>
         </SelectContent>
       </Select></label>
+      </>}
       <Button type="submit" size="sm" className="h-9 min-h-11 sm:min-h-9">查询</Button>
       <Button type="button" size="sm" className="h-9 min-h-11 sm:min-h-9" variant="ghost" aria-expanded={advancedFilters} aria-controls="trace-advanced-filters" onClick={() => setAdvancedFilters((value) => !value)}>高级筛选{[task, session, room].filter(Boolean).length ? ` (${[task, session, room].filter(Boolean).length})` : ''}<ChevronDown className={`ml-1 size-4 transition-transform ${advancedFilters ? 'rotate-180' : ''}`} /></Button>
       </div>
       {advancedFilters ? <div id="trace-advanced-filters" className="grid gap-3 border-t pt-3 sm:grid-cols-3">
-        <label className="min-w-0 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="全部任务" value={task} onChange={(e) => setTask(e.target.value)} /></label>
+        {!taskMode ? <label className="min-w-0 space-y-1 text-xs">Task ID<Input aria-label="Task ID" placeholder="输入主任务 ID，查看完整链路" value={task} onChange={(e) => setTask(e.target.value)} /></label> : null}
         <label className="min-w-0 space-y-1 text-xs">Session ID<Input aria-label="Session ID" placeholder="查询会话的全部轮次" value={session} onChange={(e) => setSession(e.target.value)} /></label>
         <label className="min-w-0 space-y-1 text-xs">Room ID<Input aria-label="Room ID" placeholder="全部会话房间" value={room} onChange={(e) => setRoom(e.target.value)} /></label>
       </div> : null}
@@ -182,7 +193,11 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
     {resources.data && !resources.data.workers.length ? <p className="text-xs text-muted-foreground">当前账号暂无可访问的 Worker。</p> : null}
     {filters.session ? <p className="break-all text-xs text-muted-foreground">会话：{filters.session} · 展示全部时间范围内的执行轮次</p> : null}
     {list.error ? <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{list.error.message}</p> : null}
-    <div className="grid items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+    {taskMode ? <>
+      {taskBundle.isFetching ? <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">正在读取任务的完整 Trace 链路…</p> : null}
+      {taskBundle.error ? <p role="alert" className="rounded-xl border p-5 text-sm text-muted-foreground">{taskBundle.error.message}</p> : null}
+      {taskBundle.data ? <TaskTracePanel key={filters.task} bundle={taskBundle.data} /> : null}
+    </> : <div className="grid items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <div className="min-w-0 overflow-hidden rounded-lg border bg-card">
         <div className="border-b px-4 py-3 text-sm font-medium">执行记录 <span className="text-muted-foreground">{list.data?.meta.totalItems ?? 0}</span></div>
         {list.isLoading ? <p className="p-6 text-sm text-muted-foreground">正在读取 Tracing…</p> : null}
@@ -238,6 +253,6 @@ function TracingView({ initial }: { initial: TracingTarget | null }) {
           <details><summary className="cursor-pointer text-xs text-muted-foreground">标识、会话与采集信息</summary><div className="mt-2 flex flex-wrap items-center gap-1 text-xs"><span className="break-all">Trace: {selected}</span><CopyButton text={selected} label="复制完整 Trace ID" />{detail.data.sessionId ? <><span className="break-all">Session: {detail.data.sessionId}</span><CopyButton text={detail.data.sessionId} label="复制 Session ID" /></> : null}</div><JsonView value={{ tags: detail.data.tags, metadata: detail.data.metadata }} /></details>
         </> : null}
       </div>
-    </div>
+    </div>}
   </div>;
 }

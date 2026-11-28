@@ -89,7 +89,7 @@ const MODEL_OPTIONS: ModelSelectionOption[] = [
 function Harness({
   initial,
   onSubmit,
-  modelProvider,
+  modelProvider = "provider-a",
   basicOnly = false,
 }: {
   initial: WorkerEditForm;
@@ -97,7 +97,7 @@ function Harness({
   modelProvider?: string;
   basicOnly?: boolean;
 }) {
-  const [value, setValue] = useState<WorkerEditForm>(initial);
+  const [value, setValue] = useState<WorkerEditForm>({ model: "team-chat", ...initial });
   return (
     <TooltipProvider>
       <WorkerEditDialog
@@ -156,9 +156,10 @@ describe('WorkerEditDialog autonomous checks', () => {
     expect(screen.getByRole('switch', { name: '自主巡检' })).toBeDisabled();
   });
 
-  it('does not show an unsupported switch for another runtime', () => {
+  it('disables an unsupported standard switch for another runtime', () => {
     render(<Harness initial={{ runtime: 'hermes' }} onSubmit={() => {}} />);
-    expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '自主巡检' })).toBeDisabled();
+    expect(screen.getByText('当前运行时暂不支持自主巡检。')).toBeVisible();
   });
 });
 

@@ -44,6 +44,7 @@ export function ProjectDagSvg({
   currentNodeId,
   selectedNodeId,
   neutral = false,
+  colorByStatus = false,
   statusLabels,
 }: {
   dag: ProjectDag;
@@ -60,6 +61,7 @@ export function ProjectDagSvg({
   currentNodeId?: string;
   selectedNodeId?: string;
   neutral?: boolean;
+  colorByStatus?: boolean;
   statusLabels?: Record<string, string>;
 }) {
   const W = nodeWidth;
@@ -151,9 +153,9 @@ export function ProjectDagSvg({
               width={W}
               height={H + (assignee ? 12 : 0)}
               rx={7}
-              fill={statusLabels && ['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.06)' : neutral ? 'var(--card)' : colors.fill}
-              stroke={statusLabels && ['in_progress', 'completed'].includes(n.status) ? '#10b981' : neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
-              strokeWidth={neutral ? 1 : n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
+              fill={colorByStatus ? `color-mix(in srgb, ${colors.stroke} 9%, var(--card))` : statusLabels && ['in_progress', 'completed'].includes(n.status) ? 'rgba(16,185,129,0.06)' : neutral ? 'var(--card)' : colors.fill}
+              stroke={colorByStatus ? colors.stroke : statusLabels && ['in_progress', 'completed'].includes(n.status) ? '#10b981' : neutral ? 'var(--border)' : n.id === selectedNodeId ? 'currentColor' : stuck ? '#ef4444' : onCritical ? CRITICAL_STROKE : n.ready ? '#22d3ee' : colors.stroke}
+              strokeWidth={colorByStatus && n.id === selectedNodeId ? 2 : neutral ? 1 : n.id === selectedNodeId ? 2 : stuck ? 2.2 : onCritical && !n.ready ? 1.8 : n.ready ? 1.8 : 1}
               strokeDasharray={!neutral && n.ready ? '5 3' : undefined}
             />
             {neutral && !statusLabels && n.status === 'completed' && <path data-completed="true" aria-label="已完成" d={`M ${p.x + W - 20} ${p.y + 14} l 3 3 l 6 -6`} fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { AgentApprovalMode } from '../shared/agent-approval-mode';
 import { WorkerEnvEditor } from './worker-env-editor';
 import { WorkerGatewayProbe } from './worker-gateway-probe';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,7 @@ import { InfoTip } from '@/components/dashboard/info-tip';
 import { SkillSelector } from '@/components/dashboard/sections/skills/skill-selector';
 import { McpSelector } from '@/components/dashboard/sections/mcps/mcp-selector';
 import { isLegacyCopaw } from '@/lib/runtime-options';
+import { getRuntimeMeta } from '@/lib/runtime-meta';
 
 export interface WorkerEditForm extends UpdateWorkerRequest {
   name?: string;
@@ -95,7 +97,7 @@ export function WorkerEditDialog({
   };
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!savingRuntime) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent onOpenAutoFocus={event => event.preventDefault()} className="sm:max-w-lg max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑 Worker - {workerName}</DialogTitle>
         </DialogHeader>
@@ -108,6 +110,7 @@ export function WorkerEditDialog({
               </InfoTip>
             </div>
             <ModelPicker
+              requireProvider
               providers={modelCatalog.providers}
               provider={provider}
               model={value.model ?? ''}
@@ -123,11 +126,13 @@ export function WorkerEditDialog({
               </p>
             ) : null}
           </div>
+          <AgentApprovalMode value={value.approvalMode} disabled={isPending || savingRuntime} onChange={(approvalMode) => onChange({ ...value, approvalMode })} />
           {open && workerName && <WorkerRuntimeHandoff ref={runtimeHandoff} key={workerName} name={workerName} runtime={currentRuntime} />}
           {isLegacyCopaw(currentRuntime) && <p className="text-xs text-muted-foreground">CoPaw 已停止新建，可选择 QwenPaw 作为目标运行时。</p>}
-          {!basicOnly && currentRuntime === 'openclaw' ? (
+          {!basicOnly ? (
             <WorkerHeartbeatControl
               enabled={value.llmHeartbeatEnabled}
+              supported={getRuntimeMeta(currentRuntime)?.supportsAutonomousHeartbeat === true}
               disabled={isPending || !envEditable}
               onCheckedChange={(checked) => onChange({ ...value, llmHeartbeatEnabled: checked })}
             />
@@ -176,7 +181,7 @@ export function WorkerEditDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || savingRuntime || !envValid}
+            disabled={isPending || savingRuntime || !envValid || !provider.trim() || !value.model?.trim()}
           >
             {isPending || savingRuntime ? '保存中...' : '保存'}
           </Button>

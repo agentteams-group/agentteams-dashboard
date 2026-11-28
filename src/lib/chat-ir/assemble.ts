@@ -274,6 +274,11 @@ function isStructuredRunAnswer(message: DisplayMessage): boolean {
     && !!message.agentBlocks?.some(block => block.type === 'text' && block.text?.trim() && !block.isStreaming);
 }
 
+function isExplicitAnswer(message: DisplayMessage): boolean {
+  return message.type === 'm.text' && !message.isStreaming
+    && message.rawContent?.['org.agentteams.progress_only'] === false;
+}
+
 function isPersistedQuotedReply(message: DisplayMessage): boolean {
   const transaction = message.rawContent?.['org.agentteams.reply_txn'];
   return !message.isThreadReply && !message.isStreaming && message.type === 'm.text'
@@ -369,6 +374,7 @@ function isAnswerEntry(
   detached: boolean,
 ): boolean {
   if (!entry.text || entry.repr || entry.narration) return false;
+  if (isExplicitAnswer(entry.message)) return true;
   if (detached) return true;
   if (profile === 'qwenpaw') {
     // QwenPaw answers by editing the root placeholder; thread text is the
@@ -440,6 +446,10 @@ function chooseAnswer(
     return withText.filter((entry) => !entry.narration).at(-1) ?? null;
   }
   const root = entries.find((entry) => !entry.message.isThreadReply) ?? null;
+  // A declared final body survives native root edits and runtime switches;
+  // legacy profile rules are only a fallback when that declaration is absent.
+  const declaredFinal = answerable.findLast(entry => isExplicitAnswer(entry.message));
+  if (declaredFinal) return declaredFinal;
   if (profile === 'qwenpaw') {
     const final = answerable.findLast(entry => isStructuredRunAnswer(entry.message) || isPersistedQuotedReply(entry.message));
     return final ?? (root && root.text && !root.narration ? root : null);
@@ -524,8 +534,8 @@ export function assembleChatTimeline(
 
   const projected: DisplayMessage[] = [];
   const turns: ChatTurn[] = [];
-  /** Timeline slots: turns project in place, so a run keeps its start position
-   * even when files, cards or long-message fallbacks arrive mid-run. */
+  /** Keep run membership across interleaved files, cards and other senders.
+   * Final display order is resolved after each turn selects its answer. */
   type Placement =
     | { kind: 'turn'; turn: WorkingTurn }
     | { kind: 'message'; message: DisplayMessage };
@@ -622,6 +632,10 @@ export function assembleChatTimeline(
     if (turn.turn) turns.push(turn.turn);
   }
 
+  // A turn's answer has its own event time. Keeping the turn's original slot
+  // would move that answer before messages received while it was running.
+  // Canonical ids still target the original event for replies and read marks.
+  projected.sort((a, b) => a.timestamp - b.timestamp);
   const paired = associateTopLevelMedia(projected, turns);
 
   const threadParticipants: Record<string, string[]> = {};
@@ -686,12 +700,13 @@ function projectTurn(
   const entries = open.entries;
   const answer = chooseAnswer(open.profile, entries, open.detached);
   const answerText = answer?.text ?? '';
+  const latestEnding = entries.flatMap(entry => entry.blocks).filter(isRunEnding).at(-1);
 
   const processBlocks: ParsedA2uiBlock[] = [];
   for (const entry of entries) {
     for (const block of entry.blocks) {
-      // A quiet ending closes the run without adding a receipt bubble.
-      if (isRunEnding(block) && block.payload?.kind === 'quiet') continue;
+      // A recovered attempt supersedes the old ending, not its tool history.
+      if (isRunEnding(block) && (block !== latestEnding || block.payload?.kind === 'quiet')) continue;
       if (block.type === 'text') {
         if (!block.text?.trim() || isAgentPlaceholderBody(block.text)) continue;
         if (entry === answer) continue;
@@ -706,7 +721,7 @@ function projectTurn(
     }
     processBlocks.push(...entry.attachments);
   }
-  if (!processBlocks.length && entries.some(entry => entry.blocks.some(block =>
+  if (!answerText && !processBlocks.length && entries.some(entry => entry.blocks.some(block =>
     isRunEnding(block) && block.payload?.kind === 'quiet'))) return { message: null, turn: null };
   if (answerText) {
     processBlocks.push({

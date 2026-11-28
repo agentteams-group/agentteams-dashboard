@@ -244,13 +244,13 @@ describe('WorkerRuntimeConfigSurface', () => {
   it('degrades honestly when the surface endpoint is missing (404/501)', async () => {
     installFetch({ surfaceStatus: 404 });
     renderSurface();
-    expect(await screen.findByText(/endpoint unsupported/)).toBeInTheDocument();
+    expect(await screen.findByText(/暂不支持在此编辑这项配置/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /重试/ })).toBeInTheDocument();
 
     cleanup();
     installFetch({ configStatus: 501 });
     renderSurface();
-    expect(await screen.findByText(/endpoint unsupported/)).toBeInTheDocument();
+    expect(await screen.findByText(/暂不支持在此编辑这项配置/)).toBeInTheDocument();
   });
 
   it('renders a read failure with retry on 403 instead of a fake form', async () => {

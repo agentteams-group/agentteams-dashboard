@@ -49,6 +49,7 @@ function renderDialog({
       <ManagerModelDialog
         open
         managerName="manager-1"
+        runtime="qwenpaw"
         model={model}
         modelProvider={modelProvider}
         modelOptions={MODEL_OPTIONS}
@@ -95,17 +96,28 @@ describe('ManagerModelDialog Provider → Model', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith('team-chat', 'provider-a');
+    expect(onSubmit).toHaveBeenCalledWith('team-chat', 'provider-a', 'qwenpaw', '', undefined);
   });
 
-  it('空 Provider 不带（提交空串，沿用 Controller 现值）', () => {
+  it('整体审批仅提供两项且不会把未配置显示为已开启', () => {
+    const { onSubmit } = renderDialog();
+    expect(screen.getByRole('radio', { name: '请求审批' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: '自动通过' })).not.toBeChecked();
+    chooseOption(providerInput(), 'provider-a');
+    chooseOption(modelInput(), 'team-chat');
+    fireEvent.click(screen.getByRole('radio', { name: '自动通过' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onSubmit).toHaveBeenCalledWith('team-chat', 'provider-a', 'qwenpaw', '', 'allow');
+  });
+
+  it('未选择连接时禁止保存', () => {
     const { onSubmit } = renderDialog({ model: 'legacy-model' });
 
     fireEvent.change(modelInput(), { target: { value: 'qwen3.6-plus' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith('qwen3.6-plus', '');
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   });
 
   it('Provider 跟随 alias binding 自动填充并下发（未手选）', () => {
@@ -115,7 +127,7 @@ describe('ManagerModelDialog Provider → Model', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith('alias-b', 'provider-b');
+    expect(onSubmit).toHaveBeenCalledWith('alias-b', 'provider-b', 'qwenpaw', '', undefined);
   });
 
   it('用户手选 Provider 优先于 binding 自动填充', () => {
@@ -129,6 +141,6 @@ describe('ManagerModelDialog Provider → Model', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith('team-chat', 'provider-a');
+    expect(onSubmit).toHaveBeenCalledWith('team-chat', 'provider-a', 'qwenpaw', '', undefined);
   });
 });

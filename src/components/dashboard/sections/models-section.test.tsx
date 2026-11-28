@@ -428,7 +428,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     const model = screen.getByRole('combobox', { name: '模型 ID' });
     fireEvent.change(model, { target: { value: 'MiniMax-M3' } });
     fireEvent.click(screen.getByRole('button', { name: '测试模型 MiniMax-M3' }));
-    await screen.findByText(/模型已返回生成内容/);
+    await screen.findByText('连接测试成功，可以正常使用');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ model: 'MiniMax-M3', token: 'new-key' });
     fireEvent.change(model, { target: { value: 'other-model' } });
     expect(screen.queryByRole('status')).toBeNull();
@@ -456,7 +456,7 @@ describe('ModelsSection', { timeout: 20_000 }, () => {
     await screen.findByText('加入内网白名单？');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: '加入并重试' }));
-    await screen.findByText('approved model replied');
+    await screen.findByText('连接测试成功，可以正常使用');
     const probes = fetchMock.mock.calls.filter(([url]) => !String(url).includes('probe-policy'));
     expect(probes).toHaveLength(2); expect(probes[0][1]?.body).toBe(probes[1][1]?.body);
     if (mode === 'draft') {

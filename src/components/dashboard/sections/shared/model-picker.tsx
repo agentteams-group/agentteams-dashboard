@@ -20,6 +20,7 @@ export const LOCAL_PROVIDER = '跟随默认连接';
 export interface ModelPickerProps {
   /** 网关 provider 名（来自 buildModelCandidateCatalog(...).providers）。 */
   providers: string[];
+  requireProvider?: boolean;
   /** 真实 provider；空串 = 不绑定 provider。 */
   provider: string;
   model: string;
@@ -69,6 +70,7 @@ export function ModelPicker({
   allModels,
   onChange,
   localProviderLabel = LOCAL_PROVIDER,
+  requireProvider = false,
   disabled,
   providerLabel = '模型连接',
   modelLabel = '模型',
@@ -82,9 +84,9 @@ export function ModelPicker({
 
   const currentProvider = provider.trim();
   // 空 provider 在 UI 上显示为哨兵，写回时再还原为空串。
-  const providerDisplay = currentProvider || localProviderLabel;
+  const providerDisplay = currentProvider || (requireProvider ? "" : localProviderLabel);
   const providerOptions = [
-    localProviderLabel,
+    ...(requireProvider ? [] : [localProviderLabel]),
     ...providers.filter((item) => item !== localProviderLabel),
     // 当前值不在目录里也要能看见并保留（可自由输入的 provider）。
     ...(currentProvider &&
@@ -114,6 +116,7 @@ export function ModelPicker({
       <div className="min-w-0 space-y-1">
         <Label htmlFor={providerId}>{providerLabel}</Label>
         <Combobox
+          allowCustom={!requireProvider}
           id={providerId}
           className="w-full min-w-0"
           value={providerDisplay}

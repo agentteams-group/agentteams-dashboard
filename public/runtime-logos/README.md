@@ -1,6 +1,6 @@
 # Runtime product logos
 
-Product marks remain the property of their respective owners. These files identify the selected runtime; they are bundled locally so the UI does not contact third-party hosts. Assets are copied unchanged.
+Product marks remain the property of their respective owners. These files identify the selected runtime; they are bundled locally so the UI does not contact third-party hosts. Upstream assets are copied unchanged; `claudecode.svg` is a locally drawn CC monogram.
 
 - `qwenpaw.svg`: https://raw.githubusercontent.com/agentscope-ai/QwenPaw/f47dd19bd1442b989eeb8df8d146cbbab572d0b1/scripts/pack/assets/icon.svg
 - `openclaw.svg`: https://raw.githubusercontent.com/openclaw/openclaw/78d3696be484dcaa3415205f0c42bfadce0d5fd4/ui/public/favicon.svg

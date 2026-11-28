@@ -2,18 +2,22 @@ import type { WorkerRuntime } from '@/lib/agentteams-api';
 
 /** Worker runtimes that can be selected when creating a new instance. */
 export const CREATABLE_WORKER_RUNTIMES: { value: WorkerRuntime; label: string }[] = [
-  { value: 'openclaw', label: 'OpenClaw' },
-  { value: 'hermes', label: 'Hermes' },
-  { value: 'qwenpaw', label: 'QwenPaw' },
-  { value: 'deepseek-harness', label: 'DeepSeek Harness（实验）' },
   { value: 'codex', label: 'Codex' },
+  { value: 'qwenpaw', label: 'QwenPaw' },
+  { value: 'claudecode', label: 'Claude Code' },
+  { value: 'hermes', label: 'Hermes' },
+  { value: 'deepseek-harness', label: 'DeepSeek Harness（实验）' },
   { value: 'openhuman', label: 'OpenHuman' },
+  { value: 'openclaw', label: 'OpenClaw（不推荐）' },
 ];
 
 /** Manager runtimes accepted by the current Controller. */
 export const CREATABLE_MANAGER_RUNTIMES: { value: string; label: string }[] = [
-  { value: 'openclaw', label: 'OpenClaw' },
   { value: 'qwenpaw', label: 'QwenPaw' },
+  { value: 'deepseek-harness', label: 'DeepSeek' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'hermes', label: 'Hermes' },
+  { value: 'claudecode', label: 'Claude Code' },
 ];
 
 export const COPAW_MIGRATION_HINT =

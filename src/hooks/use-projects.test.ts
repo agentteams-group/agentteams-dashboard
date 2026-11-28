@@ -106,13 +106,12 @@ describe('workflowToBoard (D5 API primary mapping)', () => {
     expect(tasks[0].spec).toBe('摘要文本');
   });
 
-  it('maps revision to its own status; cancelled to blocked; unknown to unknown', () => {
+  it('keeps cancelled terminal instead of treating it as blocked', () => {
     const wfs = new Map([
       ['p1', wf({
         nodes: [
           { id: 'a', name: 'A', status: 'revision' },
-          // Controller normalizes cancelled→blocked already; these casts
-          // exercise the mapper's defensive branches.
+          // Preserve raw cancellation if the API provides it.
           { id: 'b', name: 'B', status: 'cancelled' as WorkflowNodeStatus },
           { id: 'c', name: 'C', status: 'weird-future' as WorkflowNodeStatus },
         ],
@@ -122,7 +121,7 @@ describe('workflowToBoard (D5 API primary mapping)', () => {
     const { tasks } = workflowToBoard([proj()], wfs);
     const statusOf = new Map(tasks.map((t) => [t.runId, t.status]));
     expect(statusOf.get('a')).toBe('revision');
-    expect(statusOf.get('b')).toBe('blocked');
+    expect(statusOf.get('b')).toBe('cancelled');
     expect(statusOf.get('c')).toBe('unknown');
   });
 

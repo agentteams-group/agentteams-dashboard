@@ -192,18 +192,17 @@ it('keeps the heartbeat switch read-only for non-admin viewers', async () => {
   expect(await screen.findByRole('switch', { name: '自主巡检' })).toBeDisabled();
 });
 
-it('does not show the OpenClaw heartbeat switch for other runtimes', async () => {
-  renderDrawer();
-  expect(screen.queryByRole('switch', { name: '自主巡检' })).not.toBeInTheDocument();
+it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)('disables unsupported standard heartbeat for %s', async (runtime) => {
+  renderDrawerFor({ ...worker, runtime, envEditable: true, llmHeartbeatEnabled: true });
+  expect(screen.getByRole('switch', { name: '自主巡检' })).toBeDisabled();
+  expect(screen.getByText('当前运行时暂不支持自主巡检。')).toBeVisible();
+  expect(screen.queryByText('模型调优')).not.toBeInTheDocument();
 });
 
 const CARDS: Array<{ title: string; content: string }> = [
-  { title: '高级配置', content: 'surface-config' },
-  { title: 'MCP', content: 'surface-mcp' },
-  { title: '工具', content: 'surface-tools' },
-  { title: '技能', content: 'surface-skills' },
-  { title: '频道', content: 'surface-channels' },
-  { title: '审批模式', content: 'surface-approval' },
+  { title: '高级配置', content: '当前策略：尚未设置' },
+  { title: 'MCP', content: 'ctx7' },
+  { title: '技能', content: 'skills-panel' },
   { title: 'Coding CLI', content: 'coding-panel' },
   { title: '工作区文件', content: 'workspace-panel' },
   { title: 'Worker 插件', content: 'plugins-panel' },
@@ -253,24 +252,53 @@ describe('WorkerDrawer', () => {
     expect(mounts.coding).toBe(0);
   });
 
-  it('routes QwenPaw runtime config to the legacy panel instead of the surface', async () => {
-    const qwenpawWorker = { ...worker, runtime: 'qwenpaw' } as unknown as WorkerResponse;
-    renderDrawerFor(qwenpawWorker);
+  it('shows Codex conversation guidance and opens its assigned MCP servers', async () => {
+    renderDrawerFor({ ...worker, runtime: 'codex' });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '会话' }), { button: 0 });
+    expect(await screen.findByText(/Codex 暂不支持在这里查看会话记录/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'MCP' }), { button: 0 });
+    expect(await screen.findByText('ctx7')).toBeVisible();
+  });
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
-
-    expect(await screen.findByText('qwenpaw-runtime-worker-a-rw')).toBeInTheDocument();
-    expect(mounts.qwenpaw).toBe(1);
+  it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)('opens the common MCP configuration for %s', async (runtime) => {
+    renderDrawerFor({ ...worker, runtime });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'MCP' }), { button: 0 });
+    expect(await screen.findByText('ctx7')).toBeVisible();
+    expect(mounts.mcp).toBeGreaterThan(0);
     expect(mounts.surface).toEqual({});
   });
 
-  it('treats an empty runtime as non-QwenPaw (surface-driven, no fake fields)', async () => {
+  it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)('uses standard skills, environment and approval pages for %s', async (runtime) => {
+    renderDrawerFor({ ...worker, runtime });
+    for (const [tab, text] of [['技能', 'skills-panel'], ['环境变量与参数', 'env-panel'], ['高级配置', '当前策略：尚未设置']]) {
+      fireEvent.mouseDown(screen.getByRole('tab', { name: tab }), { button: 0 });
+      expect(await screen.findByText(text)).toBeVisible();
+    }
+    expect(screen.getByRole('button', { name: '编辑工具审批' })).toBeVisible();
+    expect(mounts.surface).toEqual({});
+    expect(mounts.qwenpaw).toBe(0);
+  });
+
+  it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'] as const)('does not offer native configuration writes alongside standard settings for %s', async (runtime) => {
+    renderDrawerFor({ ...worker, runtime });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0 });
+    expect(await screen.findByText('当前策略：尚未设置')).toBeVisible();
+    expect(screen.queryByText('运行时原生扩展')).not.toBeInTheDocument();
+    expect(screen.queryByText('原生工具')).not.toBeInTheDocument();
+    expect(screen.queryByText('原生频道')).not.toBeInTheDocument();
+    expect(mounts.surface).toEqual({});
+    expect(mounts.qwenpaw).toBe(0);
+  });
+
+  it('keeps standard configuration available without a runtime value', async () => {
     const runtimeLessWorker = { ...worker, runtime: '' } as unknown as WorkerResponse;
     renderDrawerFor(runtimeLessWorker);
 
     fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0, ctrlKey: false });
 
-    expect(await screen.findByText('surface-config')).toBeInTheDocument();
+    expect(await screen.findByText('当前策略：尚未设置')).toBeInTheDocument();
+    expect(mounts.surface).toEqual({});
     expect(mounts.qwenpaw).toBe(0);
   });
 
@@ -293,7 +321,7 @@ describe('WorkerDrawer', () => {
   it('selects resource tabs through the keyboard', async () => {
     renderDrawer();
     fireEvent.keyDown(screen.getByRole('tab', { name: 'MCP' }), { key: 'Enter' });
-    expect(await screen.findByText('surface-mcp')).toBeInTheDocument();
+    expect(await screen.findByText('ctx7')).toBeInTheDocument();
 
     expect(screen.getByRole('tab', { name: 'MCP' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -318,4 +346,11 @@ describe('WorkerDrawer', () => {
     const link = await screen.findByRole('link', { name: /Tracing/ });
     expect(link).toHaveAttribute('href', 'https://langfuse.example.com');
   });
+});
+
+it.each(['codex', 'hermes', 'openclaw', 'qwenpaw', 'deepseek-harness', 'openhuman'] as const)('uses the common skill assignment page for %s', runtime => {
+  renderDrawerFor({ ...worker, runtime });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: '技能' }), { button: 0 });
+  expect(screen.getByText('skills-panel')).toBeInTheDocument();
+  expect(screen.queryByText('surface-skills')).not.toBeInTheDocument();
 });

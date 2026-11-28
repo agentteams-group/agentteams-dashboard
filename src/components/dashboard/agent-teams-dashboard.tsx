@@ -101,7 +101,7 @@ export const sectionMap: Record<string, React.ComponentType> = {
 
 export const pageDescriptions: Record<string, string> = {
   overview: '查看工作区的任务进展、团队和资源概况。',
-  chat: '与 AT 助手或你管理团队的团队助手私聊，交代目标并跟进进展。',
+  chat: '与 AgentTeams助手或你管理团队的团队助手私聊，交代目标并跟进进展。',
   'my-teams': '在已加入的团队群聊中查看协作记录并参与讨论。',
   tasks: '按状态跟进任务，查看子任务、依赖和协作房间。',
   artifacts: '浏览、预览和下载项目任务的交付文件。',

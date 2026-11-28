@@ -9,7 +9,7 @@ export function AssistantRoomList({ rooms, selectedRoomId, onSelectRoom }: {
   rooms: RoomInfo[]; selectedRoomId: string | null; onSelectRoom: (_roomId: string) => void;
 }) {
   const groups = [
-    { label: 'AT助手', role: 'operations', empty: '当前账号没有可用的 AT 助手私聊。' },
+    { label: 'AgentTeams助手', role: 'operations', empty: '当前账号没有可用的 AgentTeams助手私聊。' },
     { label: '团队助手', role: 'leader', empty: '团队助手仅对你担任 Team Admin 的团队开放。' },
   ];
   return <div className="max-h-[min(480px,65dvh)] space-y-3 overflow-y-auto p-2">

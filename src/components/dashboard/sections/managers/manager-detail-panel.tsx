@@ -23,7 +23,6 @@ import {
   Brain,
   ChevronRight,
   Code2,
-  Cpu,
   Crown,
   Loader2,
   MessageSquare,
@@ -38,7 +37,6 @@ import {
 } from 'lucide-react';
 import { ResourceDetailTabs } from '@/components/dashboard/resource-detail-tabs';
 import { AccountAvatar } from '@/components/dashboard/account-avatar';
-import { QwenpawRuntimeConfigPanel } from '../workers/qwenpaw-runtime-config-panel';
 import { InfoTip } from '@/components/dashboard/info-tip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -254,11 +252,11 @@ export function ManagerDetailPanel({
 
   // ── 模型 ─────────────────────────────────────────────────────────────
   const handleModelSave = useCallback(
-    async (model: string, provider: string) => {
+    async (model: string, provider: string, runtime: string, image: string, approvalMode?: 'ask' | 'allow') => {
       setSaving('model');
       setActionError(null);
       try {
-        await agentteamsApi.updateManagerModel(managerName, model, provider || undefined);
+        await updateManager.mutateAsync({ name: managerName, data: { model, modelProvider: provider, runtime, image, approvalMode } });
         toast.success('已保存');
         setModelOpen(false);
         finishSave();
@@ -269,7 +267,7 @@ export function ManagerDetailPanel({
         setSaving(null);
       }
     },
-    [finishSave, managerName, refresh],
+    [finishSave, managerName, refresh, updateManager],
   );
 
   // ── 文档 ─────────────────────────────────────────────────────────────
@@ -503,7 +501,11 @@ export function ManagerDetailPanel({
       </>}
       <ResourceDetailTabs key={managerName} label="平台助手配置" initialTab={initialTab} chrome={chrome} items={[
         { id: 'basic', title: '基础配置', render: () => <section className="space-y-4" aria-label="连接信息">
-          <h3 className="text-sm font-medium">连接信息</h3>
+          <Row label="运行时"><RuntimeBadge runtime={view.runtime || ''} /></Row>
+          <Row label="模型 ID">{view.model || '未设置'}</Row>
+          <Row label="模型连接">{view.modelProvider || '未设置'}</Row>
+          <Row label="镜像">{view.image || '默认镜像'}</Row>
+          <Button size="sm" variant="outline" disabled={!canWrite} onClick={() => setModelOpen(true)}>编辑基础配置</Button>
           <Row label="Matrix 账号">
             {view.matrixUserID ? (
               <span className="flex min-w-0 items-center gap-1">
@@ -527,15 +529,6 @@ export function ManagerDetailPanel({
           <p className="text-xs leading-5 text-muted-foreground">该会话由安装时的管理员与助手创建，不代表当前登录账号的专属私聊。<InfoTip label="管理员会话说明">其他 L1 不会自动拥有独立的助手会话；只有已加入该会话的账号可以访问。</InfoTip></p>
           {view.message && view.phase !== 'Running' && <p className="text-sm text-muted-foreground">{view.message}</p>}
         </section> },
-        { id: 'model', title: '模型', render: () =>
-        <ConfigCard
-          icon={Cpu}
-          title="模型配置"
-          summary={`${view.model || '未配置'}${view.modelProvider ? ` · ${view.modelProvider}` : ''}`}
-          disabled={!canWrite}
-          onClick={() => setModelOpen(true)}
-        />
-        },
         { id: 'prompts', title: '提示词', render: () => <div className="space-y-3">
         <ConfigCard
           icon={Brain}
@@ -594,7 +587,7 @@ export function ManagerDetailPanel({
           onClick={() => setMcpOpen(true)}
         />
         },
-        { id: 'env', title: '环境变量', render: () => <div className="space-y-3">
+        { id: 'env', title: '环境变量与参数', render: () => <div className="space-y-3">
           {!detail?.envEditable && <p role="status" className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">当前 Controller 不支持编辑助手环境变量，请升级 Controller 后再配置。</p>}
           <ConfigCard
           icon={Package}
@@ -678,7 +671,11 @@ export function ManagerDetailPanel({
           ) : null}
         </section>
         },
-        ...(view.runtime === 'qwenpaw' ? [{ id: 'advanced', title: '高级配置', render: () => <QwenpawRuntimeConfigPanel workerName={managerName} memberKind="managers" canWrite={canWrite} onChanged={finishSave} /> }] : []),
+        { id: 'advanced', title: '高级配置', render: () => <div className="space-y-3">
+          <p className="text-sm">当前策略：{view.approvalMode === 'allow' ? '自动通过' : view.approvalMode === 'ask' ? '请求审批' : '尚未设置'}</p>
+          <Button size="sm" variant="outline" disabled={!canWrite} onClick={() => setModelOpen(true)}>编辑工具审批</Button>
+
+        </div> },
         { id: 'logs', title: '日志', render: () => <ManagerLogsCard managerName={managerName} enabled={canWrite} /> },
       ]} />
 
@@ -703,13 +700,16 @@ export function ManagerDetailPanel({
       <ManagerModelDialog
         open={modelOpen}
         managerName={managerName}
+        runtime={view.runtime || ""}
+        image={view.image || ""}
         model={view.model ?? ''}
         modelProvider={view.modelProvider}
+        approvalMode={view.approvalMode}
         modelOptions={modelOptions}
         sessionIssue={sessionIssue}
         saving={saving === 'model'}
         onCancel={() => setModelOpen(false)}
-        onSubmit={(model, provider) => void handleModelSave(model, provider)}
+        onSubmit={(model, provider, runtime, image, approvalMode) => void handleModelSave(model, provider, runtime, image, approvalMode)}
       />
 
       {docKind ? (
