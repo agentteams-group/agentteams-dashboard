@@ -1,15 +1,18 @@
 'use client';
 
+import { createElement } from 'react';
 import { apiUrl } from '@/lib/api-base';
 import { BUNDLED_PLUGINS } from '@/plugins';
 import { createPluginApi, DASHBOARD_VERSION } from './api';
 import { HOST_EVENTS, pluginEventBus } from './event-bus';
-import { fetchManifestJson, hashString, loadUrlPluginModule, resolveEntryUrl } from './loader';
+import { fetchManifestJson, loadUrlPluginModule } from './loader';
 import { validatePluginManifest, PluginManifestError } from './manifest';
 import { makePluginRecord, usePluginRegistry } from './registry';
 import { purgePluginState } from './sandbox';
 import { useExtensionStore } from './extension-store';
 import { installPluginHost } from './host';
+import { DeferredPluginContribution } from '@/components/plugins/deferred-plugin-contribution';
+import type { MenuItemContribution, RouteComponentProps, WidgetContribution } from './types';
 import type {
   PluginModule,
   PluginRecord,
@@ -33,13 +36,12 @@ export class PluginManager {
   private unregisters = new Map<string, Unregister[]>();
   private deactivateFns = new Map<string, () => void | Promise<void>>();
   private reloadTokens = new Map<string, number>();
-  private entryHashes = new Map<string, string>();
   /** f7-1: 在途激活守卫——同一插件并发 activate 只放行第一次。 */
   private activating = new Set<string>();
   private initPromise: Promise<void> | null = null;
   private devWatcher: ReturnType<typeof setInterval> | null = null;
 
-  /** Idempotent bootstrap: discover + activate all configured plugins. */
+  /** Idempotent manifest-only bootstrap; entry modules load when their UI renders. */
   init(): Promise<void> {
     if (!this.initPromise) {
       this.initPromise = this.doInit();
@@ -77,13 +79,57 @@ export class PluginManager {
       devUrls.map((url) => this.installFromUrl(url, { persist: false }))
     );
 
-    // 5. Activate everything the user has not disabled.
-    await this.activateEnabled();
+    // 5. Publish declarative navigation only. Entry modules stay unloaded.
+    this.syncDeclaredContributions();
 
     usePluginRegistry.getState().setReady(true);
 
     if (process.env.NODE_ENV === 'development') {
       this.startDevReloadWatcher();
+    }
+  }
+
+  private syncDeclaredContributions(): void {
+    const { records, disabledIds } = usePluginRegistry.getState();
+    const extension = useExtensionStore.getState();
+    const activate = (pluginId: string) => this.activate(pluginId);
+    for (const [id, record] of Object.entries(records)) {
+      if (record.status === 'active') continue;
+      if (disabledIds.includes(id)) {
+        extension.removePlugin(id);
+        continue;
+      }
+      const declared = record.manifest.contributions;
+      for (const item of declared?.menuItems ?? []) {
+        const contribution: MenuItemContribution = { ...item };
+        extension.add('menuItems', id, contribution);
+      }
+      for (const route of declared?.routes ?? []) {
+        const Fallback = () => null;
+        const contribution = {
+          ...route,
+          component: function DeferredRoute(props: RouteComponentProps) {
+            return createElement(DeferredPluginContribution, {
+              pluginId: id, contributionId: route.id, point: 'routes',
+              fallback: Fallback, activate, routeProps: props,
+            });
+          },
+        };
+        extension.add('routes', id, contribution);
+      }
+      for (const widget of declared?.widgets ?? []) {
+        const Fallback = () => null;
+        const contribution: WidgetContribution = {
+          ...widget,
+          component: function DeferredWidget() {
+            return createElement(DeferredPluginContribution, {
+              pluginId: id, contributionId: widget.id, point: 'widgets',
+              fallback: Fallback, activate,
+            });
+          },
+        };
+        extension.add('widgets', id, contribution);
+      }
     }
   }
 
@@ -143,9 +189,7 @@ export class PluginManager {
     usePluginRegistry.getState().upsertRecord(record);
     if (persist) usePluginRegistry.getState().addInstalledUrl(manifestUrl);
 
-    if (!usePluginRegistry.getState().disabledIds.includes(manifest.id)) {
-      await this.activate(manifest.id);
-    }
+    this.syncDeclaredContributions();
     return usePluginRegistry.getState().records[manifest.id];
   }
 
@@ -196,9 +240,7 @@ export class PluginManager {
     usePluginRegistry.getState().upsertRecord(record);
     if (persist) usePluginRegistry.getState().addInstalledUrl(manifestUrl);
 
-    if (!usePluginRegistry.getState().disabledIds.includes(manifest.id)) {
-      await this.activate(manifest.id);
-    }
+    this.syncDeclaredContributions();
     return usePluginRegistry.getState().records[manifest.id];
   }
 
@@ -306,7 +348,8 @@ export class PluginManager {
 
   async enable(id: string): Promise<void> {
     usePluginRegistry.getState().setDisabled(id, false);
-    await this.activate(id);
+    usePluginRegistry.getState().updateStatus(id, 'enabled');
+    this.syncDeclaredContributions();
   }
 
   async disable(id: string): Promise<void> {
@@ -345,7 +388,6 @@ export class PluginManager {
     registry.removeRecord(id);
     purgePluginState(id);
     this.reloadTokens.delete(id);
-    this.entryHashes.delete(id);
   }
 
   /** Re-load + re-activate (dev hot reload). */
@@ -393,20 +435,18 @@ export class PluginManager {
       Object.values(records)
         .filter((r) => r.source.kind === 'url' && r.source.manifestUrl && r.status !== 'error')
         .map(async (record) => {
-          const entryUrl = resolveEntryUrl(
-            record.source.manifestUrl!,
-            record.manifest.entry.dashboard!
-          );
-          const res = await fetch(entryUrl, { cache: 'no-store' });
+          // Watch manifests, never entry files: dormant plugins must issue no code requests.
+          const res = await fetch(record.source.manifestUrl!, { cache: 'no-store' });
           if (!res.ok) return;
-          const text = await res.text();
-          const digest = hashString(text);
-          const previous = this.entryHashes.get(record.manifest.id);
-          this.entryHashes.set(record.manifest.id, digest);
-          if (previous && previous !== digest) {
-            console.warn(`[plugins] 检测到插件 ${record.manifest.id} 更新,自动热重载`);
-            await this.reload(record.manifest.id);
-          }
+          const raw = await res.json();
+          const manifest = validatePluginManifest(raw, {
+            dashboardVersion: DASHBOARD_VERSION,
+            skipVersionCheck: true,
+          });
+          if (JSON.stringify(manifest.entry) === JSON.stringify(record.manifest.entry)) return;
+          usePluginRegistry.getState().upsertRecord({ ...record, manifest });
+          if (record.status === 'active') await this.reload(record.manifest.id);
+          else this.syncDeclaredContributions();
         })
     );
   }
@@ -417,7 +457,6 @@ export class PluginManager {
     this.unregisters.clear();
     this.deactivateFns.clear();
     this.reloadTokens.clear();
-    this.entryHashes.clear();
     this.activating.clear();
     this.initPromise = null;
   }

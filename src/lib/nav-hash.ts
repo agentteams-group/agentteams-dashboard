@@ -48,6 +48,7 @@ const SECTION_TO_HASH: Record<string, string> = {
   models: 'console/resources/models',
   tools: 'console/resources/tools',
   knowledge: 'console/resources/knowledge',
+  files: 'console/resources/files',
   audit: 'console/governance/audit',
   tracing: 'console/governance/tracing',
   'plugin-route:monitor-panel/monitor': 'console/governance/monitoring',
@@ -81,6 +82,7 @@ const LEGACY_HASH_TO_SECTION: Record<string, string> = {
   models: 'models',
   tools: 'tools',
   knowledge: 'knowledge',
+  files: 'files',
   audit: 'audit',
   tracing: 'tracing',
   // The standalone projects section was merged into the task board; the
@@ -143,6 +145,15 @@ export function tasksHash(projectRunId?: string): string {
 
 export function taskCollaborationHash(taskId: string, roomId: string): string {
   return `#workbench/tasks/${encodeURIComponent(taskId)}/collaboration?room=${encodeURIComponent(roomId)}`;
+}
+
+/** Files deep link. `path` is the directory context; `file` is the focused entry. */
+export function filesHash(context?: { path?: string; file?: string }): string {
+  const params = new URLSearchParams();
+  if (context?.path) params.set('path', context.path);
+  if (context?.file) params.set('file', context.file);
+  const query = params.toString();
+  return `#${SECTION_TO_HASH.files}${query ? `?${query}` : ''}`;
 }
 
 /** 深链：循环页并选中某个循环草案（`#workbench/loop?loop=<id>`）。 */
@@ -213,6 +224,9 @@ export function hashForActiveSection(sectionId: string, currentHash: string): st
     return tab && TEAM_AGENTS_TABS.includes(tab) ? `${canonical}?tab=${tab}` : canonical;
   }
 
+  if (sectionId === 'files' && resolved?.section === 'files' && path === 'files') {
+    return canonical + query;
+  }
   if (sectionId !== 'resources') return canonical + keep;
 
   const match = /^console\/resources\/([^/]+)$/.exec(path);
@@ -242,9 +256,10 @@ export function resolveHash(
     return resolveLayeredHash(hash);
   }
 
-  const legacy = LEGACY_HASH_TO_SECTION[hash];
+  const [legacyPath, query] = hash.split('?');
+  const legacy = LEGACY_HASH_TO_SECTION[legacyPath];
   if (legacy && isKnownSection(legacy)) {
-    return { section: legacy };
+    return { section: legacy, params: query ? new URLSearchParams(query) : undefined };
   }
   return null;
 }
@@ -300,6 +315,7 @@ function resolveLayeredHash(hash: string): ResolvedHash | null {
       'resources/models': 'models',
       'resources/tools': 'tools',
       'resources/knowledge': 'knowledge',
+      'resources/files': 'files',
       'governance/audit': 'audit',
       'governance/tracing': 'tracing',
       'governance/monitoring': 'plugin-route:monitor-panel/monitor',

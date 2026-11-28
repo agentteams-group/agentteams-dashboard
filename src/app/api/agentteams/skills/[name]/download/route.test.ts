@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
@@ -24,10 +25,14 @@ vi.mock('@/lib/skill-center-config', () => ({
 // --- Mock nacos fetcher ---
 const mockFetchNacosSkillZip = vi.fn().mockResolvedValue(null);
 const mockCacheSkillContent = vi.fn().mockResolvedValue(undefined);
-vi.mock('@/lib/nacos-fetcher', () => ({
-  fetchNacosSkillZip: mockFetchNacosSkillZip,
-  cacheSkillContent: mockCacheSkillContent,
-}));
+vi.mock('@/lib/nacos-fetcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/nacos-fetcher')>();
+  return {
+    ...actual,
+    fetchNacosSkillZip: mockFetchNacosSkillZip,
+    cacheSkillContent: mockCacheSkillContent,
+  };
+});
 
 // Import after mocking
 const { GET } = await import('./route');

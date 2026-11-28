@@ -21,5 +21,10 @@ export const manifest: PluginManifest = {
   entry: { dashboard: 'index.tsx' },
   dashboardVersion: '>=0.2.0',
   extensionPoints: ['sidebar-menu', 'route', 'dashboard-widget'],
+  contributions: {
+    menuItems: [{ id: 'wen-tian-diagnose', label: '问天诊断', icon: 'stethoscope', target: { type: 'plugin-route', routeId: 'diagnose' } }],
+    routes: [{ id: 'diagnose', title: '问天诊断' }],
+    widgets: [{ id: 'wen-tian-health', title: '环境健康概览', size: 'md' }],
+  },
   permissions: ['network'],
 };

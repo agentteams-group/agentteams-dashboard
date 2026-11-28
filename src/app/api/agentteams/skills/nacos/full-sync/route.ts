@@ -22,8 +22,7 @@ export async function POST(request: NextRequest) {
       skipped: result.skipped,
       failed: result.failed,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '同步失败';
-    return NextResponse.json({ error: message }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: 'Nacos 同步失败' }, { status: 502 });
   }
 }

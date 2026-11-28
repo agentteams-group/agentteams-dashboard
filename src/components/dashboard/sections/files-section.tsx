@@ -1,6 +1,7 @@
 'use client';
 
 
+import dynamic from 'next/dynamic';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMatrixStore } from '@/lib/matrix-store';
@@ -118,6 +119,8 @@ import { ApiError } from '@/lib/api-error';
 import { FileDropTarget } from './files/file-drop-target';
 import {
   DeleteConfirmDialog,
+  DIRECTORY_MOVE_UNSUPPORTED,
+  DIRECTORY_RENAME_UNSUPPORTED,
   MoveDialog,
   NewFolderDialog,
   QuotaDialog,
@@ -130,49 +133,28 @@ import { FileSearchResults, type SearchRowActions } from './files/file-search-re
 import { GridView, ListView, TreeView, type EntryActions } from './files/file-views';
 import { TrashDialog } from './files/trash-dialog';
 import { UploadQueuePanel } from './files/upload-panel';
-import { FilesBrowserPanel } from './chat/views/worker-files-panel';
+import {
+  entryToTarget,
+  humanNameFromSession,
+  readStorage,
+  sha256Blob,
+  statusOf,
+  writeStorage,
+} from './files-section-helpers';
+
+const FilesBrowserPanel = dynamic(
+  () => import('./chat/views/worker-files-panel').then((module) => ({ default: module.FilesBrowserPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-64 items-center justify-center text-xs text-muted-foreground" role="status">
+        正在加载文件面板…
+      </div>
+    ),
+  },
+);
 
 const ROOT_LABEL = '我的文件';
-
-function readStorage(key: string): string | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStorage(key: string, value: string): void {
-  try {
-    if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
-  } catch {
-    /* 隐私模式 / 配额失败忽略 */
-  }
-}
-
-/** sessionUser → human 名（Matrix localpart）。 */
-function humanNameFromSession(user: string | null): string {
-  if (!user) return '';
-  const local = user.startsWith('@') ? user.slice(1).split(':')[0] : user;
-  return local.split('@')[0] ?? local;
-}
-
-function statusOf(err: unknown): '' | '404' | 'err' {
-  if (err instanceof ApiError) {
-    if (err.status === 404 || err.status === 403) return '404';
-    return 'err';
-  }
-  return err ? 'err' : '';
-}
-
-function entryToTarget(entry: HumanFileEntry, dirPath: string): FileOpTarget {
-  return {
-    path: entryRowPath(entry, dirPath),
-    name: entry.name,
-    isDir: entry.type === 'directory',
-    size: entry.size,
-  };
-}
 
 export interface FilesSectionProps {
   /** 仅测试/深链用：跳过人员选择。 */
@@ -438,9 +420,9 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
   }, [searchData.data]);
 
   const searchRanked = useMemo(
-    () => rankSearchResults(searchEntries, searchQuery),
-    // searchQuery 每次渲染新建 → 依赖真正决定匹配的字段。
-    [searchEntries, searchQuery.active, searchQuery.term],
+    () => rankSearchResults(searchEntries, searchQuery.term),
+    // 匹配只取决于归一化词条；不要在每次渲染时依赖新建对象。
+    [searchEntries, searchQuery.term],
   );
 
   const searchPage = useMemo(() => {
@@ -1029,59 +1011,59 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
     const name = target.split('/').pop() ?? target;
     const res = await humanFilesApi.listDirectory(humanName, parent);
     if (res.entries.some((e) => e.name === name)) {
-      const err = new ApiError('目标路径已存在', 409, target);
-      throw err;
+      throw new ApiError('目标路径已存在', 409, target);
     }
   };
 
-  const collectFilesUnder = async (root: string): Promise<string[]> => {
-    const out: string[] = [];
-    const queue: string[] = [root];
-    for (let guard = 0; queue.length > 0 && guard < 200; guard += 1) {
-      const dir = queue.shift() as string;
-      const res = await humanFilesApi.listDirectory(humanName, dir);
-      for (const e of res.entries) {
-        const child = entryRowPath(e, dir);
-        if (e.type === 'directory') queue.push(child);
-        else out.push(child);
-      }
-    }
-    return out;
-  };
-
-  /** 重命名/移动 = 读→写→删（控制器无 move 端点；目录逐文件）。 */
-  const copyAndRemove = async (from: string, to: string, isDir: boolean) => {
+  /** 旧 Controller 的单文件兼容路径：复制并校验完整后才软删，绝不 purge。 */
+  const copyAndRemove = async (from: string, to: string, entry: HumanFileEntry) => {
     await ensureNoConflict(to);
-    if (!isDir) {
-      const blob = await humanFilesApi.download(humanName, from);
-      await humanFilesApi.writeFile(humanName, to, blob);
-      const { trashId } = await humanFilesApi.deleteFile(humanName, from);
-      if (trashId) await humanFilesApi.purgeTrash(humanName, trashId);
-      return;
+    const blob = await humanFilesApi.download(humanName, from, { size: entry.size });
+    if (blob.size !== entry.size) {
+      throw new Error(
+        `源文件大小已变化（预期 ${entry.size} 字节，实际 ${blob.size} 字节），请刷新后重试；源文件未删除`,
+      );
     }
-    const files = await collectFilesUnder(from);
-    if (files.length === 0) {
-      await humanFilesApi.makeDirectory(humanName, to);
+    const sourceChecksum = await sha256Blob(blob);
+    const written = await humanFilesApi.writeFile(humanName, to, blob);
+    if (written.size !== blob.size) {
+      throw new Error(
+        `目标文件长度校验失败（预期 ${blob.size} 字节，实际 ${written.size} 字节），源文件未删除`,
+      );
     }
-    for (const file of files) {
-      const rel = file === from ? '' : file.slice(from.length + 1);
-      if (!rel) continue;
-      const target = `${to}/${rel}`;
-      const blob = await humanFilesApi.download(humanName, file);
-      await humanFilesApi.writeFile(humanName, target, blob);
-      const { trashId } = await humanFilesApi.deleteFile(humanName, file);
-      if (trashId) await humanFilesApi.purgeTrash(humanName, trashId);
+    const copied = await humanFilesApi.download(humanName, to, { size: blob.size });
+    if (copied.size !== blob.size) {
+      throw new Error(
+        `目标文件长度校验失败（预期 ${blob.size} 字节，实际 ${copied.size} 字节），源文件未删除`,
+      );
     }
+    if ((await sha256Blob(copied)) !== sourceChecksum) {
+      throw new Error('目标文件 SHA-256 校验失败，源文件未删除');
+    }
+    await deleteEntry(from);
+  };
+
+  const requireFileSource = (from: string, directoryMessage: string): HumanFileEntry => {
+    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === from);
+    if (!entry) {
+      throw new Error('找不到源文件，可能已被移动或删除；请刷新后重试');
+    }
+    if (entry.type === 'directory') {
+      throw new ApiError(directoryMessage, 501, 'human-files');
+    }
+    return entry;
   };
 
   const submitRename = async (plan: { from: string; to: string }) => {
-    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from) ?? null;
-    // 先换名（同目录就地替换 path），失败回滚并让弹窗显示错误。
-    const rollback = optimisticMove(entry, plan.from, plan.to);
+    let rollback = () => {};
     try {
-      await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
+      const entry = requireFileSource(plan.from, DIRECTORY_RENAME_UNSUPPORTED);
+      // 先换名（同目录就地替换 path），失败回滚并让弹窗显示错误。
+      rollback = optimisticMove(entry, plan.from, plan.to);
+      await copyAndRemove(plan.from, plan.to, entry);
       if (focusedPath === plan.from) setFocusedPath(plan.to);
       afterWrite('rename', { dir: parentDir(plan.from), destDir: parentDir(plan.to) });
+      toast.success('重命名成功', { description: '源文件已移入回收站，可恢复' });
     } catch (err) {
       rollback();
       toast.error('重命名失败', { description: filesErrorText(err) });
@@ -1090,12 +1072,14 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
   };
 
   const submitMove = async (plan: { from: string; to: string }) => {
-    const entry = knownEntries.find((e) => entryRowPath(e, dirPath) === plan.from) ?? null;
-    const rollback = optimisticMove(entry, plan.from, plan.to);
+    let rollback = () => {};
     try {
-      await copyAndRemove(plan.from, plan.to, entry?.type === 'directory');
+      const entry = requireFileSource(plan.from, DIRECTORY_MOVE_UNSUPPORTED);
+      rollback = optimisticMove(entry, plan.from, plan.to);
+      await copyAndRemove(plan.from, plan.to, entry);
       if (focusedPath === plan.from) setFocusedPath(plan.to);
       afterWrite('move', { dir: parentDir(plan.from), destDir: parentDir(plan.to) });
+      toast.success('移动成功', { description: '源文件已移入回收站，可恢复' });
     } catch (err) {
       rollback();
       toast.error('移动失败', { description: filesErrorText(err) });
@@ -1108,9 +1092,14 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
     return trashId;
   };
 
-  const confirmDelete = async (purge: boolean) => {
+  const confirmDelete = async (recoverable: boolean) => {
     if (!deleteTarget) return;
     const target = deleteTarget;
+    if (target.isDir) {
+      const err = new Error('暂不支持删除文件夹，源目录未做任何修改');
+      toast.error('删除失败', { description: filesErrorText(err) });
+      throw err;
+    }
     // 先从当前目录摘掉（回收站可见性由失效保证），失败回滚。
     const rollback = removeFromDir(parentDir(target.path), target.path);
     let trashId = '';
@@ -1121,7 +1110,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
       toast.error('删除失败', { description: filesErrorText(err) });
       throw err;
     }
-    if (purge && trashId) {
+    if (!recoverable && trashId) {
       try {
         await humanFilesApi.purgeTrash(humanName, trashId);
       } catch (err) {
@@ -1144,7 +1133,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
       });
     }
     if (focusedPath === target.path) setFocusedPath(null);
-    afterWrite(purge ? 'purge' : 'delete', { dir: parentDir(target.path) });
+    afterWrite(recoverable ? 'delete' : 'purge', { dir: parentDir(target.path) });
   };
 
   const confirmBatchDelete = async () => {
@@ -1832,6 +1821,7 @@ function PersonalFilesSection({ initialHuman, active }: FilesSectionProps & { ac
         onOpenChange={setBatchDeleteOpen}
         target={null}
         count={selected.size}
+        bulk
         onConfirm={confirmBatchDelete}
       />
       <QuotaDialog

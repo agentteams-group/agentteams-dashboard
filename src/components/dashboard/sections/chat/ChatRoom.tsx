@@ -2,21 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useChatStore } from './ChatStore';
-import { MessageList, type MessageListHandle } from './structures/MessageList';
+import type { MessageListHandle } from './structures/MessageList';
 import { usePersistedDraft } from './hooks/usePersistedDraft';
 import { useFileUpload } from './hooks/useFileUpload';
 import { useFileDropZone } from './hooks/useFileDropZone';
 import { buildOutboundRequest, useOutboundMessages } from './hooks/useOutboundMessages';
 import type { CollaborationFileScope } from '@/lib/collaboration-files';
 import { ChatRoomHeader } from './components/ChatRoomHeader';
-import { RoomContextPanel, type RoomContextTab } from './components/RoomContextPanel';
+import type { RoomContextTab } from './components/RoomContextPanel';
 import { RoomContextTabs } from './components/RoomContextTabs';
 import { RoomTaskActivity } from './components/RoomTaskActivity';
 import type { RoomTaskData } from './components/RoomTasksPanel';
 import { indexRoomReplies } from './room-replies';
-import { RoomAttachments } from './components/RoomAttachments';
-import { AttachmentPreviewContext, AttachmentPreviewPanel, type PreviewAttachment } from './attachment-preview';
-import { TaskTopologyPopover } from './components/TaskTopologyPopover';
+import { AttachmentPreviewContext, type PreviewAttachment } from './attachment-preview';
 import { DragDropOverlay } from './components/DragDropOverlay';
 import { useMatrixStore } from '@/lib/matrix-store';
 import { useSectionStore } from '@/lib/section-store';
@@ -31,7 +29,6 @@ import {
   useMatrixSendReadReceipt,
   useMatrixEditMessage,
   useMatrixRedactMessage,
-  formatMatrixEvents,
   formatMatrixEvent,
   type DisplayMessage,
   type RoomMember,
@@ -40,11 +37,10 @@ import { matrixApi, MatrixRequestError, type MatrixEvent } from '@/lib/matrix-ap
 import { assembleChatTimeline } from '@/lib/chat-ir/assemble';
 import { useMatrixReadReceipts, useRoomMetaStore } from '@/hooks/use-matrix';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { WorkerChatsPanel } from '@/components/dashboard/sections/workers/worker-chats-panel';
 import { PanelRightClose, PanelRightOpen, ArrowDown } from 'lucide-react';
 import { isDesktopHover } from '@/lib/desktop-interactions';
 import { Button } from '@/components/ui/button';
-import { ChatComposer, type MentionEntry } from './chat-composer';
+import type { MentionEntry } from './chat-composer';
 import { getDirectExecution, executionControl, EXECUTION_KEY, markStoppedMessages } from '@/lib/direct-execution';
 import { withFileReferences, type FileRef } from '@/lib/file-refs';
 import { parseOutboundCommand } from './composer-commands';
@@ -70,6 +66,8 @@ import type { RoomInfo } from './room-info';
 import { MessageReadRoomContext } from './message-read-status';
 import { ingestHitlTimelineEvents } from '@/lib/hitl-inbox';
 import { chatQueueKey, sendQueuedMessage, useChatMessageQueue } from '@/lib/chat-message-queue';
+import { useIncrementalMatrixTimeline } from '@/hooks/use-incremental-matrix-timeline';
+import { AttachmentPreviewPanel, ChatComposer, MessageList, RoomAttachments, RoomContextPanel, TaskTopologyPopover, WorkerChatsPanel } from './chat-room-lazy-panels';
 
 /** Window within which ArrowUp recovers the latest own message for editing. */
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -312,18 +310,19 @@ export function ChatRoom({
   // a 10-min done→idle decay. Humans get no dot (no map entry).
   const agentStatusMap = useWorkerAgentStatusMap();
   const sessionTick = useSessionTick();
+  const lastTsBySender = useMemo<Record<string, number>>(() => {
+    const latest: Record<string, number> = {};
+    for (const event of allEvents) {
+      if (!event.sender) continue;
+      if ((event.origin_server_ts ?? 0) > (latest[event.sender] ?? 0)) {
+        latest[event.sender] = event.origin_server_ts;
+      }
+    }
+    return latest;
+  }, [allEvents]);
   const senderStatusMap = useMemo<Record<string, WorkerSessionState>>(() => {
     const map: Record<string, WorkerSessionState> = {};
     const typingSet = new Set(typingUsers.map((u) => u.userId));
-    // Per-sender latest message ts in this room (for the done decay when
-    // the controller predates the heartbeat status fields).
-    const lastTsBySender: Record<string, number> = {};
-    for (const e of allEvents) {
-      if (!e.sender) continue;
-      if ((e.origin_server_ts ?? 0) > (lastTsBySender[e.sender] ?? 0)) {
-        lastTsBySender[e.sender] = e.origin_server_ts;
-      }
-    }
     for (const [mxId, info] of Object.entries(agentStatusMap)) {
       map[mxId] = deriveWorkerSessionState({
         agentStatus: info,
@@ -334,21 +333,18 @@ export function ChatRoom({
       });
     }
     return map;
-  }, [agentStatusMap, typingUsers, allEvents, sessionTick]);
+  }, [agentStatusMap, typingUsers, lastTsBySender, sessionTick]);
 
-  // ChatIR: format raw Matrix events once, then assemble runtime turns. The
-  // assembly adds turn ids, canonical/latest event ids (receipts), runtime
-  // states and attachment placement on top of the formatted timeline.
-  const matrixMessages = useMemo(
-    // Execution notices drive the composer, independently of the timeline.
-    () => formatMatrixEvents(allEvents.filter(event => !(
-      workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
-    )), currentUserId),
-    [allEvents, currentUserId, workerMatrixUserIds],
-  );
+  // ChatIR: format immutable raw history once, then assemble runtime turns.
+  // The shared 60-second tick intentionally does not participate in assembly;
+  // it only ages the lightweight sender-status dots above.
+  const timelineEvents = useMemo(() => allEvents.filter(event => !(
+    workerMatrixUserIds?.includes(event.sender) && event.content[EXECUTION_KEY]
+  )), [allEvents, workerMatrixUserIds]);
+  const matrixMessages = useIncrementalMatrixTimeline(roomId, timelineEvents, currentUserId);
   const chatIr = useMemo(
-    () => assembleChatTimeline(matrixMessages, allEvents, { currentUserId, runtimeMap, now: sessionTick }),
-    [matrixMessages, allEvents, currentUserId, runtimeMap, sessionTick],
+    () => assembleChatTimeline(matrixMessages, allEvents, { currentUserId, runtimeMap, now: Date.now() }),
+    [matrixMessages, allEvents, currentUserId, runtimeMap],
   );
   const formattedMessages = useMemo(() => markStoppedMessages(
     chatIr.messages, allEvents, workerMatrixUserIds,

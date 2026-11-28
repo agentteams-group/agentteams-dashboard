@@ -4,12 +4,14 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
 import type { RefObject } from 'react';
 import { useTheme } from '@/components/theme/theme-provider';
+import { useMatrixStore } from '@/lib/matrix-store';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import {
   Search,
   X,
   Zap,
   RefreshCw,
+  Loader2,
   Sun,
   Moon,
   Contrast,
@@ -61,6 +63,8 @@ interface DashboardHeaderProps {
   onNavClick: (_sectionId: string) => void;
   onRefreshAll: () => void;
   onOpenMobileMenu: () => void;
+  mobileMenuOpen?: boolean;
+  mobileMenuTriggerRef?: RefObject<HTMLButtonElement | null>;
   onOpenSettings: () => void;
   mode?: DeploymentMode | null;
   createActions?: readonly CreateAction[];
@@ -82,6 +86,8 @@ export function DashboardHeader({
   onNavClick,
   onRefreshAll,
   onOpenMobileMenu,
+  mobileMenuOpen = false,
+  mobileMenuTriggerRef,
   onOpenSettings,
   mode,
   createActions: actions = createActions,
@@ -98,6 +104,9 @@ export function DashboardHeader({
   const waitingForQuery = !!query.trim() && query !== debouncedQuery;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const matrixLogout = useMatrixStore((s) => s.logout);
 
   const searchResults = useGlobalSearch(query.trim() ? debouncedQuery : '', workers, teams, managers, humans, {
     enabled: paletteOpen && !waitingForQuery,
@@ -107,12 +116,19 @@ export function DashboardHeader({
   const sessionUser = useAgentTeamsStore((s) => s.sessionUser);
 
   // 退出登录：清服务端 session（at_dash_sess + 残留 _hi_sess）→ 回登录页。
-  const handleLogout = () => {
-    // The login UI is rendered at the ROOT path (page.tsx shows LoginPage when
-    // unauthenticated) — there is no /login route (404).
-    void fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' }).finally(() => {
+  const handleLogout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutError(null);
+    try {
+      const response = await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error(`退出失败（HTTP ${response.status}），当前登录仍保留`);
+      matrixLogout();
       window.location.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`);
-    });
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : '退出失败，请重试');
+      setLogoutPending(false);
+    }
   };
 
   const levelLabel = userLevel === 3 ? '管理员' : userLevel === 2 ? '团队成员' : '观察者';
@@ -164,8 +180,11 @@ export function DashboardHeader({
         variant="ghost"
         size="icon"
         className="md:hidden"
+        ref={mobileMenuTriggerRef}
         onClick={onOpenMobileMenu}
         aria-label="打开导航菜单"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="mobile-navigation"
       >
         <Menu className="w-5 h-5" aria-hidden="true" />
       </Button>
@@ -297,9 +316,13 @@ export function DashboardHeader({
                 <ImageIcon className="mr-2 h-4 w-4" />
                 更换我的头像
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400">
-                <LogOut className="mr-2 h-4 w-4" />
-                退出登录
+              <DropdownMenuItem
+                onSelect={(event) => { event.preventDefault(); void handleLogout(); }}
+                disabled={logoutPending}
+                className="text-status-failed focus:text-status-failed"
+              >
+                {logoutPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                {logoutPending ? '正在退出…' : '退出登录'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -331,6 +354,12 @@ export function DashboardHeader({
           <Settings className="w-4 h-4" aria-hidden="true" />
         </Button>
       </div>
+      {logoutError && (
+        <p role="alert" className="absolute inset-x-0 top-full z-40 border border-status-failed/30 bg-background px-4 py-2 text-sm text-status-failed shadow-md">
+          {logoutError}
+          <Button variant="link" className="ml-2 h-auto p-0 text-status-failed" onClick={() => void handleLogout()}>重试</Button>
+        </p>
+      )}
       {avatarOpen && sessionUser && <AvatarEditor key={sessionUser} kind="human" name={sessionUser} onClose={() => setAvatarOpen(false)} />}
     </header>
   );

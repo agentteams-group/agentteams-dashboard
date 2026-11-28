@@ -19,7 +19,14 @@ import { NextRequest } from 'next/server';
 vi.mock('@/lib/server-auth', () => ({
   enforceLevelOnlyRbac: vi.fn(async () => null),
   enforceServerSideRbac: vi.fn(async () => null),
-  readServerIdentity: vi.fn(() => ({ level: 3 })),
+  enforceStorageObjectRbac: vi.fn(async () => null),
+  filterStorageKeysForIdentity: vi.fn((_request: unknown, _action: unknown, keys: unknown[]) => keys),
+  readServerIdentity: vi.fn(() => ({ level: 3, scope: 'global', name: 'review', sourceIp: '127.0.0.1' })),
+}));
+
+// This suite exercises the real MinIO fallback, not the live Controller asset API.
+vi.mock('@/app/api/higress/controller-helper', () => ({
+  callControllerAsset: vi.fn(async () => null),
 }));
 
 import { GET as presignGET, POST as presignPOST } from '@/app/api/agentteams/storage/presign/route';
@@ -50,6 +57,13 @@ const config = enabled
       return cfg;
     })()
   : null;
+
+if (enabled && !config?.endPoint) {
+  throw new Error('STORAGE_REGRESSION=1 requires AGENTTEAMS_FS_ENDPOINT or AGENTTEAMS_MINIO_ENDPOINT');
+}
+if (enabled && (!config?.accessKey || !config?.secretKey)) {
+  throw new Error('STORAGE_REGRESSION=1 requires storage access-key and secret-key environment variables');
+}
 
 const ready = Boolean(enabled && config?.endPoint && config.accessKey && config.secretKey);
 const d = (ready ? describe : describe.skip) as typeof describe;
@@ -182,7 +196,7 @@ d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
   });
 
   it('object upload / download / list / stats / delete round-trip', async () => {
-    const key = `${PREFIX}/objects/roundtrip.txt`;
+    const key = `${PREFIX}/roundtrip.txt`;
     const upload = await uploadPOST(
       new NextRequest(`http://localhost/api/agentteams/storage/upload?bucket=${config!.bucket}&key=${encodeURIComponent(key)}`, {
         method: 'POST',
@@ -199,7 +213,7 @@ d('§3.3.4 #3 storage management routes (error-code semantics)', () => {
     expect(await download.text()).toBe('round-trip-content');
 
     const list = await objectsGET(
-      jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects?prefix=${encodeURIComponent(`${PREFIX}/objects/`)}`, 'GET'),
+      jsonReq(`http://localhost/api/agentteams/storage/buckets/${config!.bucket}/objects?prefix=${encodeURIComponent(`${PREFIX}/`)}`, 'GET'),
       { params: Promise.resolve({ bucket: config!.bucket }) },
     );
     expect(list.status).toBe(200);

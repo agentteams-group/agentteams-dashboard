@@ -58,34 +58,49 @@ export function checkPermission(
   resourceName: string,
   customRules: RBACRule[] = []
 ): { allowed: boolean; reason: string } {
-  // Check explicit rules
+  // Check explicit deny rules first so they cannot be bypassed by scope defaults.
   for (const rule of customRules) {
-    // Check if rule applies to this human
     const subjectMatches =
       (rule.subject.type === 'human' && rule.subject.name === human.name) ||
       (rule.subject.type === 'role' && rule.subject.level === human.permissionLevel);
-
-    if (!subjectMatches) continue;
-
-    // Check if rule applies to this resource
     const resourceMatches =
       rule.resource.type === 'global' ||
       (rule.resource.type === resourceType && (!rule.resource.name || rule.resource.name === resourceName));
-
-    if (!resourceMatches) continue;
-
-    // Check if rule covers this action
-    if (!rule.actions.includes(action)) continue;
-
-    if (rule.effect === 'deny') {
+    if (subjectMatches && resourceMatches && rule.actions.includes(action) && rule.effect === 'deny') {
       return { allowed: false, reason: `被规则 "${rule.id}" 显式拒绝` };
     }
-    if (rule.effect === 'allow') {
+  }
+
+  // 只有可信管理员身份代表全局范围。缺失或空列表均表示无范围，必须拒绝；
+  // 显式 allow 规则也不能绕过这一边界。
+  const globalScope = human.systemAdmin === true;
+  const scopedNames = resourceType === 'team' ? human.accessibleTeams : human.accessibleWorkers;
+  if (!globalScope) {
+    if (!Array.isArray(scopedNames)) {
+      return { allowed: false, reason: `未知${resourceType === 'team' ? '团队' : 'Worker'}范围，默认拒绝` };
+    }
+    if (!scopedNames.includes(resourceName)) {
+      return {
+        allowed: false,
+        reason: `用户无权访问${resourceType === 'team' ? '团队' : 'Worker'} "${resourceName}"`,
+      };
+    }
+  }
+
+  // Check explicit allow rules after the resource boundary has been enforced.
+  for (const rule of customRules) {
+    const subjectMatches =
+      (rule.subject.type === 'human' && rule.subject.name === human.name) ||
+      (rule.subject.type === 'role' && rule.subject.level === human.permissionLevel);
+    const resourceMatches =
+      rule.resource.type === 'global' ||
+      (rule.resource.type === resourceType && (!rule.resource.name || rule.resource.name === resourceName));
+    if (subjectMatches && resourceMatches && rule.actions.includes(action) && rule.effect === 'allow') {
       return { allowed: true, reason: `被规则 "${rule.id}" 显式允许` };
     }
   }
 
-  // Fall back to permission level
+  // Fall back to permission level.
   const levelPerms = getLevelPermissions(human.permissionLevel);
   if (!levelPerms.includes(action)) {
     return {
@@ -94,20 +109,7 @@ export function checkPermission(
     };
   }
 
-  // Check resource scoping (accessibleTeams/accessibleWorkers)
-  if (resourceType === 'team' && human.accessibleTeams && human.accessibleTeams.length > 0) {
-    if (!human.accessibleTeams.includes(resourceName)) {
-      return { allowed: false, reason: `用户无权访问团队 "${resourceName}"` };
-    }
-  }
-
-  if (resourceType === 'worker' && human.accessibleWorkers && human.accessibleWorkers.length > 0) {
-    if (!human.accessibleWorkers.includes(resourceName)) {
-      return { allowed: false, reason: `用户无权访问 Worker "${resourceName}"` };
-    }
-  }
-
-  return { allowed: true, reason: '通过权限等级检查' };
+  return { allowed: true, reason: globalScope ? '通过管理员全局范围检查' : '通过权限等级与资源范围检查' };
 }
 
 /**
@@ -132,11 +134,15 @@ export function getAccessSummary(human: HumanResponse): {
     level: levelNames[level] || '未知',
     levelNumber: level,
     permissions: getLevelPermissions(level),
-    teamScope: human.accessibleTeams && human.accessibleTeams.length > 0
-      ? human.accessibleTeams.join(', ')
-      : '所有团队',
-    workerScope: human.accessibleWorkers && human.accessibleWorkers.length > 0
-      ? human.accessibleWorkers.join(', ')
-      : '所有 Worker',
+    teamScope: human.systemAdmin === true
+      ? '所有团队'
+      : Array.isArray(human.accessibleTeams) && human.accessibleTeams.length > 0
+        ? human.accessibleTeams.join(', ')
+        : '无团队范围',
+    workerScope: human.systemAdmin === true
+      ? '所有 Worker'
+      : Array.isArray(human.accessibleWorkers) && human.accessibleWorkers.length > 0
+        ? human.accessibleWorkers.join(', ')
+        : '无 Worker 范围',
   };
 }

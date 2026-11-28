@@ -8,6 +8,7 @@ import { applyHotfix, claimHotfixRun, releaseHotfixRun, selectHotfixAssets } fro
 export const dynamic = 'force-dynamic';
 
 const RESTART_DELAY_MS = 800;
+const FORCE_KILL_DELAY_MS = 1500;
 
 function hotfixConfig(): { repo: string; assetPrefix: string; currentVersion: string } {
   return {
@@ -38,6 +39,7 @@ function scheduleHardRestart(): void {
       /* already dying */
     }
     setTimeout(() => {
+      releaseHotfixRun();
       try {
         process.kill(process.pid, 'SIGKILL');
       } catch {
@@ -48,7 +50,7 @@ function scheduleHardRestart(): void {
       } catch {
         /* noop */
       }
-    }, 1500).unref();
+    }, FORCE_KILL_DELAY_MS).unref();
   }, RESTART_DELAY_MS).unref();
 }
 
@@ -102,7 +104,7 @@ export async function POST(request: NextRequest) {
     const result = await applyHotfix({ release });
     const identity = readServerIdentity(request);
     if (identity) {
-      void appendAuditEvent({
+      await appendAuditEvent({
         actor: identity.name,
         actor_level: identity.level,
         entity_type: 'system',
@@ -117,11 +119,23 @@ export async function POST(request: NextRequest) {
     // Let the response flush, then hard-terminate so the supervisor restarts
     // the process on the patched files.
     scheduleHardRestart();
-    releaseHotfixRun();
     return NextResponse.json({ ok: true, version: result.version, buildId: result.buildId });
   } catch (error) {
     releaseHotfixRun();
     const message = error instanceof Error ? error.message : '热更新失败';
+    const identity = readServerIdentity(request);
+    if (identity) {
+      await appendAuditEvent({
+        actor: identity.name,
+        actor_level: identity.level,
+        entity_type: 'system',
+        entity_name: 'dashboard-hotfix',
+        action: 'self-update-failed',
+        details: `hot-patch ${currentVersion} failed: ${message}`,
+        severity: 'error',
+        source_ip: identity.sourceIp,
+      });
+    }
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

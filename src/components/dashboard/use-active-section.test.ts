@@ -1,13 +1,15 @@
 'use client';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { resetInitialResolutionForTests, useActiveSection } from './use-active-section';
 import { STORAGE_KEY } from './nav-items';
 import { useSectionStore } from '@/lib/section-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { taskCollaborationHash } from '@/lib/nav-hash';
 import { openChatRoom } from '@/lib/open-chat-room';
+
+const browserLocation = window.location;
 
 function setHash(hash: string) {
   Object.defineProperty(window, 'location', {
@@ -34,6 +36,7 @@ describe('useActiveSection', () => {
   afterEach(() => {
     replaceStateSpy.mockRestore();
     localStorage.clear();
+    Object.defineProperty(window, 'location', { writable: true, value: browserLocation });
   });
 
   describe('initial active section', () => {
@@ -109,6 +112,43 @@ describe('useActiveSection', () => {
       const { result } = renderHook(() => useActiveSection());
       expect(result.current.activeSection).toBe('chat');
       expect(replaceStateSpy).not.toHaveBeenCalled();
+    });
+
+    it('restores files deep links on refresh and normalizes legacy links without dropping context', () => {
+      setHash('#console/resources/files?path=docs&file=a.md');
+      const first = renderHook(() => useActiveSection());
+      expect(first.result.current.activeSection).toBe('files');
+      first.unmount();
+
+      resetInitialResolutionForTests();
+      setHash('#files?path=docs&file=a.md');
+      const second = renderHook(() => useActiveSection());
+      expect(second.result.current.activeSection).toBe('files');
+      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#console/resources/files?path=docs&file=a.md');
+    });
+
+    it('follows files deep links through hash changes and back/forward history', async () => {
+      Object.defineProperty(window, 'location', { writable: true, value: browserLocation });
+      window.history.replaceState(null, '', '#console/system/overview');
+      const { result } = renderHook(() => useActiveSection());
+      act(() => {
+        window.history.pushState(null, '', '#console/resources/files?path=docs&file=a.md');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      expect(result.current.activeSection).toBe('files');
+      act(() => {
+        window.history.pushState(null, '', '#console/resources/files?path=images&file=b.png');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      act(() => {
+        window.history.back();
+      });
+      expect(result.current.activeSection).toBe('files');
+      await waitFor(() => expect(window.location.hash).toContain('file=a.md'));
+      act(() => {
+        window.history.forward();
+      });
+      await waitFor(() => expect(window.location.hash).toContain('file=b.png'));
     });
 
     it('routes the legacy grouped hash through to the fallback default', () => {

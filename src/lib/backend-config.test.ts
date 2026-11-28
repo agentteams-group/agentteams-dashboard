@@ -8,6 +8,7 @@ import {
   BACKEND_NAMES,
   EMBEDDED_DEFAULTS,
   authHeaderFor,
+  addressOrigin,
   backendAuthHeader,
   backendCandidates,
   backendCandidatesSync,
@@ -25,6 +26,7 @@ import {
   isTestTargetAllowed,
   listMatchesSaved,
   markWorking,
+  mergeAddressEntry,
   orderedCandidates,
   pickBackendUrl,
   probeBackend,
@@ -37,6 +39,14 @@ import {
   updateConfig,
   type ProbeRow,
 } from './backend-config';
+import { egressFetch } from './egress-policy';
+
+// Keep these unit tests focused on backend probe/auth/election behavior. The
+// real transport, DNS pinning and SSRF denials are covered in egress-policy.test.ts.
+vi.mock('./egress-policy', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./egress-policy')>();
+  return { ...original, egressFetch: vi.fn() };
+});
 
 let workDir: string;
 
@@ -53,6 +63,22 @@ beforeEach(() => {
   vi.stubEnv('DASHBOARD_CONFIG_FILE', path.join(workDir, 'config.json'));
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', '');
   vi.stubEnv('DASHBOARD_SETUP_TOKEN', '');
+  vi.stubEnv('DASHBOARD_ALLOWED_HOSTS', '127.0.0.1,localhost');
+  vi.mocked(egressFetch).mockImplementation(async (rawUrl, options) => {
+    let current = rawUrl;
+    for (let hop = 0; ; hop += 1) {
+      const response = await fetch(current, {
+        method: options.method,
+        headers: options.headers ? Object.fromEntries(new Headers(options.headers)) : undefined,
+        body: options.body,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(options.timeoutMs),
+      });
+      const location = response.headers.get('location');
+      if (!location || hop >= (options.maxRedirects ?? 2)) return response;
+      current = new URL(location, current).toString();
+    }
+  });
   for (const name of BACKEND_NAMES) forgetWorking(name);
 });
 
@@ -224,6 +250,18 @@ describe('saveConfigOneShot / updateConfig', () => {
     const result = await saveConfigOneShot({ controller: { external: 'ftp://nope' } });
     expect(result.ok).toBe(false);
     expect(await configExists()).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')('writes and updates config with directory 0700 / file 0600', async () => {
+    const directory = path.dirname(configFilePath());
+    fs.mkdirSync(directory, { recursive: true });
+    fs.chmodSync(directory, 0o755);
+    await updateConfig({ controller: { internal: 'http://a:8090' } });
+    expect(fs.statSync(directory).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(configFilePath()).mode & 0o777).toBe(0o600);
+    fs.chmodSync(configFilePath(), 0o644);
+    await updateConfig({ matrix: { internal: 'http://b:6167' } });
+    expect(fs.statSync(configFilePath()).mode & 0o777).toBe(0o600);
   });
 
   it('updateConfig creates and merges per-backend (F1f-E)', async () => {
@@ -462,6 +500,8 @@ describe('probeBackend', () => {
   });
 
   it('post-merge review: refuses a redirect to a disallowed target (302 → metadata sentinel)', async () => {
+    const actual = await vi.importActual<typeof import('./egress-policy')>('./egress-policy');
+    vi.mocked(egressFetch).mockImplementation(actual.egressFetch);
     const redirectServer = createServer((_req, res) => {
       res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' });
       res.end();
@@ -863,16 +903,13 @@ describe('per-address auth entries (plugin parity)', () => {
       url: 'http://gw:8090',
       auth: { type: 'basic', username: 'u', password: 'old-pass' },
     });
-    // 空串同义
+    // 空秘密不再继承：只有脱敏占位表示「保持不变」。
     await updateConfig({
       controller: {
         internal: { url: 'http://gw:8090', auth: { type: 'basic', username: 'u', password: '' } },
       },
     });
-    expect(readConfigSync()?.backends.controller?.internal).toEqual({
-      url: 'http://gw:8090',
-      auth: { type: 'basic', username: 'u', password: 'old-pass' },
-    });
+    expect(readConfigSync()?.backends.controller?.internal).toBe('http://gw:8090');
     // 新密码 → 覆盖
     await updateConfig({
       controller: {
@@ -916,7 +953,40 @@ describe('per-address auth entries (plugin parity)', () => {
     expect(readConfigSync()?.backends.controller?.internal).toBe('http://gw:8090');
   });
 
-  it('④ 读取脱敏：password/token → ***，username 保留，明文不回传', () => {
+  it('④ 脱敏凭据只在规范化 origin 与 auth type 一致时继承', () => {
+    const oldEntry = {
+      url: 'http://Gateway.Example:8090/base',
+      auth: { type: 'basic' as const, username: 'u', password: 'old-secret' },
+    };
+    expect(addressOrigin(oldEntry.url)).toBe('http://gateway.example:8090');
+    // scheme/host/port 一致：路径、默认端口大小写等规范化差异可继承。
+    expect(mergeAddressEntry(oldEntry, {
+      url: 'http://gateway.example:8090/other', auth: { type: 'basic', username: 'u', password: '***' },
+    })).toEqual({
+      url: 'http://gateway.example:8090/other', auth: { type: 'basic', username: 'u', password: 'old-secret' },
+    });
+    expect(mergeAddressEntry(oldEntry, {
+      url: 'http://gateway.example:80/other', auth: { type: 'basic', username: 'u', password: '***' },
+    })).toBe('http://gateway.example:80/other');
+    for (const url of [
+      'https://gateway.example:8090/base',
+      'http://other.example:8090/base',
+      'http://gateway.example:8091/base',
+    ]) {
+      expect(mergeAddressEntry(oldEntry, {
+        url, auth: { type: 'basic', username: 'u', password: '***' },
+      })).toBe(url);
+    }
+    // auth type 变化不继承；新 origin 上的完整新凭据仍然可以显式保存。
+    expect(mergeAddressEntry(oldEntry, {
+      url: 'http://other.example:8090', auth: { type: 'bearer', token: '***' },
+    })).toBe('http://other.example:8090');
+    expect(mergeAddressEntry(oldEntry, {
+      url: 'http://other.example:8090', auth: { type: 'bearer', token: 'new-token' },
+    })).toEqual({ url: 'http://other.example:8090', auth: { type: 'bearer', token: 'new-token' } });
+  });
+
+  it('⑤ 读取脱敏：password/token → ***，username 保留，明文不回传', () => {
     fs.writeFileSync(
       configFilePath(),
       JSON.stringify({
@@ -976,10 +1046,8 @@ describe('per-address auth entries (plugin parity)', () => {
     expect(backendAuthHeader('matrix', 'http://mx:6167/')).toEqual({
       Authorization: 'Bearer tok',
     });
-    // 候选 URL 的 http/https 变体命中同一条目（插件 X1c 归一）
-    expect(backendAuthHeader('controller', 'https://gw:8090')).toEqual({
-      Authorization: 'Basic YWRtaW46cGFzcw==',
-    });
+    // scheme 变化不命中同一凭据（origin 绑定）。
+    expect(backendAuthHeader('controller', 'https://gw:8090')).toEqual({});
     // 地址不匹配 → 不带凭据（防凭据串到别的后端）
     expect(backendAuthHeader('controller', 'http://other:8090')).toEqual({});
     expect(authHeaderFor(null)).toEqual({});

@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { zipSync } from 'fflate';
-import { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } from '@/lib/server-auth';
+import {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} from '@/lib/server-auth';
 
 // RBAC 拒绝时会写审计日志——mock 掉以保证测试不落盘。
 const auditMock = vi.hoisted(() => ({
@@ -36,18 +42,36 @@ vi.mock('@/lib/minio-client', () => {
   };
 });
 
-/** Build a NextRequest that pretends to be multipart by mocking formData.
- *  `level` 模拟 middleware 注入的会话身份；缺省 = 无身份头（测试路径）。 */
+function trustedHeaders(contentType?: string): Headers {
+  const headers = new Headers({
+    [SERVER_USER_HEADER]: 'admin',
+    [SERVER_USER_LEVEL_HEADER]: '3',
+    [SERVER_USER_SCOPE_HEADER]: 'global',
+    [SERVER_USER_TEAMS_HEADER]: '[]',
+    [SERVER_USER_WORKERS_HEADER]: '[]',
+  });
+  if (contentType) headers.set('content-type', contentType);
+  return headers;
+}
+
+/** Build a request carrying the trusted identity middleware injects. */
 function buildMultipartRequest(
   zipBytes: Uint8Array<ArrayBuffer>,
-  level?: number,
+  level: number | null = 3,
 ): NextRequest {
-  const headers: Record<string, string> = {
-    'content-type': 'multipart/form-data; boundary=----TestBoundary',
-  };
-  if (level !== undefined) {
-    headers[SERVER_USER_HEADER] = level === 3 ? 'admin' : 'observer';
-    headers[SERVER_USER_LEVEL_HEADER] = String(level);
+  const headers = trustedHeaders('multipart/form-data; boundary=----TestBoundary');
+  if (level === null) {
+    headers.delete(SERVER_USER_HEADER);
+    headers.delete(SERVER_USER_LEVEL_HEADER);
+    headers.delete(SERVER_USER_SCOPE_HEADER);
+    headers.delete(SERVER_USER_TEAMS_HEADER);
+    headers.delete(SERVER_USER_WORKERS_HEADER);
+  } else if (level !== 3) {
+    headers.set(SERVER_USER_HEADER, 'observer');
+    headers.set(SERVER_USER_LEVEL_HEADER, String(level));
+    headers.set(SERVER_USER_SCOPE_HEADER, 'scoped');
+    headers.set(SERVER_USER_TEAMS_HEADER, JSON.stringify(['t1']));
+    headers.set(SERVER_USER_WORKERS_HEADER, JSON.stringify(['worker-1']));
   }
   const req = new NextRequest('http://localhost/api/agentteams/packages', {
     method: 'POST',
@@ -69,7 +93,7 @@ describe('POST /packages', () => {
   it('rejects non-multipart requests', async () => {
     const req = new NextRequest('http://localhost/api/agentteams/packages', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: trustedHeaders('application/json'),
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -78,7 +102,7 @@ describe('POST /packages', () => {
   it('returns 400 when file is missing', async () => {
     const req = new NextRequest('http://localhost/api/agentteams/packages', {
       method: 'POST',
-      headers: { 'content-type': 'multipart/form-data; boundary=----TestBoundary' },
+      headers: trustedHeaders('multipart/form-data; boundary=----TestBoundary'),
     });
     req.formData = async () => new FormData();
     const res = await POST(req);
@@ -88,7 +112,7 @@ describe('POST /packages', () => {
   it('returns 400 for non-zip files', async () => {
     const req = new NextRequest('http://localhost/api/agentteams/packages', {
       method: 'POST',
-      headers: { 'content-type': 'multipart/form-data; boundary=----TestBoundary' },
+      headers: trustedHeaders('multipart/form-data; boundary=----TestBoundary'),
     });
     req.formData = async () => {
       const form = new FormData();
@@ -156,12 +180,11 @@ describe('POST /packages L3 写门 (rbac)', () => {
     );
   });
 
-  it('无身份头（middleware 之外的测试路径）按文档语义放行，而非 403', async () => {
-    // enforceLevelOnlyRbac 对无身份请求返回 null（放行）：边缘鉴权由
-    // middleware 承担（无会话 → 401，见 src/middleware.ts），与
-    // logs/[component] 路由对同一语义的既有断言一致。
-    const req = buildMultipartRequest(validZip);
+  it('无身份头时 fail closed 返回 401', async () => {
+    const req = buildMultipartRequest(validZip, null);
     const res = await POST(req);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(401);
+    const { createMinioClient } = await import('@/lib/minio-client');
+    expect(createMinioClient().putObject).not.toHaveBeenCalled();
   });
 });

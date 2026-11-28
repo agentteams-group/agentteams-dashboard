@@ -26,7 +26,7 @@ import {
   FolderOpen,
   Download,
 } from 'lucide-react';
-import { MarkdownMessage } from '../markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '../lazy-markdown-message';
 import { MermaidRenderer } from '../mermaid-renderer';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 import { DocumentPreview } from '@/components/dashboard/document-preview';

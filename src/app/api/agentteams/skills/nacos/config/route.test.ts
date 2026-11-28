@@ -23,7 +23,13 @@ vi.mock('@/lib/audit-log', () => ({
 // Import after mocking
 const { GET, PUT } = await import('./route');
 const { NACOS_PASSWORD_MASK } = await import('@/lib/skill-center-config');
-const { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } = await import('@/lib/server-auth');
+const {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} = await import('@/lib/server-auth');
 
 const PLAINTEXT_PASSWORD = 'super-secret-pw';
 
@@ -37,23 +43,29 @@ const SAVED_CONFIG = {
   password: PLAINTEXT_PASSWORD,
 };
 
-function buildGetRequest(level?: number): NextRequest {
+function buildGetRequest(level: number | null = 3): NextRequest {
   const headers: Record<string, string> = {};
-  if (level !== undefined) {
+  if (level !== null) {
     headers[SERVER_USER_HEADER] = `user-${level}`;
     headers[SERVER_USER_LEVEL_HEADER] = String(level);
+    headers[SERVER_USER_SCOPE_HEADER] = level === 3 ? 'global' : 'scoped';
+    headers[SERVER_USER_TEAMS_HEADER] = JSON.stringify(level === 3 ? [] : ['t1']);
+    headers[SERVER_USER_WORKERS_HEADER] = JSON.stringify(level === 3 ? [] : ['worker-1']);
   }
   return new NextRequest('http://localhost/api/agentteams/skills/nacos/config', { headers });
 }
 
 function buildPutRequest(
   body: Record<string, unknown>,
-  level?: number,
+  level: number | null = 3,
 ): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (level !== undefined) {
+  if (level !== null) {
     headers[SERVER_USER_HEADER] = `user-${level}`;
     headers[SERVER_USER_LEVEL_HEADER] = String(level);
+    headers[SERVER_USER_SCOPE_HEADER] = level === 3 ? 'global' : 'scoped';
+    headers[SERVER_USER_TEAMS_HEADER] = JSON.stringify(level === 3 ? [] : ['t1']);
+    headers[SERVER_USER_WORKERS_HEADER] = JSON.stringify(level === 3 ? [] : ['worker-1']);
   }
   return new NextRequest('http://localhost/api/agentteams/skills/nacos/config', {
     method: 'PUT',
@@ -63,6 +75,12 @@ function buildPutRequest(
 }
 
 describe('GET /api/agentteams/skills/nacos/config', () => {
+  it('无可信身份头时返回 401，不读取配置', async () => {
+    const res = await GET(buildGetRequest(null));
+    expect(res.status).toBe(401);
+    expect(mockGetNacosConfig).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetNacosConfig.mockResolvedValue(null);

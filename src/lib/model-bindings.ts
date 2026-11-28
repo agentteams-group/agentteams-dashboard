@@ -9,6 +9,8 @@ export interface AgentTeamsModelBinding {
   available: boolean;
   conflict?: boolean;
   passthrough?: boolean;
+  /** Explicit zero-weight upstreams stay visible but can never be selected. */
+  zeroWeight?: boolean;
 }
 
 function matchesPattern(value: string, pattern: string): boolean {
@@ -148,10 +150,9 @@ export function buildModelBindings(
   // so that newly configured mappings appear in the table even before any
   // instance uses them.
   const allAliases = collectAllAliases(aliases, routes, providers);
-  // A route may list the same provider twice (e.g. duplicated upstreams), which
-  // would otherwise emit fully identical rows for the table. Deduplicate on the
-  // (requestModelAlias, routeName, providerName) key, keeping the first row.
-  const seenBindings = new Set<string>();
+  // A route may list the same provider twice (e.g. duplicated upstreams). Keep
+  // one row, preferring a usable positive-weight row over a zero-weight stub.
+  const seenBindings = new Map<string, number>();
   const bindingKey = (binding: { requestModelAlias: string; routeName: string; providerName: string }) =>
     `${binding.requestModelAlias}\u0000${binding.routeName}\u0000${binding.providerName}`;
   for (const route of routes) {
@@ -176,6 +177,7 @@ export function buildModelBindings(
         const isPassthrough = resolved.passthrough &&
           (!routeMapping || Object.keys(routeMapping).length === 0) &&
           (!route.modelPredicates || route.modelPredicates.length === 0);
+        const positiveWeight = Number.isFinite(upstream.weight) && upstream.weight > 0;
         const binding: AgentTeamsModelBinding = {
           requestModelAlias,
           routeName: route.name,
@@ -186,12 +188,17 @@ export function buildModelBindings(
           // has not been explicitly configured and verified. They remain
           // callable at the gateway level but should display as "未验证" in the
           // UI so the user knows the mapping is implicit, not explicit.
-          available: !isPassthrough && Boolean(provider && targetModel),
+          available: !isPassthrough && positiveWeight && Boolean(provider && targetModel),
           passthrough: isPassthrough,
+          ...(upstream.weight === 0 ? { zeroWeight: true } : {}),
         };
         const key = bindingKey(binding);
-        if (seenBindings.has(key)) continue;
-        seenBindings.add(key);
+        const existingIndex = seenBindings.get(key);
+        if (existingIndex !== undefined) {
+          if (!bindings[existingIndex].available && binding.available) bindings[existingIndex] = binding;
+          continue;
+        }
+        seenBindings.set(key, bindings.length);
         bindings.push(binding);
       }
     }
@@ -206,7 +213,7 @@ export function buildModelBindings(
     bindings.filter((binding) => binding.available).map((binding) => binding.requestModelAlias),
   );
   bindings = bindings.filter(
-    (binding) => binding.available || !availableAliases.has(binding.requestModelAlias),
+    (binding) => binding.available || binding.zeroWeight || !availableAliases.has(binding.requestModelAlias),
   );
 
   // Detect conflicts: when the same alias is bound to multiple different routes.

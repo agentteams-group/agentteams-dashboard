@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { agentteamsApi } from '@/lib/agentteams-api';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useShellPollingInterval } from '@/lib/shell-polling';
 
 export function useAgentTeamsStatus() {
   return useQuery({
@@ -9,7 +10,7 @@ export function useAgentTeamsStatus() {
       const store = useAgentTeamsStore.getState();
       return agentteamsApi.checkHealth(store.controllerUrl);
     },
-    refetchInterval: 15000,
+    refetchInterval: useShellPollingInterval(['agentteams-health'], 15_000),
     retry: 1,
     placeholderData: 'checking',
     throwOnError: false,

@@ -546,10 +546,10 @@ export function QwenpawRuntimeConfigPanel({
       <Tabs defaultValue="basic">
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="basic" className="shrink-0 px-3 text-xs">
-            ReAct 智能体
+            ReAct Worker
           </TabsTrigger>
           <TabsTrigger value="loop" className="shrink-0 px-3 text-xs">
-            智能体 Loop 设置
+            Worker Loop 设置
           </TabsTrigger>
           <TabsTrigger value="retry" className="shrink-0 px-3 text-xs">
             LLM 自动重试
@@ -565,12 +565,12 @@ export function QwenpawRuntimeConfigPanel({
           </TabsTrigger>
         </TabsList>
 
-        {/* ── ReAct 智能体 ───────────────────────────────── */}
+        {/* ── ReAct Worker ───────────────────────────────── */}
         <TabsContent value="basic">
           <SectionCard>
             <FieldRow
               label="最大迭代"
-              hint="单次任务最大 LLM 迭代轮数。唯一编辑入口在 智能体 Loop 设置 → 迭代限制；此处只读展示。"
+              hint="单次任务最大 LLM 迭代轮数。唯一编辑入口在 Worker Loop 设置 → 迭代限制；此处只读展示。"
             >
               <span className="text-sm" data-testid="max-iters">
                 {String(gates.iterationMax ?? num(config.max_iters) ?? '-')}
@@ -638,7 +638,7 @@ export function QwenpawRuntimeConfigPanel({
           </SectionCard>
         </TabsContent>
 
-        {/* ── 智能体 Loop 设置 ───────────────────────────── */}
+        {/* ── Worker Loop 设置 ───────────────────────────── */}
         <TabsContent value="loop">
           <div className="space-y-2">
             <SectionCard title="Loop 模板">

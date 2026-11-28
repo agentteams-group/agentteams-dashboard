@@ -5,6 +5,8 @@ import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardHeader } from './header';
 import { MobileQuickBar } from './mobile-quick-bar';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { useMatrixStore } from '@/lib/matrix-store';
 
 vi.mock('@/components/theme/theme-provider', () => ({ useTheme: () => ({ resolvedTheme: { id: 'light', base: 'light' }, setTheme: vi.fn(), locked: false }) }));
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: [], loading: false, degraded: false, partialError: false }) }));
@@ -20,6 +22,55 @@ vi.mock('./command-palette', async importOriginal => ({
 }));
 
 afterEach(cleanup);
+
+it('does not redirect or clear Matrix credentials when logout returns 500, and supports retry', async () => {
+  const replace = vi.fn();
+  const locationDescriptor = Object.getOwnPropertyDescriptor(window, 'location')!;
+  Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, replace } });
+  useAgentTeamsStore.setState({ sessionUser: 'admin', userLevel: 3 });
+  useMatrixStore.setState({ accessToken: 'keep-me', userId: '@admin:test' });
+  const matrixLogout = vi.spyOn(useMatrixStore.getState(), 'logout');
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })));
+  try {
+    render(<TooltipProvider><DashboardHeader isConnected workerCount={0} teamCount={0} managerCount={0} versionString={undefined} isRefreshingAll={false} searchQuery="" onSearchChange={vi.fn()} onNavClick={vi.fn()} onRefreshAll={vi.fn()} onOpenMobileMenu={vi.fn()} onOpenSettings={vi.fn()} /></TooltipProvider>);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'admin' }), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '退出登录' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 500');
+    expect(replace).not.toHaveBeenCalled();
+    expect(matrixLogout).not.toHaveBeenCalled();
+    expect(useMatrixStore.getState().accessToken).toBe('keep-me');
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+  } finally {
+    Object.defineProperty(window, 'location', locationDescriptor);
+    vi.unstubAllGlobals();
+    matrixLogout.mockRestore();
+    useAgentTeamsStore.setState({ sessionUser: null });
+  }
+});
+
+it('redirects and clears Matrix credentials only after a 2xx logout', async () => {
+  const replace = vi.fn();
+  const locationDescriptor = Object.getOwnPropertyDescriptor(window, 'location')!;
+  Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, replace } });
+  useAgentTeamsStore.setState({ sessionUser: 'admin', userLevel: 3 });
+  useMatrixStore.setState({ accessToken: 'clear-me', userId: '@admin:test' });
+  const matrixLogout = vi.spyOn(useMatrixStore.getState(), 'logout');
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+  try {
+    render(<TooltipProvider><DashboardHeader isConnected workerCount={0} teamCount={0} managerCount={0} versionString={undefined} isRefreshingAll={false} searchQuery="" onSearchChange={vi.fn()} onNavClick={vi.fn()} onRefreshAll={vi.fn()} onOpenMobileMenu={vi.fn()} onOpenSettings={vi.fn()} /></TooltipProvider>);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'admin' }), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '退出登录' }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'));
+    expect(matrixLogout).toHaveBeenCalledOnce();
+    expect(useMatrixStore.getState().accessToken).toBe('');
+  } finally {
+    Object.defineProperty(window, 'location', locationDescriptor);
+    vi.unstubAllGlobals();
+    matrixLogout.mockRestore();
+    useAgentTeamsStore.setState({ sessionUser: null });
+  }
+});
 
 it('opens the shared search field from the mobile bar and forwards the query', async () => {
   const searchRef = createRef<HTMLInputElement>();

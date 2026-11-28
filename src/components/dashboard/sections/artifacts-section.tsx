@@ -43,7 +43,6 @@ import {
   ChevronRight,
   CircleAlert,
   Database,
-  Download,
   Eye,
   File,
   FileCode2,
@@ -54,7 +53,6 @@ import {
   SearchX,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -82,10 +80,11 @@ import {
   type WorkflowTaskDetail,
 } from '@/lib/agentteams-projects-api';
 import { agentteamsApi } from '@/lib/agentteams-api';
-import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '@/components/dashboard/sections/chat/lazy-markdown-message';
 import { HtmlPreview } from '@/components/dashboard/html-preview';
 import { DocumentPreview } from '@/components/dashboard/document-preview';
 import { isSlideDocument } from '@/lib/document-preview';
+import { ArtifactDownloadButton, TreeRow } from './artifact-controls';
 
 // ── 文件类型（与插件 Artifacts.kindOf 同款扩展名分组）──────────────────
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp']);
@@ -183,6 +182,20 @@ export function ArtifactsSection() {
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [teamNames, setTeamNames] = useState<string[]>([]);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const previewRequestRef = useRef(0);
+  const previewAbortRef = useRef<AbortController | null>(null);
+
+  const closePreview = useCallback(() => {
+    previewRequestRef.current += 1;
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
+    setPreview(null);
+  }, []);
+
+  useEffect(() => () => {
+    previewRequestRef.current += 1;
+    previewAbortRef.current?.abort();
+  }, []);
 
   // 已自动加载过 tasks_detail 的项目 id（防重复拉取；手动刷新时清空重拉）。
   const loadedRef = useRef<Set<string>>(new Set());
@@ -355,39 +368,51 @@ export function ArtifactsSection() {
   }, [selected, allFiles]);
 
   const openPreview = useCallback((entry: FileEntry) => {
+    const requestId = ++previewRequestRef.current;
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+    const isCurrent = () => requestId === previewRequestRef.current && !controller.signal.aborted;
+
     if (isSlideDocument(entry.name)) {
-      setPreview({ entry, status: 'document' });
+      previewAbortRef.current = null;
+      if (isCurrent()) setPreview({ entry, status: 'document' });
       return;
     }
     const url = getTaskArtifactUrl(entry.projectId, entry.taskId, entry.path);
     setPreview({ entry, status: 'loading' });
     void (async () => {
       try {
-        const res = await fetch(url, { cache: 'no-store' });
+        const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!isCurrent()) return;
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
           try {
             const body = (await res.json()) as { error?: string; message?: string };
+            if (!isCurrent()) return;
             if (typeof body?.message === 'string' && body.message) detail = body.message;
             else if (typeof body?.error === 'string' && body.error) detail = body.error;
           } catch {
             // non-JSON error body; keep the status
           }
+          if (!isCurrent()) return;
           setPreview({ entry, status: 'error', error: detail });
           return;
         }
         const type = res.headers.get('content-type') ?? '';
         if (entry.kind === 'image' || type.startsWith('image/')) {
           // 图片：<img> 走代理直链（同域，携带会话 cookie）
-          setPreview({ entry, status: 'ready' });
+          if (isCurrent()) setPreview({ entry, status: 'ready' });
           return;
         }
         const blob = await res.blob();
+        if (!isCurrent()) return;
         if (blob.size > PREVIEW_MAX_BYTES) {
           setPreview({ entry, status: 'binary' });
           return;
         }
         const text = await blob.text();
+        if (!isCurrent()) return;
         // 文本嗅探：含 NUL 字节视为二进制
         if (text.includes('\u0000')) {
           setPreview({ entry, status: 'binary' });
@@ -395,6 +420,7 @@ export function ArtifactsSection() {
         }
         setPreview({ entry, status: 'ready', text });
       } catch (err) {
+        if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
         setPreview({ entry, status: 'error', error: err instanceof Error ? err.message : '预览失败' });
       }
     })();
@@ -734,7 +760,7 @@ export function ArtifactsSection() {
       </div>
 
       {/* 预览对话框（9/14 加宽：max-w-2xl→max-w-5xl，内容 70vh） */}
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog open={!!preview} onOpenChange={(open) => !open && closePreview()}>
         <DialogContent className={preview?.status === 'document'
           ? 'inset-y-0 left-auto right-0 top-0 flex h-dvh w-[min(52rem,100vw)] max-w-none translate-x-0 translate-y-0 flex-col rounded-none sm:max-w-none'
           : 'sm:max-w-5xl max-w-[95vw]'}>
@@ -808,95 +834,5 @@ export function ArtifactsSection() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function TreeRow({
-  label,
-  icon: Icon,
-  depth = 0,
-  selected,
-  onClick,
-  trailing,
-}: {
-  label: string;
-  icon: LucideIcon;
-  depth?: number;
-  selected: boolean;
-  onClick: () => void;
-  trailing?: string;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-muted ${
-        selected ? 'bg-muted font-medium' : ''
-      }`}
-      style={{ marginLeft: depth * 12 }}
-      onClick={onClick}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate">{label}</span>
-      {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
-    </div>
-  );
-}
-
-/** 下载（fetch→blob，代理透传 controller JSON 错误体→toast 真实原因）。
- *  与 projects-section 的 ArtifactLink 同款语义（独立实现避免跨 section 耦合）。 */
-function ArtifactDownloadButton({
-  href,
-  filename,
-  withLabel = false,
-}: {
-  href: string;
-  filename: string;
-  withLabel?: boolean;
-}) {
-  const [downloading, setDownloading] = useState(false);
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const res = await fetch(href, { cache: 'no-store' });
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = (await res.json()) as { error?: string; message?: string };
-          if (typeof body?.message === 'string' && body.message) detail = body.message;
-          else if (typeof body?.error === 'string' && body.error) detail = body.error;
-        } catch {
-          // non-JSON error body
-        }
-        toast.error(`下载失败：${detail}`);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error(`下载失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setDownloading(false);
-    }
-  };
-  return (
-    <Button
-      variant="ghost"
-      size={withLabel ? 'sm' : 'icon'}
-      className={withLabel ? 'h-7 text-xs' : 'h-7 w-7'}
-      title="下载"
-      disabled={downloading}
-      onClick={() => void handleDownload()}
-    >
-      {downloading ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-      ) : (
-        <Download className="h-3.5 w-3.5" aria-hidden="true" />
-      )}
-      {withLabel && '下载'}
-    </Button>
   );
 }

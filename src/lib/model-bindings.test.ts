@@ -23,6 +23,55 @@ describe('model bindings', () => {
     expect(hasUnavailableModelAliases(['team-chat'], bindings)).toBe(false);
   });
 
+  it('requires at least one positive-weight upstream for an alias', () => {
+    const routes = [{
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      modelPredicates: [{ matchType: 'EXACT', matchValue: 'team-chat' }],
+      upstreams: [
+        { provider: 'disabled', weight: 0, modelMapping: { 'team-chat': 'disabled-model' } },
+        { provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } },
+      ],
+    }];
+    const providers = [
+      { name: 'disabled', type: 'openai', tokenCount: 1 },
+      { name: 'openai', type: 'openai', tokenCount: 1 },
+    ];
+    const bindings = buildModelBindings(['team-chat'], routes, providers);
+
+    expect(bindings).toContainEqual(expect.objectContaining({
+      providerName: 'disabled', available: false, zeroWeight: true,
+    }));
+    expect(bindings).toContainEqual(expect.objectContaining({
+      providerName: 'openai', available: true,
+    }));
+    expect(hasUnavailableModelAliases(['team-chat'], bindings)).toBe(false);
+    expect(listAvailableRequestModelAliases(routes, providers).map((binding) => binding.providerName)).toEqual(['openai']);
+
+    const zeroOnly = buildModelBindings(['team-chat'], [{
+      ...routes[0],
+      upstreams: [{ provider: 'disabled', weight: 0, modelMapping: { 'team-chat': 'disabled-model' } }],
+    }], providers);
+    expect(hasUnavailableModelAliases(['team-chat'], zeroOnly)).toBe(true);
+    expect(listAvailableRequestModelAliases([{
+      ...routes[0],
+      upstreams: [{ provider: 'disabled', weight: 0, modelMapping: { 'team-chat': 'disabled-model' } }],
+    }], providers)).toEqual([]);
+  });
+
+  it('does not let a duplicate zero-weight upstream hide a positive one', () => {
+    const bindings = buildModelBindings(['team-chat'], [{
+      name: 'chat',
+      pathPredicate: { matchType: 'PRE', matchValue: '/v1/chat/completions' },
+      upstreams: [
+        { provider: 'openai', weight: 0, modelMapping: { 'team-chat': 'gpt-4.1' } },
+        { provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } },
+      ],
+    }], [{ name: 'openai', type: 'openai', tokenCount: 1 }]);
+    expect(bindings).toEqual([expect.objectContaining({ providerName: 'openai', available: true })]);
+    expect(bindings[0].zeroWeight).toBeUndefined();
+  });
+
   it('marks aliases without a configured target model as unavailable', () => {
     const bindings = buildModelBindings(
       ['legacy-provider'],

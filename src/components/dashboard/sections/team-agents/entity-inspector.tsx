@@ -93,7 +93,7 @@ const TEAM_SECTIONS: SectionEntry[] = [
   { id: 'users', title: '团队成员' },
   { id: 'team-skills', title: '团队技能' },
   { id: 'llm', title: 'LLM 调优' },
-  { id: 'agents', title: '智能体管理' },
+  { id: 'agents', title: 'Worker管理' },
   { id: 'danger', title: '危险区' },
 ];
 
@@ -161,7 +161,7 @@ export function EntityInspector({
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
         <p className="text-sm font-semibold">未选中实体</p>
         <p className="text-xs text-muted-foreground">
-          从列表或拓扑中选择一个团队 / 智能体 / Manager，
+          从列表或拓扑中选择一个团队 / Worker / Manager，
           <br />
           这里会显示它的详情与快速操作。
         </p>
@@ -449,7 +449,7 @@ export function EntityInspector({
             <AlertDialogDescription>
               {deleteTarget?.kind === 'worker'
                 ? '容器与相关配置将被删除，不可恢复。'
-                : '团队房间与团队配置将删除；成员 Worker 保留（变为智能体）。'}
+                : '团队房间与团队配置将删除；成员 Worker 保留（变为Worker）。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

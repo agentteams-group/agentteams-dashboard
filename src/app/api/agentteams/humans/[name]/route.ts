@@ -7,6 +7,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`, {
     forwardBody: false,
     method: 'GET',
+    passthroughHeaders: ['etag'],
   });
 }
 
@@ -14,7 +15,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { name } = await params;
   const denied = await enforceServerSideRbac(request, 'update', 'team', name);
   if (denied) return denied;
-  return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`);
+  return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`, {
+    forwardRequestHeaders: ['if-match'],
+    passthroughHeaders: ['etag'],
+  });
 }
 
 // Merge-patch fallback for the spec-object fields (modelAccess /
@@ -25,6 +29,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (denied) return denied;
   return proxyToAgentTeams(request, getControllerUrl(request), `/api/v1/humans/${encodeURIComponent(name)}`, {
     method: 'PATCH',
+    forwardRequestHeaders: ['if-match'],
+    passthroughHeaders: ['etag'],
   });
 }
 

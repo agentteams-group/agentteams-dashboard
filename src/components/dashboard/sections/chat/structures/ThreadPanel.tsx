@@ -7,7 +7,6 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import {
   formatMatrixEvents,
   useMatrixSendMessage,
-  useMatrixThreadMessages,
   useMatrixEditMessage,
   useMatrixRedactMessage,
   type DisplayMessage,
@@ -19,6 +18,7 @@ import { ComposerReply, ReplyQuote } from '../views/ReplyQuote';
 import { coalesceWorkerTurns } from '../grouper/AgentTurnGrouper';
 import { useRuntimeMap } from '../runtime-map-context';
 import { isManagerSender } from '@/lib/chat-lifecycle-notice';
+import { flattenThreadPages, isThreadPaginationUnsupported, useThreadReplies } from '@/hooks/use-thread-replies';
 
 interface ThreadPanelProps {
   canSend?: boolean;
@@ -51,7 +51,18 @@ export function ThreadPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const focusedRef = useRef<HTMLDivElement>(null);
 
-  const threadQuery = useMatrixThreadMessages(roomId, rootMessage.id);
+  const threadQuery = useThreadReplies(roomId, rootMessage.id);
+  const threadEvents = useMemo(
+    () => flattenThreadPages(threadQuery.data?.pages ?? []),
+    [threadQuery.data?.pages],
+  );
+  const loadedReplyCount = threadEvents.filter((event) =>
+    event.event_id !== rootMessage.id && event.event_id !== rootMessage.eventId,
+  ).length;
+  const paginationUnsupported = threadQuery.isError && isThreadPaginationUnsupported(threadQuery.error);
+  const repliesTruncated = paginationUnsupported || (!threadQuery.isLoading && !threadQuery.isFetching
+    && typeof rootMessage.replyCount === 'number'
+    && rootMessage.replyCount > loadedReplyCount);
   const sendMutation = useMatrixSendMessage();
   const editMutation = useMatrixEditMessage();
   const redactMutation = useMatrixRedactMessage();
@@ -79,7 +90,7 @@ export function ThreadPanel({
   const replies = useMemo(() => {
     const rootIds = new Set([rootMessage.id, rootMessage.eventId, ...(rootMessage.sourceEventIds ?? [])]);
     const messages = new Map(quotedReplies?.map(message => [message.id, message]));
-    for (const message of formatMatrixEvents(threadQuery.data?.chunk ?? [], userId, { includeThreadReplies: true })) {
+    for (const message of formatMatrixEvents(threadEvents, userId, { includeThreadReplies: true })) {
       if (rootIds.has(message.id)) continue;
       const owner = runtimeMap[message.sender];
       messages.set(message.id, {
@@ -97,7 +108,7 @@ export function ThreadPanel({
       Array.from(messages.values()).sort((a, b) => a.timestamp - b.timestamp),
       { topic: true },
     );
-  }, [threadQuery.data, userId, rootMessage, focusedMessage, quotedReplies, runtimeMap, workerMatrixUserIds]);
+  }, [threadEvents, userId, rootMessage, focusedMessage, quotedReplies, runtimeMap, workerMatrixUserIds]);
 
   useEffect(() => {
     focusedRef.current?.scrollIntoView?.({ block: 'center' });
@@ -194,13 +205,24 @@ export function ThreadPanel({
         )}
         {threadQuery.isError && (
           <div className="px-3 py-2 flex flex-col items-start gap-1.5">
-            <span className="text-xs text-red-500">话题加载失败</span>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => threadQuery.refetch()}>
+            <span className="text-xs text-red-500">
+              {paginationUnsupported
+                ? '当前 Matrix 服务不支持话题关系分页'
+                : loadedReplyCount > 0 ? '更多回复加载失败' : '话题加载失败'}
+            </span>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs"
+              onClick={() => threadQuery.hasNextPage ? void threadQuery.fetchNextPage() : void threadQuery.refetch()}>
               重试
             </Button>
           </div>
         )}
-        {replies.length === 0 && !threadQuery.isLoading && !threadQuery.isError && (
+        {repliesTruncated && (
+          <p role="status" className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+            回复列表已截断：{paginationUnsupported ? '当前服务不支持分页' : '服务未返回下一页游标'}
+            {typeof rootMessage.replyCount === 'number' ? `（已加载 ${loadedReplyCount} / 共 ${rootMessage.replyCount} 条）` : ''}
+          </p>
+        )}
+        {replies.length === 0 && !threadQuery.isLoading && !threadQuery.isError && !repliesTruncated && (
           <div className="px-3 py-2 text-xs text-muted-foreground">暂无回复，成为第一个回复的人</div>
         )}
         {replies.map((reply, idx) => {
@@ -224,6 +246,15 @@ export function ThreadPanel({
             </div>
           );
         })}
+        {threadQuery.hasNextPage && !threadQuery.isError && (
+          <div className="px-3 py-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              disabled={threadQuery.isFetchingNextPage}
+              onClick={() => void threadQuery.fetchNextPage()}>
+              {threadQuery.isFetchingNextPage ? '加载中…' : '加载更早回复'}
+            </Button>
+          </div>
+        )}
         {sendMutation.isError && (
           <div className="px-3 py-1.5 text-xs text-red-500">发送失败: {sendMutation.error?.message}</div>
         )}
@@ -245,7 +276,9 @@ export function ThreadPanel({
           className="w-full resize-none rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-h-[36px] max-h-[120px] placeholder:text-muted-foreground/50 disabled:opacity-50"
         />
         <div className="flex items-center justify-between mt-1.5">
-          <span className="text-xs text-muted-foreground">{replies.length} 条回复</span>
+          <span className="text-xs text-muted-foreground">
+            {loadedReplyCount} 条回复{typeof rootMessage.replyCount === 'number' ? ` / 共 ${rootMessage.replyCount} 条` : ''}
+          </span>
           <Button
             size="sm"
             className="h-7 px-2.5"

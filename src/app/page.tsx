@@ -1,18 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AgentTeamsDashboard } from '@/components/dashboard/agent-teams-dashboard';
-import { LoginPage } from '@/components/auth/login-page';
-import { StatelessLoginPage } from '@/components/auth/stateless-login-page';
-import { BackendSetupPage } from '@/components/setup/backend-setup-page';
-import { SetupWizard } from '@/components/setup/setup-wizard';
-import { QueryProvider } from '@/lib/query-provider';
+import { useRouter } from 'next/navigation';
+import {
+  AuthenticatedDashboardBoundary,
+  BackendSetupScreen,
+  LoginScreen,
+  SetupWizardScreen,
+  StatelessLoginScreen,
+} from './authenticated-dashboard-boundary';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
-import { SearchProvider } from '@/lib/search-context';
 import { apiUrl } from '@/lib/api-base';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 type AuthState =
@@ -20,206 +21,252 @@ type AuthState =
   | { status: 'authenticated'; username?: string }
   | { status: 'unauthenticated' }
   // F7 stateless: the stored credential may still be valid, but the
-  // backend is unreachable — do NOT show the login page (re-login would
-  // fail against the same dead backend); show a retryable error card.
-  | { status: 'unreachable' };
+  // backend is unreachable — do NOT ask the user to log in again.
+  | { status: 'unreachable' }
+  | { status: 'error'; stage: ProbeStage; message: string };
 
 type SetupState =
   | { status: 'loading' }
   | { status: 'required' }
-  | { status: 'complete' };
+  | { status: 'complete' }
+  | { status: 'error'; message: string };
 
-// F1 pre-login backend setup gate: independent of the (post-login)
-// controller-side setup wizard above.
-type PreSetupState = { status: 'loading' } | { status: 'required' } | { status: 'complete' };
+// F1 pre-login backend setup gate: independent of the post-login wizard.
+type PreSetupState =
+  | { status: 'loading' }
+  | { status: 'required' }
+  | { status: 'complete' }
+  | { status: 'error'; message: string };
+
+type ProbeStage = 'mode' | 'session' | 'setup-status' | 'pre-setup';
+
+interface ProbeError {
+  stage: ProbeStage;
+  message: string;
+}
+
+const STAGE_LABELS: Record<ProbeStage, string> = {
+  mode: '部署模式',
+  session: '登录会话',
+  'setup-status': '初始化状态',
+  'pre-setup': '后端配置状态',
+};
+
+async function probeJson(url: string): Promise<unknown> {
+  const response = await fetch(apiUrl(url), { credentials: 'same-origin', cache: 'no-store' });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+function probeFailure(stage: ProbeStage, error: unknown): ProbeError {
+  const detail = error instanceof Error ? error.message : '未知错误';
+  return { stage, message: `${STAGE_LABELS[stage]}探测失败：${detail}` };
+}
+
+function StartupLoading({ label }: { label: string }) {
+  return (
+    <ThemeProvider>
+      <main className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-card">
+          <Loader2 className="mx-auto size-7 animate-spin text-primary" aria-hidden="true" />
+          <h1 className="mt-4 text-lg font-semibold">正在启动 AgentTeams</h1>
+          <p className="mt-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+            {label}
+          </p>
+        </div>
+      </main>
+      <Toaster position="top-right" richColors />
+    </ThemeProvider>
+  );
+}
+
+function StartupError({ error, onRetry, onConfigure }: {
+  error: ProbeError;
+  onRetry: () => void;
+  onConfigure?: () => void;
+}) {
+  return (
+    <ThemeProvider>
+      <main className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-card">
+          <AlertCircle className="mx-auto size-8 text-status-failed" aria-hidden="true" />
+          <h1 className="mt-3 text-lg font-semibold">暂时无法确认启动状态</h1>
+          <p className="mt-2 text-sm text-muted-foreground" role="alert">{error.message}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            未知状态不会被视为配置完成。请检查服务后重试。
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button onClick={onRetry}>
+              <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+              重试探测
+            </Button>
+            {onConfigure && (
+              <Button variant="outline" onClick={onConfigure}>
+                <Settings2 className="mr-2 size-4" aria-hidden="true" />
+                配置后端
+              </Button>
+            )}
+          </div>
+        </div>
+      </main>
+      <Toaster position="top-right" richColors />
+    </ThemeProvider>
+  );
+}
 
 export default function Home() {
+  const router = useRouter();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [setup, setSetup] = useState<SetupState>({ status: 'loading' });
   const [preSetup, setPreSetup] = useState<PreSetupState>({ status: 'loading' });
-  // F1e: the login screen can deep-link here (?setup=1) to re-configure
-  // backends when an existing deployment is broken or moved.
+  const [attempt, setAttempt] = useState(0);
+  // F1e: ?setup=1 is the logged-out escape hatch for moved/broken backends.
   const [forceSetup, setForceSetup] = useState(false);
-  // F7: why the stateless login page should warn (expired vs invalid).
   const [staticReason, setStaticReason] = useState<'unauthorized' | 'invalid' | null>(null);
   const [staticDetail, setStaticDetail] = useState<string | undefined>(undefined);
-  // Data-plane 401 bounce (client-auth-fetch): the login succeeded but the
-  // Controller/gateway rejected the credential — the login page must show an
-  // actionable error instead of letting the page retry the data plane.
   const [dataPlaneRejected, setDataPlaneRejected] = useState(false);
-  // F7: which auth flow this deployment runs (from the public /mode probe).
   const [authMode, setAuthMode] = useState<'stateful' | 'stateless' | null>(null);
-  // F7: server-side Matrix homeserver candidates (stateless deployments
-  // only, from /mode) — prefill for the first-time login address.
   const [defaultHomeservers, setDefaultHomeservers] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    // Session check on mount; when authenticated, chain the setup-status check.
-    // All setState calls happen in promise callbacks (external system → React).
-    fetch(apiUrl('/api/agentteams/mode'), { credentials: 'same-origin' })
-      .then((res) => res.json().catch(() => null))
-      .then((modeData) => {
-        // ── F7 stateless mode: the browser bearer token IS the credential ──
-        // The client-auth fetch patch (layout) injects the stored token into
-        // the session probe below. The pre-login backend-setup gate is
-        // skipped: in the stateless shape the addresses live in the browser
-        // (at_cfg), not in the server config file.
-        if (modeData?.authMode === 'stateless') {
-          if (!cancelled) setAuthMode('stateless');
-          if (!cancelled && Array.isArray(modeData?.defaultHomeservers)) {
-            setDefaultHomeservers(modeData.defaultHomeservers);
-          }
-          return fetch(apiUrl('/api/auth/session'), { credentials: 'same-origin' })
-            .then((res) => res.json())
-            .then((data) => {
-              if (cancelled) return;
-              if (data.authenticated) {
-                useAgentTeamsStore.getState().setUserLevel(data.level ?? 1);
-                if (data.username) {
-                  useAgentTeamsStore.getState().setSessionUser(data.username);
-                }
-                setAuth({ status: 'authenticated', username: data.username });
-                fetch(apiUrl('/api/agentteams/setup/status/'), { credentials: 'same-origin' })
-                  .then((sres) => sres.json().catch(() => ({})))
-                  .then((sdata) => {
-                    if (!cancelled) setSetup({ status: sdata.setupRequired ? 'required' : 'complete' });
-                  })
-                  .catch(() => {
-                    if (!cancelled) setSetup({ status: 'complete' });
-                  });
-                return;
-              }
-              if (data.reason === 'unreachable') {
-                setAuth({ status: 'unreachable' });
-                return;
-              }
-              setAuth({ status: 'unauthenticated' });
-              const bounced = new URLSearchParams(window.location.search).get('reason') === 'unauthorized';
-              setStaticReason(data.reason === 'invalid' ? 'invalid' : bounced ? 'unauthorized' : null);
-              setStaticDetail(data.detail);
-              setDataPlaneRejected(
-                bounced && new URLSearchParams(window.location.search).get('from') === 'data401',
-              );
-            })
-            .catch(() => {
-              if (!cancelled) setAuth({ status: 'unreachable' });
-            });
+    const run = async () => {
+      let stage: ProbeStage = 'mode';
+      try {
+        const modeData = await probeJson('/api/agentteams/mode') as {
+          authMode?: unknown;
+          defaultHomeservers?: unknown;
+        } | null;
+        if (!modeData || (modeData.authMode !== 'stateful' && modeData.authMode !== 'stateless')) {
+          throw new Error('响应缺少有效的 authMode');
+        }
+        if (cancelled) return;
+        setAuthMode(modeData.authMode);
+        if (Array.isArray(modeData.defaultHomeservers)) {
+          setDefaultHomeservers(modeData.defaultHomeservers.filter((value): value is string => typeof value === 'string'));
         }
 
-        // ── Stateful mode: unchanged M19 session flow ──
-        if (!cancelled) setAuthMode('stateful');
-        return fetch(apiUrl('/api/auth/session'), { credentials: 'same-origin' })
-          .then((res) => res.json())
-          .then((data) => {
-            if (cancelled) return;
-            if (!data.authenticated) {
-              setAuth({ status: 'unauthenticated' });
-              const params = new URLSearchParams(window.location.search);
-              // F1e: ?setup=1 forces the pre-login backend setup page from the
-              // login screen (escape hatch — broken/changed environments).
-              const forceSetup = params.get('setup') === '1';
-              setForceSetup(forceSetup);
-              // A data-plane bounce means the login was fine but the
-              // Controller credential was rejected — surface it, never retry.
-              setDataPlaneRejected(
-                params.get('reason') === 'unauthorized' && params.get('from') === 'data401',
-              );
-              // F1: before offering the login form, check whether the dashboard
-              // has any usable backend addresses. Standalone installs without
-              // env config must configure backends FIRST (token-gated),
-              // so unconfigured -> setup page instead of login.
-              fetch(apiUrl('/api/agentteams/setup/backends'), { credentials: 'same-origin' })
-                .then((res) => res.json().catch(() => null))
-                .then((sdata) => {
-                  if (cancelled) return;
-                  const required = forceSetup || (sdata && sdata.configured === false);
-                  setPreSetup({ status: required ? 'required' : 'complete' });
-                })
-                .catch(() => {
-                  if (!cancelled) setPreSetup({ status: forceSetup ? 'required' : 'complete' });
-                });
-              return;
-            }
-            setAuth({ status: 'authenticated', username: data.username });
-            // M19: publish the dashboard level for the UI level gate (nav items).
-            // Falls back to 3 (full nav) when the session endpoint predates the
-            // level field or in AUTH_DISABLED dev setups.
-            useAgentTeamsStore.getState().setUserLevel(data.level ?? 3);
-            // Account chip in the header (identity = the session's own username).
-            if (data.username) {
-              useAgentTeamsStore.getState().setSessionUser(data.username);
-            }
-            fetch(apiUrl('/api/agentteams/setup/status/'), { credentials: 'same-origin' })
-              .then((res) => res.json().catch(() => ({})))
-              .then((sdata) => {
-                if (!cancelled) setSetup({ status: sdata.setupRequired ? 'required' : 'complete' });
-              })
-              .catch(() => {
-                if (!cancelled) setSetup({ status: 'complete' });
-              });
-          })
-          .catch(() => {
-            if (!cancelled) setAuth({ status: 'unauthenticated' });
-          });
-      })
-      .catch(() => {
+        stage = 'session';
+        const sessionData = await probeJson('/api/auth/session') as {
+          authenticated?: unknown;
+          username?: unknown;
+          level?: unknown;
+          reason?: unknown;
+          detail?: unknown;
+        } | null;
+        if (!sessionData || typeof sessionData.authenticated !== 'boolean') {
+          throw new Error('响应缺少有效的 authenticated 状态');
+        }
         if (cancelled) return;
-        // The mode probe itself failed (a dashboard-server hiccup — the
-        // session fetch would fail too): assume stateful and degrade exactly
-        // like the pre-F7 behavior (login page), never the stateless-only
-        // unreachable card.
-        setAuthMode('stateful');
-        setPreSetup({ status: 'complete' });
-        setAuth({ status: 'unauthenticated' });
-      });
+
+        if (!sessionData.authenticated) {
+          setAuth({ status: sessionData.reason === 'unreachable' ? 'unreachable' : 'unauthenticated' });
+          const params = new URLSearchParams(window.location.search);
+          const bounced = params.get('reason') === 'unauthorized';
+          const requestedSetup = params.get('setup') === '1';
+          setForceSetup(requestedSetup);
+          setStaticReason(sessionData.reason === 'invalid' ? 'invalid' : bounced ? 'unauthorized' : null);
+          setStaticDetail(typeof sessionData.detail === 'string' ? sessionData.detail : undefined);
+          setDataPlaneRejected(bounced && params.get('from') === 'data401');
+
+          // Stateless addresses live in the browser; there is no server pre-setup gate.
+          if (modeData.authMode === 'stateless') {
+            setPreSetup({ status: 'complete' });
+            return;
+          }
+
+          try {
+            const preSetupData = await probeJson('/api/agentteams/setup/backends') as {
+              configured?: unknown;
+            } | null;
+            if (typeof preSetupData?.configured !== 'boolean') {
+              throw new Error('响应缺少有效的 configured 状态');
+            }
+            if (!cancelled) {
+              setPreSetup({ status: requestedSetup || !preSetupData.configured ? 'required' : 'complete' });
+            }
+          } catch (error) {
+            if (!cancelled) setPreSetup({ status: 'error', message: probeFailure('pre-setup', error).message });
+          }
+          return;
+        }
+
+        setAuth({ status: 'authenticated', username: typeof sessionData.username === 'string' ? sessionData.username : undefined });
+        useAgentTeamsStore.getState().setUserLevel(typeof sessionData.level === 'number' ? sessionData.level : modeData.authMode === 'stateful' ? 3 : 1);
+        if (typeof sessionData.username === 'string') {
+          useAgentTeamsStore.getState().setSessionUser(sessionData.username);
+        }
+
+        try {
+          const setupData = await probeJson('/api/agentteams/setup/status/') as {
+            setupRequired?: unknown;
+          } | null;
+          if (typeof setupData?.setupRequired !== 'boolean') {
+            throw new Error('响应缺少有效的 setupRequired 状态');
+          }
+          if (!cancelled) setSetup({ status: setupData.setupRequired ? 'required' : 'complete' });
+        } catch (error) {
+          if (!cancelled) setSetup({ status: 'error', message: probeFailure('setup-status', error).message });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const failure = probeFailure(stage, error);
+          setAuth({ status: 'error', stage: failure.stage, message: failure.message });
+        }
+      }
+    };
+
+    // A retry is a new probe, not a continuation of a partially known state.
+    setAuth({ status: 'loading' });
+    setSetup({ status: 'loading' });
+    setPreSetup({ status: 'loading' });
+    setAuthMode(null);
+    void run();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
-  const handleLoginSuccess = () => {
-    window.location.reload();
-  };
+  const retry = () => setAttempt((value) => value + 1);
+  const handleLoginSuccess = () => window.location.reload();
 
-  // F7: backend unreachable with a possibly-valid stored credential — a
-  // retryable card, never the login page (re-login would hit the same
-  // dead backend and burn the user's password attempt).
+  if (auth.status === 'loading') return <StartupLoading label="正在探测部署模式与登录会话…" />;
+  if (auth.status === 'error') return <StartupError error={{ stage: auth.stage, message: auth.message }} onRetry={retry} />;
   if (auth.status === 'unreachable') {
     return (
       <ThemeProvider>
-        <div className="min-h-screen flex items-center justify-center bg-background p-4">
-          <div className="w-full max-w-md rounded-lg border p-6 text-center space-y-3">
-            <AlertCircle className="w-8 h-8 mx-auto text-amber-500" />
-            <h2 className="text-lg font-semibold">后端不可达</h2>
-            <p className="text-sm text-muted-foreground">
+        <main className="flex min-h-screen items-center justify-center bg-background p-4">
+          <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-card">
+            <AlertCircle className="mx-auto size-8 text-status-waiting" aria-hidden="true" />
+            <h1 className="mt-3 text-lg font-semibold">后端不可达</h1>
+            <p className="mt-2 text-sm text-muted-foreground" role="alert">
               无法连接 Controller 以校验当前凭据。若你的登录凭据仍然有效，恢复后端连接后重试即可，无需重新登录。
             </p>
-            <Button onClick={() => window.location.reload()}>
-              <RefreshCw className="w-4 h-4 mr-2" />
+            <Button className="mt-5" onClick={retry}>
+              <RefreshCw className="mr-2 size-4" aria-hidden="true" />
               重试
             </Button>
           </div>
-        </div>
+        </main>
         <Toaster position="top-right" richColors />
       </ThemeProvider>
     );
   }
 
-  if (auth.status === 'loading' || (auth.status === 'authenticated' && setup.status === 'loading')) {
-    return null;
+  if (auth.status === 'authenticated' && setup.status === 'loading') {
+    return <StartupLoading label="已确认登录，正在检查初始化状态…" />;
+  }
+  if (auth.status === 'authenticated' && setup.status === 'error') {
+    return <StartupError error={{ stage: 'setup-status', message: setup.message }} onRetry={retry} />;
   }
 
   if (auth.status === 'unauthenticated') {
-    // F7 stateless: the session probe already told us (reason set) — the
-    // addresses are browser-side, so the server preSetup gate is skipped
-    // and the stateless login form renders directly.
     if (authMode === 'stateless') {
       return (
         <ThemeProvider>
-          <StatelessLoginPage
+          <StatelessLoginScreen
             onLoginSuccess={handleLoginSuccess}
             reason={staticReason}
             detail={staticDetail}
@@ -230,13 +277,22 @@ export default function Home() {
         </ThemeProvider>
       );
     }
-    if (preSetup.status === 'loading') return null;
+    if (preSetup.status === 'loading') return <StartupLoading label="正在检查后端配置状态…" />;
+    if (preSetup.status === 'error') {
+      return (
+        <StartupError
+          error={{ stage: 'pre-setup', message: preSetup.message }}
+          onRetry={retry}
+          onConfigure={() => router.push('/?setup=1')}
+        />
+      );
+    }
     return (
       <ThemeProvider>
         {preSetup.status === 'required' ? (
-          <BackendSetupPage onDone={handleLoginSuccess} reconfigure={forceSetup} />
+          <BackendSetupScreen onDone={handleLoginSuccess} reconfigure={forceSetup} />
         ) : (
-          <LoginPage onLoginSuccess={handleLoginSuccess} dataPlaneRejected={dataPlaneRejected} />
+          <LoginScreen onLoginSuccess={handleLoginSuccess} dataPlaneRejected={dataPlaneRejected} />
         )}
         <Toaster position="top-right" richColors />
       </ThemeProvider>
@@ -246,7 +302,7 @@ export default function Home() {
   if (setup.status === 'required') {
     return (
       <ThemeProvider>
-        <SetupWizard onComplete={() => window.location.reload()} />
+        <SetupWizardScreen onComplete={() => window.location.reload()} />
         <Toaster position="top-right" richColors />
       </ThemeProvider>
     );
@@ -254,11 +310,7 @@ export default function Home() {
 
   return (
     <ThemeProvider>
-      <QueryProvider>
-        <SearchProvider>
-          <AgentTeamsDashboard />
-        </SearchProvider>
-      </QueryProvider>
+      <AuthenticatedDashboardBoundary />
       <Toaster position="top-right" richColors />
     </ThemeProvider>
   );

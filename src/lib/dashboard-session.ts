@@ -25,9 +25,13 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { configFilePath } from '@/lib/backend-config';
+import { writePrivateFileAtomic } from '@/lib/private-file';
 
 export const SESSION_COOKIE_NAME = 'at_dash_sess';
-const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/** SEC-05：浏览器会话最长 24 小时；敏感请求仍逐次向上游重验。 */
+export const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** 非敏感身份解析的短缓存上界。 */
+export const IDENTITY_CACHE_TTL_MS = 30_000;
 const MAX_SESSIONS = 1000;
 
 /** Controller credential carried server-side per session. */
@@ -35,6 +39,8 @@ export type ControllerCredential =
   | { kind: 'sa' } // Legacy external Console-only deployments
   | { kind: 'controller-token'; token: string } // Explicit operational token login
   | { kind: 'matrix'; token: string }; // Human L1/L2/L3; Controller authorizes each operation
+
+export type SessionIdentitySource = 'matrix' | 'console' | 'controller-token' | 'legacy-sa';
 
 export interface DashboardSession {
   sid: string;
@@ -44,12 +50,22 @@ export interface DashboardSession {
   level: 1 | 2 | 3;
   /** Human CR permissionLevel (1=L1 / 2=L2 / 3=L3) — kept for audit/debug. */
   crLevel: number;
-  /** Human CR accessibleTeams (L2 scoping; informational — Controller enforces). */
+  /** 可信 Human CR accessibleTeams；空数组是“无范围”，不是全局。 */
   teams: string[];
+  /** 可信 Human CR accessibleWorkers；不能从 teams 推断。 */
+  workers: string[];
   credential: ControllerCredential;
   /** Legacy Console binding; new Human sessions do not carry downstream credentials. */
   consoleCookie?: string;
+  /** 上游身份来源，供 SEC-05 逐次/短缓存重验。 */
+  identitySource?: SessionIdentitySource;
+  /** 最近一次上游身份验证时间（登录也记一次，避免普通请求立即重复探测）。 */
+  identityVerifiedAt?: number;
   createdAt: number;
+}
+
+export function sessionHasGlobalScope(session: Pick<DashboardSession, 'level'>): boolean {
+  return session.level === 3;
 }
 
 interface SessionStore {
@@ -152,16 +168,8 @@ export async function bootstrapSessionSecret(): Promise<void> {
   const generated = randomBytes(32).toString('hex');
   process.env.DASHBOARD_SESSION_SECRET = generated;
   try {
-    const dir = path.dirname(file);
-    await fs.mkdir(dir, { mode: 0o700, recursive: true });
-    // Write atomically (temp file + rename) so a crash mid-write can't leave a
-    // half-written secret that fails to parse on next boot.
-    const tmp = `${file}.tmp.${process.pid}`;
-    await fs.writeFile(tmp, `${generated}\n`, { mode: 0o600 });
-    await fs.rename(tmp, file);
-    // chmod in case the file already existed with looser perms — the file
-    // exists check above missed the empty-file race.
-    await fs.chmod(file, 0o600);
+    // Shared atomic secret writer also enforces directory 0700 / file 0600.
+    await writePrivateFileAtomic(file, `${generated}\n`);
     const fingerprint = generated.slice(-4);
     console.error(
       `[dashboard] session secret fingerprint: …${fingerprint} ` +
@@ -199,22 +207,32 @@ export interface CreateSessionInput {
   user: string;
   crLevel: number;
   teams?: string[];
+  workers?: string[];
   credential: ControllerCredential;
+  identitySource?: SessionIdentitySource;
+}
+
+function normalizeScopeList(values: string[] | undefined): string[] {
+  return [...new Set((values ?? []).filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean))];
 }
 
 /** Create a session and return the signed cookie value. */
 export function createSession(input: CreateSessionInput): { sessionId: string; cookieValue: string } {
   const secret = requireSecret();
   const sid = randomBytes(32).toString('hex');
+  const now = Date.now();
   const session: DashboardSession = {
     sid,
     user: input.user,
     level: mapCrLevelToDashLevel(input.crLevel),
     crLevel: input.crLevel,
-    teams: input.teams ?? [],
+    teams: normalizeScopeList(input.teams),
+    workers: normalizeScopeList(input.workers),
     credential: input.credential,
     ...(input.consoleCookie ? { consoleCookie: input.consoleCookie } : {}),
-    createdAt: Date.now(),
+    ...(input.identitySource ? { identitySource: input.identitySource } : {}),
+    identityVerifiedAt: now,
+    createdAt: now,
   };
   store.sessions.set(sid, session);
   store.insertionOrder.push(sid);
@@ -222,7 +240,7 @@ export function createSession(input: CreateSessionInput): { sessionId: string; c
     const evicted = store.insertionOrder.shift();
     if (evicted) store.sessions.delete(evicted);
   }
-  const payload = JSON.stringify({ sid, user: session.user, iat: Date.now(), exp: Date.now() + SESSION_MAX_AGE_MS });
+  const payload = JSON.stringify({ sid, user: session.user, iat: now, exp: now + SESSION_MAX_AGE_MS });
   const encoded = Buffer.from(payload).toString('base64url');
   return { sessionId: sid, cookieValue: `${encoded}.${sign(encoded, secret)}` };
 }
@@ -242,7 +260,12 @@ export function validateSessionToken(token: string): DashboardSession | null {
       exp?: number;
     };
     if (!payload.sid || typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    return store.sessions.get(payload.sid) ?? null;
+    const session = store.sessions.get(payload.sid);
+    if (!session || Date.now() - session.createdAt > SESSION_MAX_AGE_MS) {
+      if (session) destroySession(session.sid);
+      return null;
+    }
+    return session;
   } catch {
     return null;
   }

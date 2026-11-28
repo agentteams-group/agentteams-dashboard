@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST, GET } from './route';
 import { zipSync } from 'fflate';
@@ -21,6 +21,14 @@ const noNameZip = zipSync({
 vi.mock('@/lib/worker-restart', () => ({
   restartWorkerForSkillReload: vi.fn().mockResolvedValue({ ok: true, phase: 'Running' }),
 }));
+vi.mock('@/lib/audit-log', () => ({ appendAuditEvent: vi.fn() }));
+
+const workerAdminHeaders = {
+  'x-agentteams-user': 'worker-admin',
+  'x-agentteams-user-level': '3',
+  'x-agentteams-scope': 'scoped',
+  'x-agentteams-workers': JSON.stringify(['worker-1']),
+};
 
 // Mock minio-client.
 vi.mock('@/lib/minio-client', () => {
@@ -67,6 +75,7 @@ vi.mock('@/lib/minio-client', () => {
 async function callGET(name: string) {
   const req = new NextRequest(
     `http://localhost/api/agentteams/workers/${encodeURIComponent(name)}/skills`,
+    { headers: workerAdminHeaders },
   );
   return GET(req, { params: Promise.resolve({ name }) });
 }
@@ -77,7 +86,10 @@ function buildMultipartRequest(name: string, zipBytes: Uint8Array<ArrayBuffer>):
     `http://localhost/api/agentteams/workers/${encodeURIComponent(name)}/skills`,
     {
       method: 'POST',
-      headers: { 'content-type': 'multipart/form-data; boundary=----TestBoundary' },
+      headers: {
+        'content-type': 'multipart/form-data; boundary=----TestBoundary',
+        ...workerAdminHeaders,
+      },
     },
   );
   // Override formData to return a properly constructed FormData.
@@ -88,6 +100,8 @@ function buildMultipartRequest(name: string, zipBytes: Uint8Array<ArrayBuffer>):
   };
   return req;
 }
+
+beforeEach(() => vi.clearAllMocks());
 
 describe('GET /workers/[name]/skills', () => {
   it('returns 400 for an invalid worker name', async () => {
@@ -110,7 +124,7 @@ describe('POST /workers/[name]/skills', () => {
       'http://localhost/api/agentteams/workers/worker-1/skills',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...workerAdminHeaders },
       },
     );
     const res = await POST(req, { params: Promise.resolve({ name: 'worker-1' }) });
@@ -166,5 +180,27 @@ describe('POST /workers/[name]/skills', () => {
     const req = buildMultipartRequest('worker-1', noNameZip);
     const res = await POST(req, { params: Promise.resolve({ name: 'worker-1' }) });
     expect(res.status).toBe(400);
+  });
+
+  it.each<[string, Record<string, string>, number]>([
+    ['missing identity', {}, 401],
+    ['unknown scope', {
+      'x-agentteams-user': 'user',
+      'x-agentteams-user-level': '1',
+      'x-agentteams-scope': 'unknown',
+    }, 403],
+    ['cross-resource scope', {
+      ...workerAdminHeaders,
+      'x-agentteams-workers': JSON.stringify(['other']),
+    }, 403],
+  ])('denies %s before storage access', async (_label, headers, status) => {
+    const req = buildMultipartRequest('worker-1', validZip);
+    for (const key of Object.keys(workerAdminHeaders)) req.headers.delete(key);
+    for (const [key, value] of Object.entries(headers)) req.headers.set(key, value);
+    const res = await POST(req, { params: Promise.resolve({ name: 'worker-1' }) });
+    expect(res.status).toBe(status);
+    const { createMinioClient } = await import('@/lib/minio-client');
+    const client = createMinioClient() as unknown as { putObject: ReturnType<typeof vi.fn> };
+    expect(client.putObject).not.toHaveBeenCalled();
   });
 });

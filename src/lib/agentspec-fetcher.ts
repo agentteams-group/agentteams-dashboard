@@ -1,5 +1,10 @@
 import { getNacosConfig } from '@/lib/skill-center-config';
-import { getNacosAccessToken } from '@/lib/nacos-fetcher';
+import {
+  getNacosAccessToken,
+  nacosFetch,
+  readNacosJson,
+  sanitizeNacosText,
+} from '@/lib/nacos-fetcher';
 import type { NacosConfig } from '@/lib/skill-center-types';
 
 export interface AgentSpecWorkerHint {
@@ -100,7 +105,7 @@ export interface AgentSpecFetchResult {
 }
 
 async function resolveNacosApi(): Promise<
-  { apiBase: string; namespace: string; tokenParam: string; config: NacosConfig } | { error: string }
+  { apiBase: string; namespace: string; accessToken: string; config: NacosConfig } | { error: string }
 > {
   const config = await getNacosConfig();
   if (!config) return { error: 'Nacos 未配置' };
@@ -111,8 +116,7 @@ async function resolveNacosApi(): Promise<
   const [, hostPort, namespace] = urlMatch;
 
   const accessToken = await getNacosAccessToken(config);
-  const tokenParam = accessToken ? `&accessToken=${encodeURIComponent(accessToken)}` : '';
-  return { apiBase: `${protocol}://${hostPort}`, namespace, tokenParam, config };
+  return { apiBase: `${protocol}://${hostPort}`, namespace, accessToken, config };
 }
 
 /** Fetch one AgentSpec version from the Nacos Console API and map it. */
@@ -120,10 +124,12 @@ export async function fetchAgentSpec(name: string, version: string): Promise<Age
   const api = await resolveNacosApi();
   if ('error' in api) return { ok: false, error: api.error };
 
-  const nsParam = `namespaceId=${encodeURIComponent(api.namespace)}`;
-  const url =
-    `${api.apiBase}/v3/console/ai/agentspecs/version` +
-    `?agentSpecName=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}&${nsParam}${api.tokenParam}`;
+  const params = new URLSearchParams({
+    agentSpecName: name,
+    version,
+    namespaceId: api.namespace,
+  });
+  const url = `${api.apiBase}/v3/console/ai/agentspecs/version?${params}`;
 
   let data: {
     code?: number;
@@ -138,21 +144,24 @@ export async function fetchAgentSpec(name: string, version: string): Promise<Age
   };
 
   try {
-    const res = await fetch(url, {
+    const res = await nacosFetch(url, {
+      accessToken: api.accessToken,
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return { ok: false, error: `AgentSpec API 返回 HTTP ${res.status}: ${text.substring(0, 200)}` };
-    }
-    data = (await res.json()) as typeof data;
+    if (!res.ok) return { ok: false, error: `AgentSpec API 返回 HTTP ${res.status}` };
+    data = await readNacosJson<typeof data>(res, api.accessToken);
   } catch (err) {
-    return { ok: false, error: `AgentSpec API 不可用: ${err instanceof Error ? err.message : 'unknown'}` };
+    return {
+      ok: false,
+      error: sanitizeNacosText(err instanceof Error ? err.message : 'AgentSpec API 不可用', [api.accessToken]),
+    };
   }
 
   if (data.code !== 0 || !data.data?.content) {
-    return { ok: false, error: data.message || 'AgentSpec 内容为空' };
+    return {
+      ok: false,
+      error: sanitizeNacosText(data.message || 'AgentSpec 内容为空', [api.accessToken]),
+    };
   }
 
   let content: AgentSpecContent;
@@ -172,4 +181,55 @@ export async function fetchAgentSpec(name: string, version: string): Promise<Age
       resources: data.data.resource,
     }),
   };
+}
+
+export interface NacosAgentSpecSummary {
+  name: string;
+  description: string;
+  version: string;
+  from: string;
+  scope: string;
+}
+
+export async function listNacosAgentSpecs(): Promise<{ items: NacosAgentSpecSummary[]; note?: string }> {
+  const api = await resolveNacosApi();
+  if ('error' in api) return { items: [], note: api.error };
+  const items: NacosAgentSpecSummary[] = [];
+  const pageSize = 500;
+  const maxPages = 20;
+  try {
+    for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+      const params = new URLSearchParams({
+        namespaceId: api.namespace,
+        pageNo: String(pageNo),
+        pageSize: String(pageSize),
+      });
+      const response = await nacosFetch(`${api.apiBase}/v3/console/ai/agentspecs/list?${params}`, {
+        accessToken: api.accessToken,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) return { items, note: `AgentSpecs API 返回 HTTP ${response.status}` };
+      const data = await readNacosJson<{
+        data?: {
+          pagesAvailable?: number;
+          pageItems?: Array<{ name: string; description?: string; labels?: { latest?: string }; from?: string; scope?: string }>;
+        };
+      }>(response, api.accessToken);
+      const pageItems = data.data?.pageItems ?? [];
+      items.push(...pageItems.map((item) => ({
+        name: item.name,
+        description: item.description ?? '',
+        version: item.labels?.latest ?? '',
+        from: item.from ?? '',
+        scope: item.scope ?? 'PUBLIC',
+      })));
+      if (pageNo >= (data.data?.pagesAvailable ?? 1) || pageItems.length === 0) break;
+    }
+    return { items };
+  } catch (err) {
+    return {
+      items,
+      note: sanitizeNacosText(err instanceof Error ? err.message : 'AgentSpecs API 不可用', [api.accessToken]),
+    };
+  }
 }

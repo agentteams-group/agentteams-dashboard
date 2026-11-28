@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { TaskAssignmentCard } from './task-assignment-card';
 
 const fixture = vi.hoisted(() => ({ tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
-vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => ({ tasks: fixture.tasks }) }));
+vi.mock('@/hooks/use-aggregate-task-board', () => ({ useAggregatedTaskBoard: () => ({ tasks: fixture.tasks }) }));
 vi.mock('@/lib/api-base', () => ({ apiUrl: (url: string) => url, requestJson: async () => ({ history: [{ action: 'report_progress', note: '正在验证接单状态' }] }) }));
 afterEach(() => { cleanup(); fixture.tasks = []; });
 const notice = { kind: 'assigned' as const, title: '任务已分配', taskId: 'child', subject: '修复状态流转', body: 'original' };

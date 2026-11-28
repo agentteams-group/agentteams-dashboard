@@ -30,7 +30,7 @@ vi.mock('@/hooks/use-agentteams-humans', () => ({ useHumans: hooksMock.useHumans
 vi.mock('@/hooks/use-chat-room-access', () => ({ useChatRoomAccess: hooksMock.useRoomAccess }));
 vi.mock('@/hooks/use-room-archive', () => ({ useArchivedRooms: hooksMock.useArchivedRooms }));
 vi.mock('@/hooks/use-assistant-task-feed', () => ({ useAssistantTaskFeed: () => ({ workflows: taskFeedMock.workflows, loading: false, degraded: false, partialError: false, refresh: vi.fn() }) }));
-vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => taskBoardMock }));
+vi.mock('@/hooks/use-aggregate-task-board', () => ({ useAggregatedTaskBoard: () => taskBoardMock }));
 
 // --- Store hooks (no-selector call sites) -----------------------------------
 vi.mock('@/lib/agentteams-store', () => ({

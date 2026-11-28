@@ -9,6 +9,11 @@ import type { RoomInfo } from './room-info';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 
 const api = vi.hoisted(() => ({ listProjects: vi.fn(), getProjectWorkflow: vi.fn() }));
+// ChatPanel's parent behavior should not depend on next/dynamic's async boundary.
+vi.mock('next/dynamic', async () => {
+  const { ChatRoom } = await import('./ChatRoom');
+  return { default: () => ChatRoom };
+});
 vi.mock('@/lib/agentteams-projects-api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/agentteams-projects-api')>(), listProjects: api.listProjects, getProjectWorkflow: api.getProjectWorkflow }));
 vi.mock('./ChatRoom', () => ({
   ChatRoom: ({ roomName, topic, integratedSidebar, headerActions }: {

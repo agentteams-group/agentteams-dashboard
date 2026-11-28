@@ -2,11 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getSessionFromRequest } from './lib/dashboard-session';
 import { isStatelessAuthMode, statelessDegradedResponse } from './lib/static-mode';
-import { resolveStaticIdentity } from './lib/static-identity';
-
-// Force Node.js runtime because api-auth.ts imports higress/proxy-helper which
-// uses AbortController/timeout patterns that are safer under Node runtime.
-export const runtime = 'nodejs';
+import { resolveStaticIdentity, invalidateStaticIdentityCache } from './lib/static-identity';
+import { isSensitiveIdentityRequest, reverifyDashboardSession } from './lib/identity-revalidation';
 
 // Public endpoints that do NOT require a Higress browser session.
 // Only genuinely public endpoints (health checks, setup bootstrap) belong here.
@@ -33,22 +30,48 @@ const PUBLIC_PATHS = [
 
 const USER_NAME_HEADER = 'x-agentteams-user';
 const USER_LEVEL_HEADER = 'x-agentteams-user-level';
+const USER_TEAMS_HEADER = 'x-agentteams-teams';
+const USER_WORKERS_HEADER = 'x-agentteams-workers';
+const USER_SCOPE_HEADER = 'x-agentteams-scope';
 
-function withUserHeaders(request: NextRequest, user: { name: string; level: number } | null): Headers {
+interface ResolvedUser {
+  name: string;
+  level: number;
+  teams?: string[];
+  workers?: string[];
+  scope: 'global' | 'scoped' | 'unknown';
+}
+
+function withUserHeaders(request: NextRequest, user: ResolvedUser | null): Headers {
   const headers = new Headers(request.headers);
+  // Always remove client-supplied identity/scope headers, including when no
+  // trusted identity is available. A missing downstream identity must fail closed.
+  for (const header of [USER_NAME_HEADER, USER_LEVEL_HEADER, USER_TEAMS_HEADER, USER_WORKERS_HEADER, USER_SCOPE_HEADER]) {
+    headers.delete(header);
+  }
   if (user) {
     headers.set(USER_NAME_HEADER, user.name);
     headers.set(USER_LEVEL_HEADER, String(user.level));
-  } else {
-    headers.delete(USER_NAME_HEADER);
-    headers.delete(USER_LEVEL_HEADER);
+    headers.set(USER_SCOPE_HEADER, user.scope);
+    headers.set(USER_TEAMS_HEADER, JSON.stringify(user.teams ?? []));
+    headers.set(USER_WORKERS_HEADER, JSON.stringify(user.workers ?? []));
   }
   return headers;
 }
 
+function localScope(value: string | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // Backward compatibility for embedded mode: old /dashboard/ URLs redirect to root
 // because the dashboard is now served at "/" when NEXT_PUBLIC_BASE_PATH is empty.
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Legacy redirect
@@ -92,9 +115,13 @@ export async function middleware(request: NextRequest) {
         name: process.env.AGENTTEAMS_LOCAL_USER ?? 'local-admin',
         level: Number(process.env.AGENTTEAMS_LOCAL_USER_LEVEL ?? 3),
       };
+      const localLevel = Number.isFinite(localUser.level) ? localUser.level : 3;
       const headers = withUserHeaders(request, {
         name: localUser.name,
-        level: Number.isFinite(localUser.level) ? localUser.level : 3,
+        level: localLevel,
+        teams: localScope(process.env.AGENTTEAMS_LOCAL_TEAMS),
+        workers: localScope(process.env.AGENTTEAMS_LOCAL_WORKERS),
+        scope: localLevel === 3 ? 'global' : 'scoped',
       });
       const res = NextResponse.next({ request: { headers } });
       res.headers.set('x-agentteams-auth-mode', 'disabled');
@@ -117,8 +144,10 @@ export async function middleware(request: NextRequest) {
       if (!bearer) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      const result = await resolveStaticIdentity(request);
+      const sensitive = isSensitiveIdentityRequest(request);
+      const result = await resolveStaticIdentity(request, { forceRefresh: sensitive });
       if (result === null) {
+        invalidateStaticIdentityCache(bearer);
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       if (result.ok === 'unreachable') {
@@ -128,12 +157,19 @@ export async function middleware(request: NextRequest) {
         );
       }
       if (result.ok === 'invalid') {
+        invalidateStaticIdentityCache(bearer);
         return NextResponse.json(
           { error: '凭据无效或已失效，请重新登录', detail: result.detail },
           { status: 401 },
         );
       }
-      const headers = withUserHeaders(request, { name: result.identity.name, level: result.identity.level });
+      const headers = withUserHeaders(request, {
+        name: result.identity.name,
+        level: result.identity.level,
+        teams: result.identity.teams,
+        workers: result.identity.workers,
+        scope: result.identity.level === 3 ? 'global' : 'scoped',
+      });
       const res = NextResponse.next({ request: { headers } });
       res.headers.set('x-agentteams-auth-mode', 'stateless');
       return res;
@@ -144,12 +180,26 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Forward the resolved identity downstream so route handlers (and the
-    // Controller proxy) can apply server-side RBAC + audit attribution.
-    // `level` is already the dashboard rbac-engine level (E5 mapping applied
-    // at session creation: CRD 1→3, 2→2, 3→1).
+    // 敏感 Matrix/Console 操作每次向上游重验；普通请求仅使用 30 秒身份缓存。
+    // 撤销、降权或上游验证不可用都在进入业务路由前拒绝。
+    const verification = await reverifyDashboardSession(session, {
+      forceRefresh: isSensitiveIdentityRequest(request),
+    });
+    if (verification.ok !== true) {
+      const status = verification.ok === 'unavailable' ? 503 : 401;
+      return NextResponse.json({ error: verification.detail }, { status });
+    }
+
     return NextResponse.next({
-      request: { headers: withUserHeaders(request, { name: session.user, level: session.level }) },
+      request: {
+        headers: withUserHeaders(request, {
+          name: session.user,
+          level: session.level,
+          teams: session.teams,
+          workers: session.workers,
+          scope: session.level === 3 ? 'global' : 'scoped',
+        }),
+      },
     });
   }
 

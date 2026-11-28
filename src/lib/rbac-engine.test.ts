@@ -84,19 +84,19 @@ describe('checkPermission (deny overrides allow)', () => {
   });
 
   it('an explicit allow grants beyond the level default', () => {
-    const human = makeHuman({ permissionLevel: 1 }); // view-only by level
+    const human = makeHuman({ permissionLevel: 1, systemAdmin: true }); // view-only by level
     const rules = [makeRule({ effect: 'allow', actions: ['delete'] })];
     expect(checkPermission(human, 'delete', 'worker', 'w1', rules).allowed).toBe(true);
   });
 
   it('a deny for a different action does not shadow other actions', () => {
-    const human = makeHuman({ permissionLevel: 3 });
+    const human = makeHuman({ permissionLevel: 3, systemAdmin: true });
     const rules = [makeRule({ actions: ['delete'] })];
     expect(checkPermission(human, 'wake', 'worker', 'w1', rules).allowed).toBe(true);
   });
 
   it('a deny for a different subject does not apply', () => {
-    const human = makeHuman({ name: 'bob', permissionLevel: 3 });
+    const human = makeHuman({ name: 'bob', permissionLevel: 3, systemAdmin: true });
     const rules = [makeRule({ subject: { type: 'human', name: 'carol' } })];
     expect(checkPermission(human, 'delete', 'worker', 'w1', rules).allowed).toBe(true);
   });
@@ -109,7 +109,7 @@ describe('checkPermission (deny overrides allow)', () => {
   });
 
   it('a role-level deny for another level does not apply', () => {
-    const human = makeHuman({ permissionLevel: 2 });
+    const human = makeHuman({ permissionLevel: 2, systemAdmin: true });
     const rules = [makeRule({ subject: { type: 'role', level: 3 }, actions: ['wake'] })];
     expect(checkPermission(human, 'wake', 'worker', 'w1', rules).allowed).toBe(true);
   });
@@ -117,7 +117,7 @@ describe('checkPermission (deny overrides allow)', () => {
 
 describe('checkPermission (resource matching)', () => {
   it('global rules match any resource type', () => {
-    const human = makeHuman({ permissionLevel: 1 });
+    const human = makeHuman({ permissionLevel: 1, systemAdmin: true });
     const rules = [makeRule({ resource: { type: 'global' }, effect: 'allow', actions: ['manage'] })];
     expect(checkPermission(human, 'manage', 'team', 't1', rules).allowed).toBe(true);
   });
@@ -129,7 +129,7 @@ describe('checkPermission (resource matching)', () => {
   });
 
   it('a rule without a resource name applies to every instance of the type', () => {
-    const human = makeHuman({ permissionLevel: 1 });
+    const human = makeHuman({ permissionLevel: 1, systemAdmin: true });
     const rules = [makeRule({ resource: { type: 'worker' }, effect: 'allow', actions: ['delete'] })];
     expect(checkPermission(human, 'delete', 'worker', 'any-worker', rules).allowed).toBe(true);
   });
@@ -161,10 +161,13 @@ describe('checkPermission (scoping fallback)', () => {
     expect(result.reason).toContain('w9');
   });
 
-  it('an empty scoping list means unrestricted', () => {
-    const human = makeHuman({ permissionLevel: 3, accessibleWorkers: [], accessibleTeams: [] });
-    expect(checkPermission(human, 'delete', 'worker', 'w9', []).allowed).toBe(true);
-    expect(checkPermission(human, 'delete', 'team', 't9', []).allowed).toBe(true);
+  it('empty and unknown scopes deny by default, even with an explicit allow', () => {
+    const empty = makeHuman({ permissionLevel: 3, accessibleWorkers: [], accessibleTeams: [] });
+    expect(checkPermission(empty, 'delete', 'worker', 'w9', []).allowed).toBe(false);
+    expect(checkPermission(empty, 'delete', 'team', 't9', []).allowed).toBe(false);
+    const unknown = makeHuman({ permissionLevel: 3 });
+    const allow = [makeRule({ effect: 'allow', actions: ['delete'] })];
+    expect(checkPermission(unknown, 'delete', 'worker', 'w9', allow).allowed).toBe(false);
   });
 
   it('level without the action fails before scoping is consulted', () => {
@@ -183,9 +186,15 @@ describe('getAccessSummary', () => {
     expect(getAccessSummary(makeHuman({ permissionLevel: 2 })).permissions).toContain('ensure-ready');
   });
 
-  it('defaults to level 1 and unrestricted scopes', () => {
+  it('defaults to level 1 and denies unknown scopes', () => {
     const summary = getAccessSummary(makeHuman({ permissionLevel: undefined }));
     expect(summary.levelNumber).toBe(1);
+    expect(summary.teamScope).toBe('无团队范围');
+    expect(summary.workerScope).toBe('无 Worker 范围');
+  });
+
+  it('only a trusted admin summary has global scope', () => {
+    const summary = getAccessSummary(makeHuman({ permissionLevel: 3, systemAdmin: true }));
     expect(summary.teamScope).toBe('所有团队');
     expect(summary.workerScope).toBe('所有 Worker');
   });

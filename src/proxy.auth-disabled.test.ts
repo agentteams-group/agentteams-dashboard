@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import { middleware } from './middleware';
+import { proxy } from './proxy';
 
 function apiRequest(path: string, extraHeaders?: Record<string, string>) {
   const headers = new Headers(extraHeaders);
@@ -17,7 +17,7 @@ function forwardedHeader(res: { headers: Headers }, name: string): string | null
   return res.headers.get(`x-middleware-request-${name}`);
 }
 
-describe('middleware AGENTTEAMS_AUTH_DISABLED local identity', () => {
+describe('proxy AGENTTEAMS_AUTH_DISABLED local identity', () => {
   beforeEach(() => {
     process.env.AGENTTEAMS_AUTH_DISABLED = 'true';
     delete process.env.AGENTTEAMS_LOCAL_USER;
@@ -31,7 +31,7 @@ describe('middleware AGENTTEAMS_AUTH_DISABLED local identity', () => {
   });
 
   it('injects the default local-admin L3 identity', async () => {
-    const res = await middleware(apiRequest('/api/agentteams/audit'));
+    const res = await proxy(apiRequest('/api/agentteams/audit'));
     expect(res.status).toBe(200);
     expect(res.headers.get('x-agentteams-auth-mode')).toBe('disabled');
     expect(forwardedHeader(res, 'x-agentteams-user')).toBe('local-admin');
@@ -41,19 +41,19 @@ describe('middleware AGENTTEAMS_AUTH_DISABLED local identity', () => {
   it('honors AGENTTEAMS_LOCAL_USER / AGENTTEAMS_LOCAL_USER_LEVEL overrides', async () => {
     process.env.AGENTTEAMS_LOCAL_USER = 'dev-operator';
     process.env.AGENTTEAMS_LOCAL_USER_LEVEL = '2';
-    const res = await middleware(apiRequest('/api/agentteams/workers'));
+    const res = await proxy(apiRequest('/api/agentteams/workers'));
     expect(forwardedHeader(res, 'x-agentteams-user')).toBe('dev-operator');
     expect(forwardedHeader(res, 'x-agentteams-user-level')).toBe('2');
   });
 
   it('falls back to L3 when the configured level is not numeric', async () => {
     process.env.AGENTTEAMS_LOCAL_USER_LEVEL = 'not-a-number';
-    const res = await middleware(apiRequest('/api/agentteams/audit'));
+    const res = await proxy(apiRequest('/api/agentteams/audit'));
     expect(forwardedHeader(res, 'x-agentteams-user-level')).toBe('3');
   });
 
   it('overwrites client-forged identity headers', async () => {
-    const res = await middleware(
+    const res = await proxy(
       apiRequest('/api/agentteams/audit', {
         'x-agentteams-user': 'attacker',
         'x-agentteams-user-level': '3',
@@ -65,7 +65,7 @@ describe('middleware AGENTTEAMS_AUTH_DISABLED local identity', () => {
 
   it('does not inject identity when auth is enabled and no session cookie exists', async () => {
     delete process.env.AGENTTEAMS_AUTH_DISABLED;
-    const res = await middleware(apiRequest('/api/agentteams/audit'));
+    const res = await proxy(apiRequest('/api/agentteams/audit'));
     expect(res.status).toBe(401);
     expect(forwardedHeader(res, 'x-agentteams-user')).toBeNull();
   });

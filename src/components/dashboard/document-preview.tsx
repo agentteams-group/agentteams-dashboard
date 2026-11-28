@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { ChevronUp, ChevronDown, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DOCUMENT_PREVIEW_MAX_BYTES } from '@/lib/document-preview';
+import { prefetchPowerPointRuntime } from '@/lib/pptx-runtime';
 
 export interface DocumentSlidesProps {
   data: ArrayBuffer;
@@ -38,6 +39,9 @@ function DocumentPreviewContent({ url, filename, accessToken, mimetype }: Docume
 
   useEffect(() => {
     const controller = new AbortController();
+    const isPdf = /\.pdf$/i.test(filename) || mimetype?.toLowerCase().split(';')[0] === 'application/pdf';
+    // Start the parser code + WASM request before awaiting the document download.
+    if (!isPdf) void prefetchPowerPointRuntime().catch(() => undefined);
     void (async () => {
       try {
         const response = await fetch(url, {
@@ -56,7 +60,7 @@ function DocumentPreviewContent({ url, filename, accessToken, mimetype }: Docume
       }
     })();
     return () => controller.abort();
-  }, [url, accessToken]);
+  }, [url, accessToken, filename, mimetype]);
 
   useEffect(() => {
     const stage = stageRef.current;

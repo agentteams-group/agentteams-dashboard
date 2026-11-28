@@ -1,7 +1,24 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} from '@/lib/server-auth';
 
 const originalFetch = globalThis.fetch;
+
+function trustedHeaders(): Headers {
+  return new Headers({
+    [SERVER_USER_HEADER]: 'admin',
+    [SERVER_USER_LEVEL_HEADER]: '3',
+    [SERVER_USER_SCOPE_HEADER]: 'global',
+    [SERVER_USER_TEAMS_HEADER]: '[]',
+    [SERVER_USER_WORKERS_HEADER]: '[]',
+  });
+}
 
 async function callPost(
   projectId: string,
@@ -9,6 +26,7 @@ async function callPost(
   controllerBody: unknown,
   requestBody: string,
   query = '',
+  headers: Headers = trustedHeaders(),
 ) {
   vi.resetModules();
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
@@ -30,7 +48,7 @@ async function callPost(
         pathname: `/api/agentteams/projects/${projectId}/pause`,
         searchParams: new URLSearchParams(query),
       },
-      headers: new Headers(),
+      headers,
       text: () => Promise.resolve(requestBody),
     } as never,
     { params: Promise.resolve({ id: projectId }) },
@@ -39,6 +57,12 @@ async function callPost(
 }
 
 describe('POST /api/agentteams/projects/[id]/pause (proxy)', () => {
+  it('returns 401 when the trusted middleware identity is missing', async () => {
+    const res = await callPost('p1', 200, {}, '{}', '', new Headers());
+    expect(res.status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

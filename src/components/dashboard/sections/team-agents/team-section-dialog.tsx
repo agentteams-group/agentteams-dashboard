@@ -15,7 +15,7 @@ const TEAM_PANELS: Record<string, { tab: string; title: string }> = {
   users: { tab: 'users', title: '团队成员' },
   'team-skills': { tab: 'agents', title: '团队技能' },
   llm: { tab: 'basic', title: 'LLM 调优' },
-  agents: { tab: 'agents', title: '智能体管理' },
+  agents: { tab: 'agents', title: 'Worker管理' },
   danger: { tab: 'basic', title: '危险区' },
 };
 

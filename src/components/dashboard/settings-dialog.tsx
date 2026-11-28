@@ -82,7 +82,7 @@ export function SettingsDialog() {
   // same rule in proxy-helper.getControllerUrl (the UI gate is cosmetic only).
   const isL1 = userLevel >= 3;
 
-  const { data: infrastructure } = useInfrastructure();
+  const { data: infrastructure } = useInfrastructure({ enabled: settingsOpen });
 
   const [tempUrl, setTempUrl] = useState(controllerUrl);
   // F7: the "客户端" tab only exists in stateless deployments (the browser

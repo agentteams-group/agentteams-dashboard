@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import { enforceServerSideRbac } from '@/lib/server-auth';
+import { isSensitiveObjectKey, normalizeStorageBucket, normalizeStorageKey } from '@/lib/sensitive-files';
 
 export async function POST(
   request: NextRequest,
@@ -29,14 +30,26 @@ export async function POST(
       return NextResponse.json({ error: '请选择要上传的文件' }, { status: 400 });
     }
 
-    const client = createMinioClient();
     const teamRoot = `teams/${name}/`;
     const dirSuffix = subdir.startsWith(teamRoot)
       ? subdir.slice(teamRoot.length)
       : subdir;
     const safeFileName = file.name.replace(/[<>:"/\\|?*]/g, '_');
-    const key = `${teamRoot}${dirSuffix}${safeFileName}`;
+    let key: string;
+    try {
+      key = normalizeStorageKey(`${teamRoot}${dirSuffix}${safeFileName}`);
+      normalizeStorageBucket(bucket);
+    } catch {
+      return NextResponse.json({ error: '非法 Team 文件路径' }, { status: 400 });
+    }
+    if (!key.startsWith(teamRoot)) {
+      return NextResponse.json({ error: '非法 Team 文件路径' }, { status: 400 });
+    }
+    if (isSensitiveObjectKey(key)) {
+      return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+    }
 
+    const client = createMinioClient();
     const buffer = Buffer.from(await file.arrayBuffer());
     await client.putObject(bucket, key, buffer, file.size, {
       'content-type': file.type || 'application/octet-stream',

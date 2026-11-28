@@ -87,6 +87,8 @@ function extractUser(body: unknown): SessionUser | null {
 export interface SessionValidation {
   valid: boolean;
   user: SessionUser | null;
+  /** true 仅表示上游超时/网络/配置不可用，不能据此判定凭据已撤销。 */
+  unavailable?: boolean;
 }
 
 /**
@@ -102,6 +104,7 @@ export interface SessionValidation {
  */
 export async function validateHigressCookieString(
   cookie: string | null | undefined,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<SessionValidation> {
   const empty: SessionValidation = { valid: false, user: null };
   if (!cookie) {
@@ -113,12 +116,13 @@ export async function validateHigressCookieString(
     return empty;
   }
 
-  // Check cache first
+  // SEC-05：敏感请求 forceRefresh，绝不复用 30s 短缓存。
   const key = hashCookie(sessionPart);
   const cached = sessionCache.get(key);
-  if (cached && cached.expires > Date.now()) {
+  if (!options.forceRefresh && cached && cached.expires > Date.now()) {
     return { valid: cached.valid, user: cached.user };
   }
+  if (options.forceRefresh) sessionCache.delete(key);
 
   try {
     // Single shared Console resolution (getHigressConsoleURL), identical to
@@ -143,7 +147,7 @@ export async function validateHigressCookieString(
 
     return { valid, user };
   } catch {
-    return empty;
+    return { valid: false, user: null, unavailable: true };
   }
 }
 

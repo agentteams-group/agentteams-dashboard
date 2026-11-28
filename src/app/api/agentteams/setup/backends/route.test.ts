@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { promises as dns } from 'node:dns';
 import { NextRequest } from 'next/server';
 import {
   __resetSessionStoreForTests,
@@ -75,6 +76,10 @@ beforeEach(() => {
   vi.stubEnv('AGENTTEAMS_API_URL', '');
   vi.stubEnv('AGENTTEAMS_MATRIX_URL', '');
   vi.stubEnv('NEXT_PUBLIC_MATRIX_API_URL', '');
+  vi.stubEnv('DASHBOARD_ALLOWED_HOSTS', '127.0.0.1,localhost,a,b,c,mx,old.example');
+  // Fake topology hostnames in route tests resolve publicly; dedicated egress
+  // tests cover dangerous/mixed DNS answers and actual socket pinning.
+  vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
   __resetSessionStoreForTests();
   __resetBackendUrlResolutionForTests();
   for (const name of BACKEND_NAMES) forgetWorking(name);
@@ -85,6 +90,7 @@ afterEach(() => {
     if (fs.existsSync(file)) fs.rmSync(file);
   }
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 function makeRequest(
@@ -102,6 +108,15 @@ function l1Cookie(): string {
     user: 'admin',
     crLevel: 1, // CRD 1 -> dashboard level 3 (L1 admin)
     credential: { kind: 'controller-token', token: 'dummy-sa-token' },
+  });
+  return sessionCookieHeader(cookieValue);
+}
+
+function observerCookie(): string {
+  const { cookieValue } = createSession({
+    user: 'observer',
+    crLevel: 3, // CRD 3 -> dashboard level 1
+    credential: { kind: 'matrix', token: 'dummy-matrix-token' },
   });
   return sessionCookieHeader(cookieValue);
 }
@@ -275,11 +290,9 @@ describe('POST /api/agentteams/setup/backends', () => {
     expect(fs.existsSync(configFile())).toBe(false);
   });
 
-  // F1e: pre-login writes are token-gated and REPEATABLE (broken/changed
-  // environment escape hatch — plugin config-first parity). The one-shot
-  // "already-configured" 403 is retired: after first launch the same
-  // token overwrites the config.
-  it('pre-login: first launch creates, later token writes overwrite (mode update)', async () => {
+  // SEC-03: the setup token is a first-configuration bootstrap credential,
+  // not a repeatable owner credential after setup.
+  it('pre-login: first launch creates; later token writes require Admin', async () => {
     const first = await POST(
       makeRequest({
         method: 'POST',
@@ -304,16 +317,24 @@ describe('POST /api/agentteams/setup/backends', () => {
         }),
       }),
     );
-    expect(second.status).toBe(200);
-    const secondData = (await second.json()) as { ok: boolean; mode: string };
-    expect(secondData.ok).toBe(true);
-    expect(secondData.mode).toBe('update');
-    // F1f-E merge semantics: the sent backend (controller) is replaced,
-    // the unsent backend (matrix) is preserved.
+    expect(second.status).toBe(403);
+    expect(await second.json()).toEqual({ error: 'admin-required' });
+    // F1f-E merge semantics are verified through an Admin update below; the
+    // bootstrap token cannot alter the existing configuration.
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://a:8090' });
+    expect(readConfigSync()?.backends.matrix).toEqual({ external: 'http://mx:6167' });
+
+    const admin = await POST(
+      makeRequest(
+        { method: 'POST', body: JSON.stringify({ backends: { controller: { internal: 'http://c:8090' } } }) },
+        l1Cookie(),
+      ),
+    );
+    expect(admin.status).toBe(200);
     expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://c:8090' });
     expect(readConfigSync()?.backends.matrix).toEqual({ external: 'http://mx:6167' });
 
-    // without the token the pre-login path stays closed
+    // without a session the pre-login path stays closed
     const third = await POST(
       makeRequest({
         method: 'POST',
@@ -321,7 +342,7 @@ describe('POST /api/agentteams/setup/backends', () => {
       }),
     );
     expect(third.status).toBe(403);
-    expect(await third.json()).toEqual({ error: 'token-required' });
+    expect(await third.json()).toEqual({ error: 'admin-required' });
   });
 
   it('rejects malformed payloads with 400', async () => {
@@ -345,7 +366,7 @@ describe('POST /api/agentteams/setup/backends', () => {
     expect(first.status).toBe(200);
     const firstData = (await first.json()) as { ok: boolean; mode: string };
     expect(firstData.ok).toBe(true);
-    expect(firstData.mode).toBe('update');
+    expect(firstData.mode).toBe('first-launch');
 
     const second = await POST(
       makeRequest({ method: 'POST', body: JSON.stringify({ backends: { matrix: { internal: 'http://b:6167' } } }) }, cookie),
@@ -358,47 +379,80 @@ describe('POST /api/agentteams/setup/backends', () => {
     expect(readConfigSync()?.backends.matrix).toEqual({ internal: 'http://b:6167' });
   });
 
-  // F1c (plugin parity, decided 9/9 — one instance per user, no shared
-  // instances): an L2 session saves WITHOUT any token, exactly like the
-  // plugin's config page is open to the user of this host.
-  it('L2 session (level 2) can update the config directly, no token needed', async () => {
+  it.each([
+    ['Observer (level 1)', observerCookie],
+    ['Operator (level 2)', l2Cookie],
+  ])('%s receives 403 before DNS or network activity', async (_label, cookieFor) => {
     const res = await POST(
       makeRequest(
         { method: 'POST', body: JSON.stringify({ backends: { controller: { internal: 'http://a:8090' } } }) },
-        l2Cookie(),
+        cookieFor(),
       ),
     );
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as { ok: boolean; mode: string };
-    expect(data.ok).toBe(true);
-    expect(data.mode).toBe('update');
-    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://a:8090' });
-
-    // repeatable — not one-shot like pre-login
-    const again = await POST(
-      makeRequest(
-        { method: 'POST', body: JSON.stringify({ backends: { sglang: { internal: 'http://gpu:8000' } } }) },
-        l2Cookie(),
-      ),
-    );
-    expect(again.status).toBe(200);
-    expect(readConfigSync()?.backends.sglang).toEqual({ internal: 'http://gpu:8000' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'only admin (L1) may save backend config' });
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(fs.existsSync(configFile())).toBe(false);
   });
 
-  it('a stale token in the body is ignored for logged-in sessions (no owner-credential path anymore)', async () => {
+  it('a stale token never upgrades a non-Admin session', async () => {
     fs.writeFileSync(
       configFile(),
       JSON.stringify({ version: 1, backends: { controller: { internal: 'http://old:8090' } } }),
     );
     const res = await POST(
       makeRequest(
-        { method: 'POST', body: JSON.stringify({ token: 'nope', backends: { controller: { internal: 'http://b:8090' } } }) },
+        { method: 'POST', body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: 'http://b:8090' } } }) },
         l2Cookie(),
       ),
     );
+    expect(res.status).toBe(403);
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://old:8090' });
+  });
+
+  it('rejects a dangerous target before connecting and writes no config', async () => {
+    vi.mocked(dns.lookup).mockClear();
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ token: 'test-token-123', backends: { controller: { internal: 'http://169.254.169.254/latest/meta-data' } } }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'host-not-allowed' });
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(fs.existsSync(configFile())).toBe(false);
+  });
+
+  it('does not inherit masked credentials after an origin change on save', async () => {
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({
+        version: 1,
+        backends: {
+          controller: {
+            internal: { url: 'http://old.example:8090', auth: { type: 'basic', username: 'ops', password: 'stored' } },
+          },
+        },
+      }),
+    );
+    const res = await POST(
+      makeRequest(
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            backends: {
+              controller: { internal: { url: 'https://old.example:8090', auth: { type: 'basic', username: 'ops', password: '***' } } },
+            },
+          }),
+        },
+        l1Cookie(),
+      ),
+    );
     expect(res.status).toBe(200);
-    // the session (not the token) authorized the save
-    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://b:8090' });
+    const saved = readConfigSync()?.backends.controller?.internal;
+    expect(saved).toBe('https://old.example:8090');
   });
 });
 
@@ -497,7 +551,7 @@ describe('F1f shared mode (DASHBOARD_SHARED_MODE=1, e.g. a shared multi-user dep
       ),
     );
     expect(l2.status).toBe(403);
-    expect(await l2.json()).toEqual({ error: 'shared-mode: only admin (L1) may save backend config' });
+    expect(await l2.json()).toEqual({ error: 'only admin (L1) may save backend config' });
 
     const l1 = await POST(
       makeRequest(
@@ -609,6 +663,24 @@ describe('F1f3: DASHBOARD_SETUP_TOKEN_ENFORCE=0 (installer opt-out)', () => {
       }),
     );
     expect(res.status).toBe(200);
+  });
+
+  it('ENFORCE=0 does not bypass Admin authorization after config exists', async () => {
+    vi.stubEnv('DASHBOARD_SETUP_TOKEN_ENFORCE', '0');
+    fs.writeFileSync(
+      configFile(),
+      JSON.stringify({ version: 1, backends: { controller: { internal: 'http://old:8090' } } }),
+    );
+    const res = await POST(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ backends: { controller: { internal: 'http://new:8090' } } }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'admin-required' });
+    expect(dns.lookup).not.toHaveBeenCalled();
+    expect(readConfigSync()?.backends.controller).toEqual({ internal: 'http://old:8090' });
   });
 
   it('no token is generated or persisted (standalone)', async () => {

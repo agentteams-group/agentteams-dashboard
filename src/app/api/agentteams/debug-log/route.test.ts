@@ -3,7 +3,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { unzipSync } from 'fflate';
 import { POST } from './route';
-import { SERVER_USER_HEADER, SERVER_USER_LEVEL_HEADER } from '@/lib/server-auth';
+import {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} from '@/lib/server-auth';
 
 // L1 拒绝时会写审计日志——mock 掉以保证测试不落盘。
 const auditMock = vi.hoisted(() => ({
@@ -36,11 +42,14 @@ vi.mock('./matrix', () => ({
   exportMatrixMessages: vi.fn(),
 }));
 
-function buildRequest(rawBody: string, level?: number): NextRequest {
+function buildRequest(rawBody: string, level: number | null = 3): NextRequest {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (level !== undefined) {
+  if (level !== null) {
     headers[SERVER_USER_HEADER] = level === 3 ? 'admin' : 'observer';
     headers[SERVER_USER_LEVEL_HEADER] = String(level);
+    headers[SERVER_USER_SCOPE_HEADER] = level === 3 ? 'global' : 'scoped';
+    headers[SERVER_USER_TEAMS_HEADER] = JSON.stringify(level === 3 ? [] : ['t1']);
+    headers[SERVER_USER_WORKERS_HEADER] = JSON.stringify(level === 3 ? [] : ['worker-1']);
   }
   return new NextRequest('http://localhost/api/agentteams/debug-log', {
     method: 'POST',
@@ -50,6 +59,13 @@ function buildRequest(rawBody: string, level?: number): NextRequest {
 }
 
 describe('POST /api/agentteams/debug-log', () => {
+  it('returns 401 when the trusted middleware identity is missing', async () => {
+    const res = await POST(buildRequest('{}', null));
+    expect(res.status).toBe(401);
+    const { listAgentTeamsContainers } = await import('./docker');
+    expect(listAgentTeamsContainers).not.toHaveBeenCalled();
+  });
+
   it('returns 400 for a null JSON body', async () => {
     const res = await POST(buildRequest('null'));
     expect(res.status).toBe(400);

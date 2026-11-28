@@ -1,30 +1,20 @@
 import { useMemo } from 'react';
-import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { useProjects } from './use-projects';
-import { getProjectWorkflow } from '@/lib/agentteams-projects-api';
+import { useProjectWorkflowBatch } from './use-project-workflow-batch';
 import type { RoomInfo } from '@/components/dashboard/sections/chat/room-info';
 
-/** The switcher and the open note share the same project/workflow query cache. */
+/** The switcher and the open note share the same aggregate workflow cache. */
 export function useAssistantTaskFeed(room?: RoomInfo, enabled = true) {
-  const list = useProjects(enabled);
-  const client = useQueryClient();
-  const projects = useMemo(() => (list.data?.projects ?? []).filter(project => !room || room.agentRole === 'operations' || !project.team_id || [room.parentTeam, room.team?.name, room.team?.teamName].includes(project.team_id)), [list.data?.projects, room]);
-  const degraded = list.isError || Boolean(list.data?.degraded);
-  const queries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['agentteams-project-workflow', project.team_id ?? 'any', project.project_id],
-    queryFn: () => getProjectWorkflow(project.project_id, { includeTasks: true, teamId: project.team_id }),
-    enabled: enabled && !degraded,
-    refetchInterval: enabled ? 5000 : false,
-    staleTime: 5000,
-    retry: 1,
-    throwOnError: false,
-  })) });
+  const feed = useProjectWorkflowBatch({ enabled, room });
+  const workflows = useMemo(() => (room
+    ? feed.workflows.filter(workflow => room.agentRole === 'operations' || !workflow.team_id
+      || [room.parentTeam, room.team?.name, room.team?.teamName].includes(workflow.team_id))
+    : feed.workflows), [feed.workflows, room]);
   return {
-    workflows: queries.flatMap((query, index) => query.data ? [{ ...query.data, team_id: query.data.team_id ?? projects[index].team_id }] : []),
-    loading: list.isLoading || queries.some(query => query.isLoading),
-    degraded,
-    partialError: queries.some(query => query.isError),
-    refresh: () => { void list.refetch(); void client.invalidateQueries({ queryKey: ['agentteams-project-workflow'] }); },
+    workflows,
+    loading: feed.loading,
+    degraded: feed.degraded,
+    partialError: feed.partialError,
+    refresh: feed.refresh,
   };
 }
 

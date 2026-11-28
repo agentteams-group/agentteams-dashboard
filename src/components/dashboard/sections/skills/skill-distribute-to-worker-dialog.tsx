@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import { agentteamsApi } from '@/lib/agentteams-api';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { checkPermissionByLevel } from '@/lib/rbac-engine';
 
 type WorkerStatus =
   | 'pending'
@@ -43,6 +45,7 @@ export function SkillDistributeToWorkerDialog({
   const [workerStates, setWorkerStates] = useState<WorkerDistributeState[]>([]);
 
   const { data: workers = [] } = useWorkers();
+  const canDistribute = useAgentTeamsStore((state) => checkPermissionByLevel(state.userLevel, 'update'));
 
   const handleClose = useCallback(() => {
     setSelectedWorkers([]);
@@ -75,7 +78,7 @@ export function SkillDistributeToWorkerDialog({
   );
 
   const handleDistribute = useCallback(async () => {
-    if (!selectedWorkers.length) return;
+    if (!selectedWorkers.length || !checkPermissionByLevel(useAgentTeamsStore.getState().userLevel, 'update')) return;
 
     setError(null);
 
@@ -385,7 +388,7 @@ export function SkillDistributeToWorkerDialog({
           ) : (
             <Button
               onClick={handleDistribute}
-              disabled={selectedWorkers.length === 0 || isRunning}
+              disabled={selectedWorkers.length === 0 || isRunning || !canDistribute}
             >
               {isRunning ? (
                 <>

@@ -13,9 +13,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkPermission, checkPermissionByLevel, type Permission } from '@/lib/rbac-engine';
 import type { HumanResponse } from '@/lib/agentteams-api';
 import { appendAuditEvent } from '@/lib/audit-log';
+import { getSessionFromRequest, sessionHasGlobalScope } from '@/lib/dashboard-session';
+import { isStatelessAuthMode } from '@/lib/static-mode';
+import { normalizeStorageKey } from '@/lib/sensitive-files';
 
 export const SERVER_USER_HEADER = 'x-agentteams-user';
 export const SERVER_USER_LEVEL_HEADER = 'x-agentteams-user-level';
+export const SERVER_USER_TEAMS_HEADER = 'x-agentteams-teams';
+export const SERVER_USER_WORKERS_HEADER = 'x-agentteams-workers';
+export const SERVER_USER_SCOPE_HEADER = 'x-agentteams-scope';
 export const SERVER_USER_IP_HEADER = 'x-forwarded-for';
 
 /**
@@ -33,30 +39,68 @@ function resolveAuditSourceIp(request: NextRequest): string | undefined {
 export interface ServerIdentity {
   name: string;
   level: number;
+  /** undefined=未知范围；[]=明确无范围；两者都不得按全局放行。 */
+  teams?: string[];
+  workers?: string[];
+  scope: 'global' | 'scoped' | 'unknown';
   sourceIp?: string;
 }
 
+function parseScopeHeader(value: string | null): string[] | undefined {
+  if (value === null) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length > 256 || parsed.some((item) => typeof item !== 'string')) return undefined;
+    return [...new Set(parsed.map((item) => item.trim()).filter(Boolean))];
+  } catch {
+    return undefined;
+  }
+}
+
 export function readServerIdentity(request: NextRequest): ServerIdentity | null {
-  const name = request.headers.get(SERVER_USER_HEADER);
+  const sourceIp = resolveAuditSourceIp(request);
+  // 有签名 session 时以服务端 store 为最高可信来源，避免直连 route 时覆盖范围。
+  // stateless / auth-disabled 没有 session，消费 middleware 覆盖后的可信头。
+  if (!isStatelessAuthMode() && process.env.AGENTTEAMS_AUTH_DISABLED !== 'true') {
+    const session = getSessionFromRequest(request);
+    if (session) {
+      return {
+        name: session.user,
+        level: session.level,
+        teams: session.teams,
+        workers: session.workers,
+        scope: sessionHasGlobalScope(session) ? 'global' : 'scoped',
+        sourceIp,
+      };
+    }
+  }
+
+  const name = request.headers.get(SERVER_USER_HEADER)?.trim();
   if (!name) return null;
   const levelRaw = request.headers.get(SERVER_USER_LEVEL_HEADER);
-  // 会话级别（dashboard 自己的标尺，3=最高）；缺头/非法值 → 1（最低权限）。
-  // 与 CR 的 permissionLevel 标尺相反（那里 1=管理员）——映射在 login route。
   const level = levelRaw ? Number(levelRaw) : 1;
+  const normalizedLevel = Number.isFinite(level) ? level : 1;
+  const scopeRaw = request.headers.get(SERVER_USER_SCOPE_HEADER);
+  const scope = scopeRaw === 'global' && normalizedLevel === 3
+    ? 'global'
+    : scopeRaw === 'scoped' ? 'scoped' : 'unknown';
   return {
     name,
-    level: Number.isFinite(level) ? level : 1,
-    sourceIp: resolveAuditSourceIp(request),
+    level: normalizedLevel,
+    teams: parseScopeHeader(request.headers.get(SERVER_USER_TEAMS_HEADER)),
+    workers: parseScopeHeader(request.headers.get(SERVER_USER_WORKERS_HEADER)),
+    scope,
+    sourceIp,
   };
 }
 
-function buildHuman(identity: ServerIdentity): HumanResponse {
+export function buildHuman(identity: ServerIdentity): HumanResponse {
   return {
     name: identity.name,
     permissionLevel: identity.level,
-    // RBAC scoping fields default to undefined so the engine treats the user
-    // as having global access within their permission level. Per-team /
-    // per-worker restrictions are configured in the Controller side.
+    systemAdmin: identity.scope === 'global' && identity.level === 3,
+    accessibleTeams: identity.teams,
+    accessibleWorkers: identity.workers,
   } as HumanResponse;
 }
 
@@ -100,12 +144,8 @@ export function evaluateServerSideRbac(input: RbacEnforcementInput): RbacEnforce
  * Convenience wrapper for route handlers: when RBAC denies, returns a 403
  * `NextResponse`; otherwise returns `null` so the handler can proceed.
  *
- * If the request carries no server-injected identity (test paths,
- * `AGENTTEAMS_AUTH_DISABLED=true`, or any code path that bypassed
- * middleware) the function returns `null` so the handler can proceed —
- * the middleware gate at the network edge remains the authoritative
- * authentication check. This keeps the function side-effect-free for
- * callers that do not yet wire identity headers.
+ * 缺失身份一律 401；未知/空范围由 rbac-engine 拒绝。route handler 直连
+ * 调用也保持 fail closed，不依赖 middleware 作为唯一授权边界。
  */
 export async function enforceServerSideRbac(
   request: NextRequest,
@@ -114,18 +154,86 @@ export async function enforceServerSideRbac(
   resourceName: string,
 ): Promise<NextResponse | null> {
   // 纵深防御：dashboard 等级门与 Controller 原生 per-token RBAC 并行生效。
-  // stateless 模式下 middleware 仍按 token 解析身份并注入可信头
-  // （resolveStaticIdentity 给出 level 3/2/1），等级检查照常可执行；
-  // 直连 MinIO 的路由（storage/*、packages、skills）没有 Controller 兜底，
-  // 这里必须先行拦截越权写。
+  // 直连 MinIO 的路由没有 Controller 兜底，必须自行执行资源级授权。
   const identity = readServerIdentity(request);
-  if (!identity) return null;
+  if (!identity) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
   const result = evaluateServerSideRbac({ identity, action, resourceType, resourceName });
   if (result.allowed) return null;
   return NextResponse.json(
     { success: false, error: result.reason, action, resourceType, resourceName },
     { status: 403 },
   );
+}
+
+export type StorageResourceScope =
+  | { kind: 'worker' | 'team'; name: string }
+  | { kind: 'collection'; resourceType: 'worker' | 'team' }
+  | null;
+
+/** 从规范化对象 key 提取 Team/Worker 资源范围。 */
+export function getStorageResourceScope(key: string): StorageResourceScope {
+  let normalized: string;
+  try {
+    normalized = normalizeStorageKey(key);
+  } catch {
+    // 非法 key 由调用方按敏感对象拒绝，不能在这里降级为无范围。
+    return { kind: 'collection', resourceType: 'worker' };
+  }
+  const [root, name] = normalized.split('/');
+  if ((root === 'workers' || root === 'agents') && name) return { kind: 'worker', name };
+  if (root === 'workers' || root === 'agents') return { kind: 'collection', resourceType: 'worker' };
+  if (root === 'teams' && name) return { kind: 'team', name };
+  if (root === 'teams') return { kind: 'collection', resourceType: 'team' };
+  return null;
+}
+
+/**
+ * 通用存储对象的资源级 RBAC。集合列表仅允许全局身份；具名对象按
+ * workers/agents/teams 前缀执行范围校验，其他前缀沿用全局等级检查。
+ */
+export async function enforceStorageObjectRbac(
+  request: NextRequest,
+  action: Permission,
+  key: string,
+): Promise<NextResponse | null> {
+  const scope = getStorageResourceScope(key);
+  if (scope?.kind === 'collection') {
+    const identity = readServerIdentity(request);
+    if (!identity) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    if (identity.scope !== 'global' || identity.level !== 3) {
+      return NextResponse.json(
+        { success: false, error: 'Scoped identity cannot list the worker/team collection', action, resourceName: key },
+        { status: 403 },
+      );
+    }
+    return null;
+  }
+  if (scope?.kind === 'worker' || scope?.kind === 'team') {
+    return enforceServerSideRbac(request, action, scope.kind, scope.name);
+  }
+  return enforceLevelOnlyRbac(request, action, 'storage', key);
+}
+
+/** list 结果逐项过滤，避免具名范围通过通配前缀看到其他资源。 */
+export function filterStorageKeysForIdentity<T>(
+  request: NextRequest,
+  action: Permission,
+  keys: T[],
+  getKey: (_item: T) => string,
+): T[] {
+  const identity = readServerIdentity(request);
+  if (!identity || identity.scope === 'unknown') return [];
+  if (identity.scope === 'global' && identity.level === 3) return keys;
+  return keys.filter((item) => {
+    const scope = getStorageResourceScope(getKey(item));
+    if (!scope) return false;
+    if (scope.kind === 'collection') return false;
+    return evaluateServerSideRbac({ identity, action, resourceType: scope.kind, resourceName: scope.name }).allowed;
+  });
 }
 
 /**
@@ -145,7 +253,9 @@ export async function enforceLevelOnlyRbac(
   // Controller 原生 per-token RBAC 并行生效；直连 MinIO 的路由没有
   // Controller 兜底，stateless 模式下也照常执行等级检查。
   const identity = readServerIdentity(request);
-  if (!identity) return null;
+  if (!identity) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
   if (checkPermissionByLevel(identity.level, action)) return null;
   await appendAuditEvent({
     actor: identity.name,

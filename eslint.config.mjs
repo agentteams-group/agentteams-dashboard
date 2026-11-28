@@ -1,5 +1,6 @@
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
+import reactHooks from "eslint-plugin-react-hooks";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -7,6 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
+  plugins: {
+    'react-hooks': reactHooks,
+  },
   rules: {
     // TypeScript rules
     "@typescript-eslint/no-explicit-any": "error",
@@ -62,7 +66,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   // .zcode/** = local dynamic-workflow runtime artifacts (drafts/run scripts,
   // git-ignored); they are not repo source and must not gate `eslint .`.
   // public/speech/** and public/document-preview/** = bundled third-party runtime assets.
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "public/speech/**", "public/document-preview/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**", ".zcode/**"]
+  ignores: ["node_modules/**", ".next/**", ".qoder/**", "out/**", "build/**", "public/speech/**", "public/document-preview/**", "next-env.d.ts", "examples/**", "skills", "tools/**", "dist/**", "coverage/**", "3end-bot/**", ".zcode/**", ".monkeycode/specs/**/e2e/**"]
 }];
 
 export default eslintConfig;

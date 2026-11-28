@@ -4,6 +4,7 @@ import {TooltipProvider} from '@/components/ui/tooltip';
 import {McpServersSection} from './mcp-servers-section';
 import type {McpServerConfig} from '@/lib/agentteams-api';
 import {emptyMcpConnection} from '@/lib/mcp-management';
+import {useAgentTeamsStore} from '@/lib/agentteams-store';
 const update=vi.hoisted(()=>vi.fn().mockResolvedValue({}));
 const managed=vi.hoisted(()=>({servers:undefined as McpServerConfig[]|undefined,saved:undefined as McpServerConfig|undefined}));
 vi.mock('@/hooks/use-agentteams-mcps',()=>({
@@ -18,7 +19,7 @@ vi.mock('./mcp-detail-dialog',()=>({McpDetailDialog:({server}:{server:McpServerC
 vi.mock('@/hooks/use-mcp-catalog',()=>({useMcpCatalog:()=>({off:true,workersByServer:new Map()})}));
 class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver',ResizeObserverStub);
-afterEach(()=>{cleanup();managed.servers=undefined;managed.saved=undefined;});
+afterEach(()=>{cleanup();managed.servers=undefined;managed.saved=undefined;useAgentTeamsStore.setState({userLevel:3});});
 it('opens existing MCP values and saves the edited registration',async()=>{
  render(<TooltipProvider><McpServersSection/></TooltipProvider>);
  fireEvent.click(screen.getByRole('button',{name:'编辑'}));
@@ -37,6 +38,15 @@ it('opens the freshly verified saved connection while the directory refetch is p
  fireEvent.click(screen.getByRole('button',{name:'接入 MCP'}));
  fireEvent.click(screen.getByRole('button',{name:'完成测试接入'}));
  expect(screen.getByText('新连接验证通过')).toBeTruthy();
+});
+
+it.each([1,2,3])('applies the MCP UI permission matrix at level %i',(level)=>{
+ useAgentTeamsStore.setState({userLevel:level});
+ render(<TooltipProvider><McpServersSection/></TooltipProvider>);
+ expect((screen.getByRole('button',{name:'测试'}) as HTMLButtonElement).disabled).toBe(false);
+ for(const name of ['接入 MCP','编辑','MCP 更多操作','更多操作 qa-mcp']) {
+   expect(Boolean(screen.queryByRole('button',{name}))).toBe(level===3);
+ }
 });
 
 it('shows gateway-only services without editable or authorization actions',()=>{

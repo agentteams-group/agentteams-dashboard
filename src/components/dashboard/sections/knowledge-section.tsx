@@ -1,7 +1,5 @@
 'use client';
 
-import { isDesktopHover } from '@/lib/desktop-interactions';
-
 // 知识库 v3（9/17 装验定案「照插件做」三件：3D / 预览与图谱分离 /
 // 团队聚合图谱 + v4 2D 簇块布局——workbench 插件 KnowledgeBase.tsx 同款结构）。
 //   · 数据面（v2 不变）：/api/agentteams/workers/[name]/workspace-files/{tree|file-metadata|file-content}
@@ -11,7 +9,7 @@ import { isDesktopHover } from '@/lib/desktop-interactions';
 //     **预览卡独立下置**——点节点/文件只更新预览卡，图谱永不消失
 //     （修「点开预览再点回退退到空白」：单格视图互斥 → 双视图并存）。
 //   · 图谱：2D 簇块布局（v4）+ 3D 双引擎（3D=knowledge-graph3d.tsx 插件
-//     Graph3D 移植，3d-force-graph+three；**默认 3D**、偏好持久化；引擎经
+//     Graph3D 移植，3d-force-graph+three；**默认 2D**、3D 需显式点击；引擎经
 //     next/dynamic ssr:false 按需分包——主 bundle 零 three 字节，切 3D 才拉
 //     chunk；WebGL 不可用/初始化失败→降级提示 + 一键回 2D，图谱不炸 tab）。
 //   · 团队聚合图谱（插件 fetchKbGraphMerged 的客户端等价物——dashboard
@@ -45,7 +43,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/dashboard/section-header';
-import { MarkdownMessage } from '@/components/dashboard/sections/chat/markdown-message';
+import { LazyMarkdownMessage as MarkdownMessage } from '@/components/dashboard/sections/chat/lazy-markdown-message';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
 import type { WorkerResponse } from '@/lib/agentteams-api';
 import type { G3DNodeInput } from '@/components/dashboard/knowledge-graph3d';
@@ -130,7 +128,7 @@ export function KnowledgeSection() {
   );
   const [kbTeam, setKbTeam] = useState(() => readMem('team')); // ''=全部团队（记忆恢复：团队选择也持久化）
   const [viewMode, setViewMode] = useState<'3d' | '2d'>(
-    () => (readMem('view-mode') === '2d' ? '2d' : '3d'),
+    () => (readMem('view-mode') === '3d' ? '3d' : '2d'),
   );
   const [graphVisible, setGraphVisible] = useState(true);
   const [selectedId3d, setSelectedId3d] = useState('');
@@ -644,7 +642,6 @@ export function KnowledgeSection() {
                         size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => setViewMode('3d')}
-                        onPointerEnter={event => { if (isDesktopHover(event)) setViewMode('3d'); }}
                       >
                         3D
                       </Button>
@@ -653,7 +650,6 @@ export function KnowledgeSection() {
                         size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => setViewMode('2d')}
-                        onPointerEnter={event => { if (isDesktopHover(event)) setViewMode('2d'); }}
                       >
                         2D
                       </Button>

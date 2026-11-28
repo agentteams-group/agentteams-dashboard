@@ -1,9 +1,30 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  SERVER_USER_HEADER,
+  SERVER_USER_LEVEL_HEADER,
+  SERVER_USER_SCOPE_HEADER,
+  SERVER_USER_TEAMS_HEADER,
+  SERVER_USER_WORKERS_HEADER,
+} from '@/lib/server-auth';
+
+vi.mock('@/lib/audit-log', () => ({
+  appendAuditEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 const originalFetch = globalThis.fetch;
 
-async function callGet(workerName: string, controllerStatus = 200) {
+function trustedHeaders(): Headers {
+  return new Headers({
+    [SERVER_USER_HEADER]: 'admin',
+    [SERVER_USER_LEVEL_HEADER]: '3',
+    [SERVER_USER_SCOPE_HEADER]: 'global',
+    [SERVER_USER_TEAMS_HEADER]: '[]',
+    [SERVER_USER_WORKERS_HEADER]: '[]',
+  });
+}
+
+async function callGet(workerName: string, controllerStatus = 200, headers: Headers = trustedHeaders()) {
   vi.resetModules();
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
   vi.stubGlobal(
@@ -30,13 +51,19 @@ async function callGet(workerName: string, controllerStatus = 200) {
         pathname: `/api/agentteams/members/${workerName}/config`,
         searchParams: new URLSearchParams(),
       },
-      headers: new Headers(),
+      headers,
     } as never,
     { params: Promise.resolve({ name: workerName }) },
   );
 }
 
 describe('GET /api/agentteams/members/[name]/config (proxy)', () => {
+  it('returns 401 when the trusted middleware identity is missing', async () => {
+    const res = await callGet('w1', 200, new Headers());
+    expect(res.status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -64,7 +91,7 @@ describe('GET /api/agentteams/members/[name]/config (proxy)', () => {
   });
 });
 
-async function callPut(workerName: string, rev?: string) {
+async function callPut(workerName: string, rev?: string, headers: Headers = trustedHeaders()) {
   vi.resetModules();
   vi.stubEnv('AGENTTEAMS_CONTROLLER_URL', 'http://controller.test');
   vi.stubGlobal(
@@ -86,7 +113,7 @@ async function callPut(workerName: string, rev?: string) {
         pathname: `/api/agentteams/members/${workerName}/config`,
         searchParams: new URLSearchParams(rev ? { 'if-rev': rev } : {}),
       },
-      headers: new Headers(),
+      headers,
       text: async () => body,
     } as never,
     { params: Promise.resolve({ name: workerName }) },
@@ -94,6 +121,14 @@ async function callPut(workerName: string, rev?: string) {
 }
 
 describe('PUT /api/agentteams/members/[name]/config (proxy)', () => {
+  it('returns 403 for a level-3 non-system admin with unknown scope', async () => {
+    const headers = trustedHeaders();
+    headers.delete(SERVER_USER_SCOPE_HEADER);
+    const res = await callPut('w1', undefined, headers);
+    expect(res.status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

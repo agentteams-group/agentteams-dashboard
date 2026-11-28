@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useApiTaskBoard, useTaskIndex } from './use-projects';
@@ -72,6 +72,9 @@ it('discovers new conversation tasks, refreshes their status and hides completed
   const room: RoomInfo = { id: '!assistant:test', name: 'Assistant', type: 'manager', agentRole: 'operations', members: [], access: 'joined' };
   const project = { project_id: 'p1', title: 'Project', status: 'active' as const };
   vi.mocked(listProjects).mockResolvedValueOnce({ projects: [], total: 0 }).mockResolvedValue({ projects: [project], total: 1 });
+  vi.mocked(requestJson).mockResolvedValue({ tasks: [
+    { task_id: 'task1', project_id: project.project_id, source_room_id: room.id, room_id: `room:${room.id}`, title: 'Task' },
+  ] });
   const workflow = { ...project, source_room_id: room.id, edges: [], next: [], interrupts: [] };
   vi.mocked(getProjectWorkflow).mockResolvedValue({ ...workflow, nodes: [{ id: 'task1', name: 'Task', status: 'delegated' }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
@@ -82,7 +85,7 @@ it('discovers new conversation tasks, refreshes their status and hides completed
   }, { wrapper });
   await act(async () => { await vi.advanceTimersByTimeAsync(50); });
   expect(result.current.items).toHaveLength(0);
-  await act(async () => { await vi.advanceTimersByTimeAsync(5_050); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_050); });
   expect(result.current.items[0]?.status).toBe('delegated');
   vi.mocked(getProjectWorkflow).mockResolvedValue({ ...workflow, nodes: [{ id: 'task1', name: 'Task', status: 'in-progress' }] });
   await act(async () => { await vi.advanceTimersByTimeAsync(5_050); });
@@ -97,6 +100,48 @@ it('discovers new conversation tasks, refreshes their status and hides completed
   client.clear();
 });
 
+
+it('loads 21 projects in explicit batches and requests workflows only for visible projects', async () => {
+  const projects = Array.from({ length: 21 }, (_, index) => ({
+    project_id: `p${index + 1}`,
+    title: `Project ${index + 1}`,
+    status: 'active' as const,
+  }));
+  vi.mocked(listProjects).mockResolvedValue({ projects, total: projects.length });
+  vi.mocked(getProjectWorkflow).mockImplementation(async (projectId) => ({
+    project_id: projectId, title: projectId, status: 'active', nodes: [], edges: [], next: [], interrupts: [],
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const { result } = renderHook(() => useApiTaskBoard(), { wrapper });
+  await waitFor(() => expect(result.current.projects).toHaveLength(20));
+  expect(result.current.projectTotal).toBe(21);
+  expect(result.current.hasMoreProjects).toBe(true);
+  expect(getProjectWorkflow).toHaveBeenCalledTimes(20);
+  expect(getProjectWorkflow).not.toHaveBeenCalledWith('p21', expect.anything());
+
+  act(() => result.current.loadMoreProjects());
+  await waitFor(() => expect(result.current.projects).toHaveLength(21));
+  await waitFor(() => expect(getProjectWorkflow).toHaveBeenCalledWith('p21', expect.anything()));
+  expect(getProjectWorkflow).toHaveBeenCalledTimes(21);
+  expect(result.current.hasMoreProjects).toBe(false);
+  client.clear();
+});
+
+it('reports a truncated project list when total exceeds returned projects', async () => {
+  const projects = Array.from({ length: 20 }, (_, index) => ({
+    project_id: `p${index + 1}`, title: `Project ${index + 1}`, status: 'active' as const,
+  }));
+  vi.mocked(listProjects).mockResolvedValue({ projects, total: 21 });
+  vi.mocked(getProjectWorkflow).mockResolvedValue({ project_id: 'p1', title: 'P', status: 'active', nodes: [], edges: [], next: [], interrupts: [] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const { result } = renderHook(() => useApiTaskBoard(), { wrapper });
+  await waitFor(() => expect(result.current.projects).toHaveLength(20));
+  expect(result.current.projectTotal).toBe(21);
+  expect(result.current.hasMoreProjects).toBe(false);
+  client.clear();
+});
 
 it('discovers a standalone main task from this conversation without a project', async () => {
   vi.useFakeTimers();

@@ -21,7 +21,7 @@ describe('external model binding guard', () => {
     vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
     mockCallHigressConsole
       .mockResolvedValueOnce({ response: new Response(null, { status: 200 }), body: { providers: [{ name: 'openai', tokenCount: 1 }] } })
-      .mockResolvedValueOnce({ response: new Response(null, { status: 200 }), body: { routes: [{ name: 'chat', upstreams: [{ provider: 'openai', modelMapping: { 'team-chat': 'gpt-4.1' } }] }] } });
+      .mockResolvedValueOnce({ response: new Response(null, { status: 200 }), body: { routes: [{ name: 'chat', upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }] }] } });
 
     const result = await rejectUnavailableExternalModelAlias(
       new NextRequest('http://dashboard.test/api/agentteams/workers'),
@@ -48,6 +48,23 @@ describe('external model binding guard', () => {
     });
   });
 
+  it('rejects an alias whose only upstream has zero weight', async () => {
+    vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
+    mockCallHigressConsole
+      .mockResolvedValueOnce({ response: new Response(null, { status: 200 }), body: { providers: [{ name: 'openai', tokenCount: 1 }] } })
+      .mockResolvedValueOnce({
+        response: new Response(null, { status: 200 }),
+        body: { routes: [{ name: 'chat', upstreams: [{ provider: 'openai', weight: 0, modelMapping: { 'team-chat': 'gpt-4.1' } }] }] },
+      });
+
+    const result = await rejectUnavailableExternalModelAlias(
+      new NextRequest('http://dashboard.test/api/agentteams/workers'),
+      'team-chat'
+    );
+
+    expect(result?.status).toBe(409);
+  });
+
   it('rejects a legacy modelProvider on external-mode create and update requests', async () => {
     vi.stubEnv('AGENTTEAMS_HIGRESS_ADAPTER_MODE', 'external');
 
@@ -70,7 +87,7 @@ describe('external model binding guard', () => {
       .mockResolvedValueOnce({
         response: new Response(null, { status: 200 }),
         body: {
-          routes: [{ name: 'chat', upstreams: [{ provider: 'openai', modelMapping: { 'team-chat': 'gpt-4.1' } }] }],
+          routes: [{ name: 'chat', upstreams: [{ provider: 'openai', weight: 100, modelMapping: { 'team-chat': 'gpt-4.1' } }] }],
         },
       });
 

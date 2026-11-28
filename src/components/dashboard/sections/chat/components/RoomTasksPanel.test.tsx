@@ -9,7 +9,7 @@ import { useSectionStore } from '@/lib/section-store';
 
 const getProjectWorkflow = vi.fn();
 const board = vi.hoisted(() => ({ tasks: [] as import('@/hooks/use-task-board').BoardTask[] }));
-vi.mock('@/hooks/use-projects', () => ({ useApiTaskBoard: () => ({ tasks: board.tasks }) }));
+vi.mock('@/hooks/use-aggregate-task-board', () => ({ useAggregatedTaskBoard: () => ({ tasks: board.tasks }) }));
 vi.mock('@/hooks/use-chat-room-access', () => ({
   useChatRoomAccess: () => ({ state: 'joined', joinedRooms: ['!execution:test'] }),
 }));

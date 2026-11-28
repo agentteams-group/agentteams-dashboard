@@ -40,8 +40,10 @@ export interface StaticIdentity {
   name: string;
   /** Dashboard rbac level: 3 admin / 2 operator (team) / 1 observer (worker). */
   level: 3 | 2 | 1;
-  /** Accessible team names (L2 only; the controller scoped the list). */
+  /** Accessible team names from the Controller; empty means no team access. */
   teams: string[];
+  /** Accessible worker names from the Controller; never inferred from teams. */
+  workers: string[];
 }
 
 export type StaticIdentityResult =
@@ -50,7 +52,8 @@ export type StaticIdentityResult =
   | { ok: 'unreachable'; detail: string };
 
 const PROBE_TIMEOUT_MS = 5000;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+/** SEC-05：普通请求短缓存；敏感请求由 middleware 强制绕过。 */
+export const STATIC_IDENTITY_CACHE_TTL_MS = 30_000;
 const CACHE_MAX_ENTRIES = 100;
 
 interface CacheEntry {
@@ -65,8 +68,21 @@ export function __resetStaticIdentityCacheForTests(): void {
   cache.clear();
 }
 
+/** 上游明确撤销后立即移除该 token 的短缓存。 */
+export function invalidateStaticIdentityCache(token: string): void {
+  cache.delete(cacheKey(token));
+}
+
 function cacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function names(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .map((item) => item && typeof item === 'object' ? (item as { name?: unknown }).name : undefined)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+    .map((name) => name.trim()))];
 }
 
 async function probe(
@@ -80,6 +96,7 @@ async function probe(
       // 网关门在前，Bearer 只会被门拒掉。
       headers: { ...authHeaders, Authorization: authHeaders.Authorization ?? `Bearer ${token}` },
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      cache: 'no-store',
     });
     return {
       status: res.status,
@@ -206,15 +223,17 @@ async function resolveName(
  */
 export async function resolveStaticIdentity(
   request: NextRequest,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<StaticIdentityResult | null> {
   const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')?.trim();
   if (!token) return null;
 
   const key = cacheKey(token);
   const hit = cache.get(key);
-  if (hit && Date.now() < hit.expiresAt) {
+  if (!options.forceRefresh && hit && Date.now() < hit.expiresAt) {
     return { ok: true, identity: hit.identity };
   }
+  if (options.forceRefresh) cache.delete(key);
 
   const bases = controllerBaseCandidates(request);
   let allNetworkErrors = true;
@@ -224,9 +243,20 @@ export async function resolveStaticIdentity(
     if ('networkError' in me) continue;
     allNetworkErrors = false;
     if (me.status === 200) {
-      const human = await me.json() as { name?: string; permissionLevel?: number; accessibleTeams?: string[] } | null;
+      const human = await me.json() as {
+        name?: string;
+        permissionLevel?: number;
+        accessibleTeams?: unknown;
+        accessibleWorkers?: unknown;
+      } | null;
       if (human?.name && (human.permissionLevel === 1 || human.permissionLevel === 2 || human.permissionLevel === 3)) {
-        const identity: StaticIdentity = { name: human.name, level: human.permissionLevel === 1 ? 3 : human.permissionLevel === 2 ? 2 : 1, teams: human.accessibleTeams ?? [] };
+        const admin = human.permissionLevel === 1;
+        const identity: StaticIdentity = {
+          name: human.name,
+          level: admin ? 3 : human.permissionLevel === 2 ? 2 : 1,
+          teams: admin ? [] : names(human.accessibleTeams),
+          workers: admin ? [] : names(human.accessibleWorkers),
+        };
         remember(key, identity);
         return { ok: true, identity };
       }
@@ -239,7 +269,7 @@ export async function resolveStaticIdentity(
     allNetworkErrors = false;
 
     if (humans.status === 200) {
-      const identity: StaticIdentity = { name: 'admin', level: 3, teams: [] };
+      const identity: StaticIdentity = { name: 'admin', level: 3, teams: [], workers: [] };
       remember(key, identity);
       return { ok: true, identity };
     }
@@ -248,12 +278,19 @@ export async function resolveStaticIdentity(
     //    user's OWN accessibleTeams (server-side filtered).
     const teams = await probe(`${base}/api/v1/teams`, token);
     if (!('networkError' in teams) && teams.status === 200) {
-      const data = (await teams.json()) as { teams?: { name?: string }[] } | null;
-      const names = (data?.teams ?? [])
-        .map((t) => t.name ?? '')
-        .filter(Boolean);
-      if (names.length > 0) {
-        const identity: StaticIdentity = { name: await resolveName(request, token), level: 2, teams: names };
+      const data = (await teams.json()) as { teams?: unknown } | null;
+      const teamNames = names(data?.teams);
+      if (teamNames.length > 0) {
+        const workers = await probe(`${base}/api/v1/workers`, token);
+        const workerNames = !('networkError' in workers) && workers.status === 200
+          ? names(((await workers.json()) as { workers?: unknown } | null)?.workers)
+          : [];
+        const identity: StaticIdentity = {
+          name: await resolveName(request, token),
+          level: 2,
+          teams: teamNames,
+          workers: workerNames,
+        };
         remember(key, identity);
         return { ok: true, identity };
       }
@@ -270,13 +307,14 @@ export async function resolveStaticIdentity(
     //    the (valid) L2 classification with no teams.
     const workers = await probe(`${base}/api/v1/workers`, token);
     if (!('networkError' in workers) && workers.status === 200) {
-      const data = (await workers.json()) as { workers?: unknown[] } | null;
-      const list = Array.isArray(data?.workers) ? data.workers : [];
-      const level: 1 | 2 = list.length > 0 ? 1 : 2;
+      const data = (await workers.json()) as { workers?: unknown } | null;
+      const workerNames = names(data?.workers);
+      const level: 1 | 2 = workerNames.length > 0 ? 1 : 2;
       const identity: StaticIdentity = {
         name: await resolveName(request, token),
         level,
         teams: [],
+        workers: workerNames,
       };
       remember(key, identity);
       return { ok: true, identity };
@@ -312,5 +350,5 @@ function remember(key: string, identity: StaticIdentity): void {
     }
     if (oldestKey) cache.delete(oldestKey);
   }
-  cache.set(key, { identity, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(key, { identity, expiresAt: Date.now() + STATIC_IDENTITY_CACHE_TTL_MS });
 }

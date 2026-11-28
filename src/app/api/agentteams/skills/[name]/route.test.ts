@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { Readable } from 'node:stream';
 
@@ -8,6 +8,8 @@ let currentMetadata: object | null = null;
 vi.mock('@/lib/minio-client', () => ({
   createMinioClient: () => ({
     putObject: (...args: unknown[]) => putObjectMock(...args),
+    removeObject: vi.fn().mockResolvedValue(undefined),
+    listObjects: () => (async function* () {})(),
     bucketExists: () => Promise.resolve(true),
     getObject: () => {
       if (currentMetadata === null) {
@@ -19,7 +21,9 @@ vi.mock('@/lib/minio-client', () => ({
   getMinioBucket: () => 'agentteams-fs',
 }));
 
-import { PUT } from './route';
+import { PUT, DELETE } from './route';
+
+vi.mock('@/lib/audit-log', () => ({ appendAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 const baseMetadata = {
   name: 'my-skill',
@@ -32,9 +36,10 @@ const baseMetadata = {
   fileCount: 1,
 };
 
-const callPut = async (body: Record<string, unknown>) => {
+const callPut = async (body: Record<string, unknown>, level = 3) => {
   const req = new NextRequest('http://localhost/api/agentteams/skills/my-skill', {
     method: 'PUT',
+    headers: { 'x-agentteams-user': `user-${level}`, 'x-agentteams-user-level': String(level) },
     body: JSON.stringify(body),
   });
   const ctx = { params: Promise.resolve({ name: 'my-skill' }) };
@@ -46,6 +51,23 @@ describe('PUT /api/agentteams/skills/[name]', () => {
     vi.clearAllMocks();
     putObjectMock.mockResolvedValue(undefined);
     currentMetadata = { ...baseMetadata };
+    vi.stubEnv('DASHBOARD_STATELESS', '1');
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([1, 2, 3])('enforces Skills edit RBAC at level %i', async (level) => {
+    const res = await callPut({ description: 'matrix' }, level);
+    expect(res.status).toBe(level === 3 ? 200 : 403);
+    expect(putObjectMock).toHaveBeenCalledTimes(level === 3 ? 1 : 0);
+  });
+
+  it.each([1, 2, 3])('enforces Skills delete RBAC at level %i', async (level) => {
+    const req = new NextRequest('http://localhost/api/agentteams/skills/my-skill', {
+      method: 'DELETE',
+      headers: { 'x-agentteams-user': `user-${level}`, 'x-agentteams-user-level': String(level) },
+    });
+    const res = await DELETE(req, { params: Promise.resolve({ name: 'my-skill' }) });
+    expect(res.status).toBe(level === 3 ? 200 : 403);
   });
 
   it('preserves the original description when the body omits the field', async () => {

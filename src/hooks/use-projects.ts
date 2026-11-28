@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import {
   listProjects,
@@ -393,18 +393,27 @@ export function useTaskIndex({ enabled = true, refetchInterval = 5000 }: { enabl
   });
 }
 
-/** Primary task-board source: Controller projects + per-project workflow
- * (cap 20), mapped to the board shapes. Falls back to the MinIO board when
- * the API is degraded (list 404 = not deployed / 500 = controller error). */
+const PROJECT_PAGE_SIZE = 20;
+
+/** Primary task-board source: Controller projects + workflows for the currently
+ * visible page. The Controller list is not cursor-paginated yet, so expose an
+ * explicit load-more batch instead of silently discarding projects after 20. */
 export function useApiTaskBoard() {
   const listQuery = useProjects();
   const taskIndex = useTaskIndex();
   const queryClient = useQueryClient();
+  const [visibleCount, setVisibleCount] = useState(PROJECT_PAGE_SIZE);
 
+  const allProjects = useMemo(() => listQuery.data?.projects ?? [], [listQuery.data?.projects]);
+  const projectTotal = listQuery.data?.total ?? allProjects.length;
   const projects = useMemo(
-    () => (listQuery.data?.projects ?? []).slice(0, 20),
-    [listQuery.data?.projects],
+    () => allProjects.slice(0, visibleCount),
+    [allProjects, visibleCount],
   );
+  const hasMoreProjects = projects.length < allProjects.length;
+  const loadMoreProjects = useCallback(() => {
+    setVisibleCount((count) => count + PROJECT_PAGE_SIZE);
+  }, []);
 
   // Degraded = list endpoint responded with a degraded payload (404 API not
   // deployed / 500 controller error) OR the request failed entirely (network
@@ -467,13 +476,16 @@ export function useApiTaskBoard() {
       ...board,
       degraded,
       degradedReason: listQuery.data?.degradedReason,
+      projectTotal,
+      hasMoreProjects,
+      loadMoreProjects,
       isLoading: listQuery.isLoading || taskIndex.isLoading,
       isRefetching: listQuery.isRefetching || taskIndex.isRefetching,
+      isWorkflowsLoading: workflowQueries.some((query) => query.isLoading),
       refetch,
     }),
-    // `board` is a pure projection of `projects` and `workflowQueries`;
-    // depending on them keeps the memo stable across renders where neither
-    // changed.
-    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching, taskIndex.isLoading, taskIndex.isRefetching, refetch]
+    [board, degraded, listQuery.data?.degradedReason, listQuery.isLoading, listQuery.isRefetching,
+      taskIndex.isLoading, taskIndex.isRefetching, workflowQueries, projectTotal, hasMoreProjects,
+      loadMoreProjects, refetch]
   );
 }

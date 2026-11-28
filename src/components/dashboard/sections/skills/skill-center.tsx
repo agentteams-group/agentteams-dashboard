@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useSkills, useDeleteSkill } from '@/hooks/use-skill-center';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { checkPermissionByLevel } from '@/lib/rbac-engine';
 import { SkillEntry } from '@/lib/skill-center-types';
 import { SkillUploadDialog } from './skill-upload-dialog';
 import { NacosConfigDialog } from './nacos-config-dialog';
@@ -47,6 +49,8 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
+  const userLevel = useAgentTeamsStore((state) => state.userLevel);
+  const canWriteSkills = checkPermissionByLevel(userLevel, 'update');
   const { data: result = { skills: [], total: 0 }, refetch, error, isError, isRefetching } = useSkills(search || undefined, sourceFilter === 'all' ? null : sourceFilter, page, PAGE_SIZE);
   const skills = result.skills;
   const total = result.total;
@@ -70,7 +74,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
   }, [refetch, onRefresh]);
 
   const handleDelete = useCallback(async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !checkPermissionByLevel(useAgentTeamsStore.getState().userLevel, 'delete')) return;
     await deleteMutation.mutateAsync(deleteTarget.name);
     setDeleteTarget(null);
   }, [deleteTarget, deleteMutation]);
@@ -104,7 +108,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
             <option value="all">全部来源</option><option value="builtin">内置</option><option value="custom">自定义</option><option value="nacos">Nacos</option>
           </NativeSelect>
         </div>}
-        actions={<><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></>} />
+        actions={canWriteSkills ? <><Button variant="outline" size="sm" onClick={() => setNacosConfigOpen(true)}>配置 Nacos</Button><Button size="sm" onClick={() => setUploadOpen(true)}>上传技能</Button></> : <span className="text-xs text-muted-foreground">只读权限</span>} />
 
       {isError && (
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
@@ -127,7 +131,7 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                   : undefined
               }
               action={
-                skills.length === 0 && mcpServers.length === 0
+                canWriteSkills && skills.length === 0 && mcpServers.length === 0
                   ? { label: '上传技能', onClick: () => setUploadOpen(true) }
                   : undefined
               }
@@ -172,9 +176,9 @@ export function SkillCenter({ onRefresh, mcpServers = [] }: SkillCenterProps) {
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setDetailSkill(skill)}>详情</Button>
-                      {skill.source === 'custom' && <Button variant="ghost" size="sm" onClick={() => setEditingSkill(skill)}>编辑</Button>}
-                      <Button variant="ghost" size="sm" onClick={() => setDistributeSkill(skill)}>分发</Button>
-                      {skill.source === 'custom' && <ResourceListMenu label={`更多操作 ${skill.name}`} items={[{ label: '删除技能', onSelect: () => setDeleteTarget(skill) }]} />}
+                      {canWriteSkills && skill.source === 'custom' && <Button variant="ghost" size="sm" onClick={() => setEditingSkill(skill)}>编辑</Button>}
+                      {canWriteSkills && <Button variant="ghost" size="sm" onClick={() => setDistributeSkill(skill)}>分发</Button>}
+                      {canWriteSkills && skill.source === 'custom' && <ResourceListMenu label={`更多操作 ${skill.name}`} items={[{ label: '删除技能', onSelect: () => setDeleteTarget(skill) }]} />}
 
                     </div>
                   </td>

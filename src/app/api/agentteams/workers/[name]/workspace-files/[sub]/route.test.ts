@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
@@ -27,7 +28,9 @@ vi.mock('@/lib/backend-config', async (importOriginal) => {
   };
 });
 
-import { GET, PUT, __resetKbCacheForTests } from './handlers';
+vi.mock('@/lib/server-auth', () => ({ enforceServerSideRbac: vi.fn().mockResolvedValue(null) }));
+
+import { GET, PUT, __resetKbCacheForTests, validateKbPath } from './handlers';
 
 // ── 最小 ustar 构造（与 route.ts tarMembers 解析对齐）─────────────────────
 function tarHeader(name: string, size: number, mtime: number, isdir = false): Buffer {
@@ -425,13 +428,52 @@ describe('/workers/[name]/workspace-files/[sub] Docker 代理凭据链与状态�
     expect(body.error).toContain('Docker 代理请求失败');
   });
 
-  it('尾斜杠 /tree/?path= 与空 path、path=/、path=memory/ 均正常', async () => {
+  it('空 path 与 memory/ 正常，绝对路径 / 拒绝', async () => {
     expect((await call('tree', '?path=')).status).toBe(200);
-    expect((await call('tree', '?path=%2F')).status).toBe(200);
+    expect((await call('tree', '?path=%2F')).status).toBe(400);
     const memory = await call('tree', '?path=memory%2F');
     expect(memory.status).toBe(200);
     const body = (await memory.json()) as { entries: { path: string }[] };
     expect(body.entries.map((e) => e.path)).toContain('memory/2026-09-15.md');
+    const archiveTargets = vi.mocked(fetch).mock.calls
+      .filter(([, init]) => init?.method === 'GET')
+      .map(([url]) => decodeURIComponent(String(url).split('/archive?path=')[1] ?? ''))
+      .filter(Boolean);
+    expect(archiveTargets).toContain(`${WS}/memory`);
+    expect(archiveTargets.every((target) => target === WS || target.startsWith(`${WS}/`))).toBe(true);
+  });
+
+  it.each([
+    '../etc/passwd',
+    'memory/../../etc/passwd',
+    'memory/./secret.md',
+    'memory\\..\\..\\etc\\passwd',
+    '/etc/passwd',
+    'C:\\etc\\passwd',
+    'memory/secret.md\0',
+    'memory%252f..%252fetc%252fpasswd',
+  ])('rejects traversal/encoding vector %s before archive access', async (path) => {
+    const response = await call('file-content', `?path=${encodeURIComponent(path)}`);
+    expect(response.status).toBe(400);
+    const targets = vi.mocked(fetch).mock.calls
+      .filter(([, init]) => init?.method === 'GET')
+      .map(([url]) => decodeURIComponent(String(url).split('/archive?path=')[1] ?? ''));
+    expect(targets).toEqual([]);
+  });
+});
+
+describe('canonical KB POSIX path validation (SEC-06)', () => {
+  it.each([
+    '/', '/etc/passwd', 'C:/etc/passwd', 'memory\\..\\etc', 'memory/./x',
+    'memory/../x', 'digest//x', 'memory/x\0', 'memory%252f..%252fetc', '%2Fetc',
+  ])('rejects %j', (path) => {
+    expect(validateKbPath(path, true)).toHaveProperty('error');
+  });
+
+  it('normalizes a root trailing slash and preserves valid POSIX descendants', () => {
+    expect(validateKbPath('memory/', true)).toEqual({ path: 'memory' });
+    expect(validateKbPath('digest/sub/file.md')).toEqual({ path: 'digest/sub/file.md' });
+    expect(validateKbPath('MEMORY.md')).toEqual({ path: 'MEMORY.md' });
   });
 });
 

@@ -1,12 +1,10 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
+import { useMemo, useState, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
-import rehypeKatex from 'rehype-katex';
 import rehypeSanitize from 'rehype-sanitize';
 import type { Root, RootContent } from 'mdast';
 import { escapeHtml } from '@/lib/utils';
@@ -239,6 +237,31 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
     [content, resolvedHomeserver]
   );
 
+  // Syntax highlighting and KaTeX are large optional renderers. Load only the
+  // plugins a message actually needs so ordinary Markdown stays in a small
+  // chunk and code/math pay their cost only when present.
+  const [rehypePlugins, setRehypePlugins] = useState<ComponentProps<typeof ReactMarkdown>['rehypePlugins']>(
+    () => [rehypeRaw, [rehypeSanitize, chatMarkdownSchema]],
+  );
+  const needsHighlight = /```/.test(content) || /<pre[\s>]/i.test(formattedContent ?? '');
+  const needsMath = /\$\$?[^$\n]+\$\$?/.test(content);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      needsHighlight ? import('rehype-highlight').then((module) => module.default) : null,
+      needsMath ? import('rehype-katex').then((module) => module.default) : null,
+    ]).then(([highlight, katex]) => {
+      if (cancelled) return;
+      setRehypePlugins([
+        rehypeRaw,
+        [rehypeSanitize, chatMarkdownSchema],
+        ...(highlight ? [highlight] : []),
+        ...(katex ? [katex] : []),
+      ]);
+    });
+    return () => { cancelled = true; };
+  }, [needsHighlight, needsMath]);
+
   // Full-screen image preview (element-web lightbox)
   const [viewerOpen, setViewerOpen] = useState(false);
 
@@ -409,12 +432,7 @@ export function MarkdownMessage({ content, formattedContent, msgType, mediaUrl, 
       {hasMermaid && <MermaidRenderer content={resolvedContent} />}
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath, remarkMentions(memberMap, evidenceHtml ? undefined : mentionPrefix)]}
-        rehypePlugins={[
-          rehypeRaw,
-          [rehypeSanitize, chatMarkdownSchema],
-          rehypeHighlight,
-          rehypeKatex,
-        ]}
+        rehypePlugins={rehypePlugins}
         components={{
           code({ className, children, ...props }) {
             const language = /\blanguage-([^\s]+)/.exec(className ?? '')?.[1];

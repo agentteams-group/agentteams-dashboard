@@ -6,7 +6,7 @@ import { CheckCircle2, Circle, CircleDot, GitBranch, FolderOpen, ArrowRight, Use
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { useApiTaskBoard } from '@/hooks/use-projects';
+import { useAggregatedTaskBoard } from '@/hooks/use-aggregate-task-board';
 import { useRoomMetaStore } from '@/hooks/use-matrix';
 import { apiUrl, requestJson } from '@/lib/api-base';
 import type { WorkflowNotice } from '@/lib/chat-workflow-notice';
@@ -19,7 +19,7 @@ const statusLabels: Record<string, string> = { pending: '待办', assigned: '已
 
 export function TaskAssignmentCard({ notice, sender, timestamp, onOpenFiles }: { notice: WorkflowNotice; sender: string; timestamp: number; onOpenFiles?: () => void }) {
   const roomId = useRoomMetaStore(state => state.activeRoomId);
-  const board = useApiTaskBoard();
+  const board = useAggregatedTaskBoard();
   const matches = board.tasks.filter(task => task.runId === notice.taskId);
   const scoped = matches.filter(task => task.executionRoomId?.replace(/^room:/, '') === roomId || task.roomId === roomId);
   const task = scoped.length === 1 ? scoped[0] : matches.length === 1 ? matches[0] : undefined;

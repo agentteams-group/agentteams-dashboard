@@ -55,11 +55,10 @@ function resolveInitialSection(): string {
       // Layered hashes stay untouched: they may carry deep-link segments
       // (room id, query params) that must survive in the URL.
       if (needsHashNormalization(hash)) {
-        const query = resolved.params?.toString();
         window.history.replaceState(
           null,
           '',
-          `#${hashForSection(resolved.section)}${query ? `?${query}` : ''}`,
+          `#${hashForActiveSection(resolved.section, hash)}`,
         );
       }
       return resolved.section;

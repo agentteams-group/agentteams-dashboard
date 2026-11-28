@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // 3D 引擎走 next/dynamic 按需分包：全量套件并行下拉取 + 初始化 three chunk
@@ -6,11 +6,6 @@ import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@te
 // （vitest 按文件隔离 module registry，只影响本文件）。
 configure({ asyncUtilTimeout: 5000 });
 
-// 预热 3D chunk：把 dynamic() 的目标模块提前拉进模块缓存，消除并行负载下
-// 首次渲染拉 chunk 的延迟方差（根治 ②/③ 的偶发超时）。
-beforeAll(async () => {
-  await import('@/components/dashboard/knowledge-graph3d');
-});
 import '@testing-library/jest-dom/vitest';
 
 // 可变 holder：⑥ 号用例模拟轮询重取后列表顺序漂移（Controller 顺序不稳定）
@@ -29,6 +24,10 @@ vi.mock('@/hooks/use-agentteams-workers', () => ({
 }));
 
 // MarkdownMessage 替身（避免拉聊天栈；断言透传 content）
+vi.mock('@/components/dashboard/sections/chat/lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('@/components/dashboard/sections/chat/markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('@/components/dashboard/sections/chat/markdown-message', () => ({
   MarkdownMessage: ({ content }: { content: string }) => <div data-testid="md">{content}</div>,
 }));
@@ -106,9 +105,8 @@ function mockFetch(statuses?: { top?: number; memory?: number; digest?: number; 
   );
 }
 
-/** 切 2D（jsdom 无 WebGL：默认 3D 视图先落降级横幅，点「回到 2D」） */
+/** 默认即为 2D，直接等待 SVG 图谱。 */
 async function switchTo2D() {
-  fireEvent.click(await screen.findByRole('button', { name: '回到 2D' }));
   return (await screen.findByRole('img', { name: /wikilink 图谱/ })) as unknown as { querySelectorAll: (_s: string) => NodeListOf<SVGElement> };
 }
 
@@ -197,11 +195,10 @@ describe('KnowledgeSection（v3：3D/2D 图谱 / 预览与图谱分离 / 团队�
     expect(await screen.findByText(/容器 agentteams-worker-w1 不存在/)).toBeInTheDocument();
   });
 
-  it('② 默认 3D：jsdom 无 WebGL → 降级横幅 + 一键回 2D（图谱不炸 tab）', async () => {
+  it('② 默认 2D：不加载 3D 引擎，直接显示 SVG 图谱', async () => {
     mockFetch();
     render(<KnowledgeSection />);
-    expect(await screen.findByText(/3D 图谱不可用/)).toBeInTheDocument();
-    expect(screen.getByText('已自动保留 2D 图谱视图')).toBeInTheDocument();
+    expect(screen.queryByText(/3D 图谱不可用/)).not.toBeInTheDocument();
     const svg = await switchTo2D();
     const texts = Array.from(svg.querySelectorAll('text')).map((t) => t.textContent ?? '');
     expect(texts).toContain('MEMORY'); // MEMORY.md 干

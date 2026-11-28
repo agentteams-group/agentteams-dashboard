@@ -14,12 +14,8 @@ import {
   type MetaReadResult,
 } from '@/lib/meta-api';
 import type { SkillEntry, NacosConfig } from '@/lib/skill-center-types';
-import {
-  buildWorkspaceAccessPayload,
-  extractWorkspaceAccess,
-  workspaceAccessEqual,
-  type WorkspaceAccess,
-} from '@/lib/workspace-access';
+import { createHumanConfigApi } from '@/lib/human-config-api';
+import type { WorkspaceAccess } from '@/lib/workspace-access';
 
 export type { WorkerMcpItem, WorkerMcpResult } from '@/lib/worker-mcp';
 export type { MetaReadResult } from '@/lib/meta-api';
@@ -1006,10 +1002,10 @@ export interface LogLine {
 
 // ============ Proxy Request Helper ============
 
-async function proxyRequest<T>(
+async function proxyRequestResult<T>(
   path: string,
   options: RequestInit = {}
-): Promise<T> {
+): Promise<{ data: T; response: Response }> {
   const requestScope = currentReadScope();
   let res: Response;
   try {
@@ -1035,7 +1031,7 @@ async function proxyRequest<T>(
   }
 
   if (res.status === 204) {
-    return undefined as T;
+    return { data: undefined as T, response: res };
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -1051,7 +1047,7 @@ async function proxyRequest<T>(
   try {
     const data = await res.json();
     if (currentReadScope() !== requestScope) throw new ApiError('账号或连接已切换，请重新读取', 409, path);
-    return data;
+    return { data, response: res };
   } catch (err) {
     if (err instanceof ApiError) throw err;
     const message = err instanceof Error ? err.message : 'unknown';
@@ -1062,6 +1058,13 @@ async function proxyRequest<T>(
       err
     );
   }
+}
+
+async function proxyRequest<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  return (await proxyRequestResult<T>(path, options)).data;
 }
 
 async function healthRequest(controllerUrl: string): Promise<string> {
@@ -1193,145 +1196,69 @@ async function fetchHumanSyncManifest(name: string): Promise<HumanSyncManifestRe
 
 // ----- human configuration writes (quota / modelAccess / workspaceAccess) -----
 //
-// PUT /humans/{name} is merge-patch: absent = unchanged, present = replace.
-// The two spec-object fields need read-modify-write (read the record, replace
-// only the target field, send the rest back untouched) so a partially
-// supported controller never loses sibling configuration. PUT 404/405 means
-// the endpoint is missing on an older controller → PATCH merge-patch fallback.
+// Prefer the controller's atomic merge PATCH. Older controllers without PATCH
+// fall back to ETag/If-Match read-modify-write with a bounded conflict retry;
+// a missing ETag is a hard conflict rather than permission to overwrite blind.
+const {
+  saveHumanModelAccess,
+  saveHumanWorkspaceAccess,
+  listModelAccessTables,
+  asRecord,
+  isUnsupportedWrite,
+  isWriteConflict,
+  readVersionedRecord,
+} = createHumanConfigApi({ request: proxyRequest, requestResult: proxyRequestResult });
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function isUnsupportedWrite(err: unknown): boolean {
-  return err instanceof ApiError && (err.status === 404 || err.status === 405);
-}
-
-async function writeHumanConfig(
-  name: string,
-  buildBody: (_record: Record<string, unknown>) => Record<string, unknown>,
-  buildPatch: (_record: Record<string, unknown>) => Record<string, unknown>,
-): Promise<SaveHumanConfigResult> {
-  const path = `/humans/${encodeURIComponent(name)}`;
-  const record = asRecord(await proxyRequest<unknown>(path));
-  if (!record) throw new Error('人 CR 读取结果非法（期望对象）');
-  try {
-    await proxyRequest<unknown>(path, {
-      method: 'PUT',
-      body: JSON.stringify(buildBody(record)),
-    });
-    return { method: 'PUT' };
-  } catch (err) {
-    if (!isUnsupportedWrite(err)) throw err;
-    await proxyRequest<unknown>(path, {
-      method: 'PATCH',
-      body: JSON.stringify(buildPatch(record)),
-    });
-    return { method: 'PATCH' };
-  }
-}
-
-/**
- * 保存 spec.modelAccess（读-改-写，只改该字段）。
- * payload = null（无有效作用域）→ 发送空 scopes：该 Controller 以空 spec
- * 表示全锁（fail-closed），删键在 merge-patch 下反而不会清空。
- */
-export async function saveHumanModelAccess(
-  name: string,
-  payload: Record<string, unknown> | null,
-): Promise<SaveHumanConfigResult> {
-  const value = payload ?? { scopes: [] };
-  return writeHumanConfig(
-    name,
-    (record) => {
-      const spec = asRecord(record.spec);
-      return spec
-        ? { ...record, spec: { ...spec, modelAccess: value } }
-        : { ...record, modelAccess: value };
-    },
-    (record) =>
-      asRecord(record.spec)
-        ? { spec: { modelAccess: value } }
-        : { modelAccess: value },
-  );
-}
-
-/**
- * 保存 spec.workspaceAccess（读-改-写，只改该字段）→ re-GET 验证。
- * 当前 Controller 的 GET /humans/{name} 不回显 workspaceAccess（write-only）
- * 时 verified = false，调用方按「未回读」告警而不是断言保存失败。
- */
-export async function saveHumanWorkspaceAccess(
-  name: string,
-  access: WorkspaceAccess,
-): Promise<SaveHumanWorkspaceAccessResult> {
-  const payload = buildWorkspaceAccessPayload(access); // {} = 清空两列表
-  const result = await writeHumanConfig(
-    name,
-    (record) => {
-      const spec = asRecord(record.spec);
-      return spec
-        ? { ...record, spec: { ...spec, workspaceAccess: payload } }
-        : { ...record, workspaceAccess: payload };
-    },
-    (record) =>
-      asRecord(record.spec)
-        ? { spec: { workspaceAccess: payload } }
-        : { workspaceAccess: payload },
-  );
-  const verify = await proxyRequest<HumanConfigRecord>(
-    `/humans/${encodeURIComponent(name)}`,
-  );
-  const current = extractWorkspaceAccess(verify);
-  return { ...result, verified: workspaceAccessEqual(current, access), current };
-}
-
-/** 共享模型授权表清单（404 / 缺 CRD → supported=false，隐藏表选择器）。 */
-export async function listModelAccessTables(): Promise<{
-  supported: boolean;
-  tables: string[];
-}> {
-  try {
-    const body = await proxyRequest<
-      ModelAccessTablesResponse | string[] | unknown[]
-    >('/model-access-tables');
-    const record = asRecord(body);
-    const list: unknown = Array.isArray(body)
-      ? body
-      : (record?.items ?? record?.tables ?? record?.names);
-    const tables: string[] = [];
-    if (Array.isArray(list)) {
-      for (const item of list) {
-        const entry = asRecord(item);
-        const name =
-          typeof item === 'string'
-            ? item
-            : ((asRecord(entry?.metadata)?.name ?? entry?.name) as unknown);
-        if (typeof name === 'string' && name.trim() !== '' && !tables.includes(name)) {
-          tables.push(name);
-        }
-      }
-    }
-    return { supported: true, tables };
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      return { supported: false, tables: [] };
-    }
-    if (
-      err instanceof ApiError &&
-      err.status === 500 &&
-      /no matches for kind/i.test(err.message) &&
-      /modelaccesstable/i.test(err.message)
-    ) {
-      return { supported: false, tables: [] };
-    }
-    throw err;
-  }
-}
+export { saveHumanModelAccess, saveHumanWorkspaceAccess, listModelAccessTables };
 
 // ============ API Methods ============
+
+/**
+ * Append one skill without replacing sibling spec.skills entries. Newer
+ * controllers expose an atomic append endpoint; older ones use the same
+ * bounded ETag/If-Match fallback as Human configuration writes.
+ */
+export async function appendWorkerSkill(name: string, skillName: string): Promise<WorkerResponse> {
+  const workerPath = `/workers/${encodeURIComponent(name)}`;
+  try {
+    return await proxyRequest<WorkerResponse>(`${workerPath}/skills/append`, {
+      method: 'POST',
+      body: JSON.stringify({ skillName }),
+    });
+  } catch (err) {
+    if (!isUnsupportedWrite(err)) throw err;
+  }
+
+  let read = await readVersionedRecord(workerPath);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const spec = asRecord(read.record.spec);
+    const current = Array.isArray(read.record.skills)
+      ? read.record.skills
+      : Array.isArray(spec?.skills)
+        ? spec.skills
+        : [];
+    const skills = current.filter((item): item is string => typeof item === 'string');
+    if (skills.includes(skillName)) return read.record as unknown as WorkerResponse;
+    if (!read.etag) {
+      throw new ApiError(
+        'Controller 不支持原子 skill append 且未提供 ETag，拒绝并发不安全的写入',
+        409,
+        workerPath,
+      );
+    }
+    try {
+      return await proxyRequest<WorkerResponse>(workerPath, {
+        method: 'PUT',
+        headers: { 'If-Match': read.etag },
+        body: JSON.stringify({ skills: [...skills, skillName] }),
+      });
+    } catch (err) {
+      if (!isWriteConflict(err) || attempt === 2) throw err;
+      read = await readVersionedRecord(workerPath, 'reload');
+    }
+  }
+  throw new ApiError('Worker skill 并发写入仍冲突', 409, workerPath);
+}
 
 export const agentteamsApi = {
   // Health & Status
@@ -1382,6 +1309,8 @@ export const agentteamsApi = {
   },
 
   getWorker: (name: string) => proxyRequest<WorkerResponse>(`/workers/${encodeURIComponent(name)}`),
+
+  appendWorkerSkill,
 
   createWorker: (data: CreateWorkerRequest) =>
     proxyRequest<WorkerResponse>('/workers', { method: 'POST', body: JSON.stringify(data) }),

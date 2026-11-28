@@ -499,6 +499,7 @@ export function assembleChatTimeline(
   const index = buildRawIndex(events);
   const pauses = lifecyclePauses(events);
   const stamped = stampOwners(messages, options.runtimeMap);
+  const presentMessageIds = new Set(stamped.flatMap(messageEventIds));
 
   // Suppress attachment relation events whose target is present: they render
   // inside the target step. Untargeted ones stay standalone (never drop).
@@ -511,9 +512,8 @@ export function assembleChatTimeline(
       && execution && typeof execution.run_id === 'string'
       && ['running', 'stopping', 'stopped', 'completed', 'failed', 'unavailable'].includes(String(execution.status))) return false;
     const targetId = index.attachmentTargets.get(message.id);
-    if (!targetId) return true;
-    return !stamped.some((candidate) =>
-      candidate !== message && messageEventIds(candidate).includes(targetId));
+    if (!targetId || targetId === message.id) return true;
+    return !presentMessageIds.has(targetId);
   });
 
   const sorted = [...visible]

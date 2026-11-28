@@ -10,6 +10,10 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { buildGroupedMessages } from './grouper/MainGrouper';
 import { MessageBubble } from './views/MessageBubble';
 
+vi.mock('./lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('./markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('./markdown-message', () => ({ MarkdownMessage: ({ content }: { content: string }) => <div>{content}</div> }));
 
 const harnesses: WorkerRuntime[] = ['openclaw', 'qwenpaw', 'hermes', 'deepseek-harness', 'openhuman', 'codex'];

@@ -1,3 +1,4 @@
+import { posix as posixPath } from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthToken, getControllerUrl } from '../../../../proxy-helper';
 import { backendAuthHeader } from '@/lib/backend-config';
@@ -237,7 +238,7 @@ async function listDir(
   ws: string,
   dir: string,
 ): Promise<{ status: number; error?: string; entries?: TarEntry[] }> {
-  const target = dir ? `${ws}/${dir}` : ws;
+  const target = workspaceTarget(ws, dir);
   const r = await dockerProxy(
     controllerUrl,
     authHeader,
@@ -283,15 +284,45 @@ export function __resetKbCacheForTests(): void {
   wsCache.clear();
 }
 
-/** path 合法性：顶层单文件 或 memory/** / digest/**（展开/读取同域；禁 '..'）。 */
-function validateKbPath(path: string): string | null {
-  if (!path || path.includes('..') || path.startsWith('/')) return '非法路径';
-  const top = path.split('/')[0];
-  if (path.includes('/')) {
-    if (top !== 'memory' && top !== 'digest') return '仅 memory/** 与 digest/** 支持展开/读取';
-    return null;
+export type KbPathValidation = { path: string } | { error: string };
+
+/**
+ * Canonical KB paths are relative POSIX paths. Query parsing has already
+ * percent-decoded once, so any remaining escape is rejected (including double
+ * encoding). Backslashes, NUL/control bytes, absolute/drive paths and every
+ * dot-segment are fail-closed before a Docker archive request is built.
+ */
+export function validateKbPath(rawPath: string, allowRoot = false): KbPathValidation {
+  const invalid = (error = '非法路径'): KbPathValidation => ({ error });
+  if (!rawPath) return allowRoot ? { path: '' } : invalid();
+  if (/[\\\x00-\x1f\x7f]/.test(rawPath) || posixPath.isAbsolute(rawPath) || /^[A-Za-z]:/.test(rawPath)) {
+    return invalid();
   }
-  return null; // 顶层单文件（档案/文件分类）
+  let candidate = rawPath;
+  for (let round = 0; round < 3; round += 1) {
+    if (!/%[0-9a-f]{2}/i.test(candidate)) break;
+    try { candidate = decodeURIComponent(candidate); } catch { return invalid(); }
+    return invalid('路径不得包含编码字符');
+  }
+  if (candidate !== rawPath || /[\\\x00-\x1f\x7f]/.test(candidate) || posixPath.isAbsolute(candidate) || /^[A-Za-z]:/.test(candidate)) {
+    return invalid();
+  }
+  if (allowRoot && candidate !== '') candidate = candidate.replace(/\/+$/, '');
+  if (!candidate) return allowRoot ? { path: '' } : invalid();
+  const parts = candidate.split('/');
+  if (parts.some((part) => !part || part === '.' || part === '..')) return invalid();
+  if (parts.length > 1 && parts[0] !== 'memory' && parts[0] !== 'digest') {
+    return { error: '仅 memory/** 与 digest/** 支持展开/读取' };
+  }
+  return { path: parts.join('/') };
+}
+
+/** Resolve first, then prove containment instead of relying on string prefixes. */
+function workspaceTarget(workspace: string, relative: string): string {
+  const root = posixPath.resolve(workspace);
+  const target = posixPath.resolve(root, relative);
+  if (target !== root && !target.startsWith(`${root}/`)) throw new Error('非法路径');
+  return target;
 }
 
 function tooLarge(err: unknown): boolean {
@@ -323,18 +354,22 @@ export async function GET(
   }
   const container = `${process.env.AGENTTEAMS_RESOURCE_PREFIX || 'agentteams-'}worker-${name}`;
   const qs = request.nextUrl.searchParams;
+  const validated = validateKbPath(qs.get('path') ?? '', sub === 'tree');
+  if ('error' in validated) return jsonError(validated.error, 400);
+  const path = validated.path;
+  if (sub === 'tree' && path && path !== 'memory' && path !== 'digest' &&
+      !path.startsWith('memory/') && !path.startsWith('digest/')) {
+    return jsonError('仅 memory/** 与 digest/** 支持展开', 400);
+  }
+  if (sub !== 'tree' && isSensitiveFileName(path.split('/').pop() ?? path, path)) {
+    return jsonError('敏感文件不可读取', 400);
+  }
 
   try {
     const ws = await resolveWorkspace(controllerUrl, authHeader, name);
 
     if (sub === 'tree') {
-      const dir = (qs.get('path') ?? '').replace(/^\/+|\/+$/g, '');
-      // 展开白名单：仅 memory/**·digest/**（顶层目录如 credentials/ 禁展开——插件同款）
-      const dirOk = dir === '' || dir === 'memory' || dir === 'digest'
-        || dir.startsWith('memory/') || dir.startsWith('digest/');
-      if (!dirOk) {
-        return jsonError('仅 memory/** 与 digest/** 支持展开', 400);
-      }
+      const dir = path;
       const r = await listDir(controllerUrl, authHeader, container, ws, dir);
       if (r.status !== 200 || !r.entries) return jsonError(r.error ?? '列取失败', r.status);
       const entries = r.entries
@@ -355,14 +390,8 @@ export async function GET(
       });
     }
 
-    const path = qs.get('path') ?? '';
     if (sub === 'file-metadata' || sub === 'file-content') {
-      const bad = validateKbPath(path);
-      if (bad) return jsonError(bad, 400);
-      if (isSensitiveFileName(path.split('/').pop() ?? path, path)) {
-        return jsonError('敏感文件不可读取', 400);
-      }
-      const target = `${ws}/${path}`;
+      const target = workspaceTarget(ws, path);
       const r = await dockerProxy(
         controllerUrl,
         authHeader,
@@ -471,10 +500,11 @@ export async function PUT(
   if (sub !== 'file-content') {
     return jsonError('仅 file-content 支持写入', 400);
   }
-  const path = request.nextUrl.searchParams.get('path') ?? '';
-  if (!path || path.includes('..') || path.startsWith('/')) {
-    return jsonError('非法路径', 400);
+  const validated = validateKbPath(request.nextUrl.searchParams.get('path') ?? '');
+  if ('error' in validated) {
+    return jsonError(validated.error, 400);
   }
+  const path = validated.path;
   const denied = await enforceServerSideRbac(request, 'update', 'worker', name);
   if (denied) return denied;
 

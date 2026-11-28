@@ -13,7 +13,7 @@ import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { useSectionStore } from '@/lib/section-store';
 import type { WorkflowItem } from '@/lib/a2ui/workflow';
 import type { BoardTask } from '@/hooks/use-task-board';
-import { useApiTaskBoard } from '@/hooks/use-projects';
+import { useAggregatedTaskBoard } from '@/hooks/use-aggregate-task-board';
 import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
 import { TASK_STATUS, taskStatus } from '@/lib/task-status';
 import { TaskCollaborationActions } from '../../task-collaboration-actions';
@@ -149,7 +149,7 @@ export function RoomTasksPanel({ roomId, data }: { roomId: string; data?: RoomTa
 }
 
 function StandaloneRoomTasks({ roomId }: { roomId: string }) {
-  const board = useApiTaskBoard();
+  const board = useAggregatedTaskBoard();
   const data = useRoomTaskData(roomId, board);
   return <RoomTaskCards data={data} />;
 }

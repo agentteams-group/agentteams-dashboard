@@ -8,10 +8,11 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface ApiErrorStateProps {
   message?: string;
-  onRetry?: () => void;
+  title?: string;
+  onRetry?: () => void | Promise<unknown>;
 }
 
-export function ApiErrorState({ message, onRetry }: ApiErrorStateProps) {
+export function ApiErrorState({ title = '未连接到 AgentTeams Controller', message, onRetry }: ApiErrorStateProps) {
   const { openSettings } = useAgentTeamsStore();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -20,9 +21,9 @@ export function ApiErrorState({ message, onRetry }: ApiErrorStateProps) {
     setIsRefreshing(true);
     try {
       if (onRetry) {
-        onRetry();
+        await onRetry();
       } else {
-        queryClient.invalidateQueries();
+        await queryClient.invalidateQueries();
       }
     } finally {
       setIsRefreshing(false);
@@ -31,10 +32,10 @@ export function ApiErrorState({ message, onRetry }: ApiErrorStateProps) {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">
-      <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mb-4">
-        <WifiOff className="w-8 h-8 text-amber-500" />
+      <div className="w-16 h-16 rounded-full bg-status-failed/10 flex items-center justify-center mb-4">
+        <WifiOff className="w-8 h-8 text-status-failed" />
       </div>
-      <p className="text-lg font-medium mb-1">未连接到 AgentTeams Controller</p>
+      <p role="alert" className="text-lg font-medium mb-1">{title}</p>
       <p className="text-sm text-muted-foreground mb-6 text-center max-w-md">
         {message || '无法连接到 AgentTeams Controller，请检查网络连接和 Controller 地址配置'}
       </p>

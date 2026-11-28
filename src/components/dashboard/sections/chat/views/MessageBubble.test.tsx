@@ -24,6 +24,10 @@ function expandProcess() {
 }
 
 const markdownMock = vi.fn(({ content }: { content: string }) => <div>{content}</div>);
+vi.mock('../lazy-markdown-message', async () => {
+  const { MarkdownMessage } = await import('../markdown-message');
+  return { LazyMarkdownMessage: MarkdownMessage };
+});
 vi.mock('../markdown-message', () => ({
   MarkdownMessage: (props: { content: string }) => markdownMock(props),
 }));
@@ -197,7 +201,7 @@ describe('MessageBubble', () => {
         showSender
         isContinuation
         currentUserId="@me:test"
-        readReceipts={{ '@peer:test': { ts: timestamp + 1000, eventId: '$time-continuation' } }}
+        readReceipts={{ '@peer:test': { ts: timestamp + 1000, eventTimestamp: timestamp + 1000, eventId: '$time-continuation' } }}
       />
     );
     const footer = container.querySelector('[data-chat-message-footer]')!;
@@ -867,7 +871,7 @@ Type /approve to approve, or send any message to deny.`,
         showSender={false}
         isContinuation={false}
         readReceipts={{
-          '@peer:example.com': { ts: 1500, eventId: '$mine-read' },
+          '@peer:example.com': { ts: 1500, eventTimestamp: 1500, eventId: '$mine-read' },
         }}
         currentUserId="@me:example.com"
       />
@@ -893,7 +897,7 @@ Type /approve to approve, or send any message to deny.`,
         showSender={false}
         isContinuation={false}
         readReceipts={{
-          '@me:example.com': { ts: 1500, eventId: '$mine-self' },
+          '@me:example.com': { ts: 1500, eventTimestamp: 1500, eventId: '$mine-self' },
         }}
         currentUserId="@me:example.com"
       />

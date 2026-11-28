@@ -3,7 +3,7 @@ import { createMinioClient, getMinioBucket } from '@/lib/minio-client';
 import { isValidNameSegment } from '@/lib/skill-package';
 import type { StorageObject } from '@/lib/agentteams-api';
 import { enforceServerSideRbac } from '@/lib/server-auth';
-import { isSensitiveFileName } from '@/lib/sensitive-files';
+import { isSensitiveObjectKey, isSensitiveStoragePrefix, normalizeStorageBucket, normalizeStorageKey } from '@/lib/sensitive-files';
 
 function listFiles(client: ReturnType<typeof createMinioClient>, bucket: string, prefix: string): Promise<StorageObject[]> {
   return new Promise((resolve, reject) => {
@@ -37,11 +37,7 @@ function stripAgentsPrefix(name: string, objects: StorageObject[]): StorageObjec
     })
     .filter((obj) => obj.key === prefix || obj.key.startsWith(prefix))
     // B1：敏感文件不进入文件列表（服务端过滤，不是藏按钮）
-    .filter((obj) => {
-      const rel = obj.key.startsWith(prefix) ? obj.key.slice(prefix.length) : '';
-      const base = rel.split('/').pop() || '';
-      return !isSensitiveFileName(base, rel);
-    });
+    .filter((obj) => !isSensitiveObjectKey(obj.key));
 }
 
 /** B1：按 {name}/ 前缀剥离后过滤敏感条目（非 agents/ 直列路径复用）。 */
@@ -49,9 +45,7 @@ function filterSensitive(name: string, objects: StorageObject[]): StorageObject[
   const prefix = `${name}/`;
   return objects.filter((obj) => {
     if (!obj.key.startsWith(prefix)) return true;
-    const rel = obj.key.slice(prefix.length);
-    const base = rel.split('/').pop() || '';
-    return !isSensitiveFileName(base, rel);
+    return !isSensitiveObjectKey(obj.key);
   });
 }
 
@@ -76,19 +70,33 @@ export async function GET(
     return NextResponse.json({ error: 'MinIO 未配置' }, { status: 503 });
   }
 
+  let normalizedSubPrefix: string;
+  try {
+    normalizeStorageBucket(bucket);
+    normalizedSubPrefix = normalizeStorageKey(subPrefix);
+  } catch {
+    return NextResponse.json({ error: '非法 Worker 文件路径' }, { status: 400 });
+  }
+  const withoutAgents = normalizedSubPrefix.startsWith('agents/')
+    ? normalizedSubPrefix.slice('agents/'.length)
+    : normalizedSubPrefix;
+  if (withoutAgents && !withoutAgents.startsWith(`${name}/`)) {
+    return NextResponse.json({ error: '非法 Worker 文件路径' }, { status: 400 });
+  }
+  const directPrefix = withoutAgents || `${name}/`;
+  if (isSensitiveStoragePrefix(bucket, directPrefix)) {
+    return NextResponse.json({ error: '文件不存在' }, { status: 404 });
+  }
+
   try {
     const client = createMinioClient();
-
-    const resolvePrefix = (base: string): string =>
-      base.startsWith(`${name}/`) ? base : `${name}/${base}`;
-
     const tryList = async (prefix: string) => await listFiles(client, bucket, prefix);
 
-    if (subPrefix) {
-      const direct = await tryList(resolvePrefix(subPrefix));
+    if (normalizedSubPrefix) {
+      const direct = await tryList(directPrefix);
       if (direct.length > 0) return NextResponse.json({ objects: filterSensitive(name, direct), prefix: subPrefix });
 
-      const agentsFallback = stripAgentsPrefix(name, await tryList(`agents/${resolvePrefix(subPrefix)}`));
+      const agentsFallback = stripAgentsPrefix(name, await tryList(`agents/${directPrefix}`));
       return NextResponse.json({ objects: agentsFallback, prefix: subPrefix });
     }
 

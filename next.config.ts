@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { NextConfig } from "next";
+import { SECURITY_HEADERS } from "./src/lib/security-headers";
 
 // Git worktrees (and any checkout that reuses the main checkout's installed
 // dependencies) usually symlink node_modules to a directory outside the
@@ -101,13 +102,46 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  output: 'standalone',
+  poweredByHeader: false,
   reactStrictMode: true,
   basePath,
   trailingSlash: true,
   allowedDevOrigins: [...devOrigins],
   generateBuildId: () => dashboardBuildId,
-  ...(turbopackRoot ? { turbopack: { root: turbopackRoot } } : {}),
+  async headers() {
+    return [{ source: '/:path*', headers: [...SECURITY_HEADERS] }];
+  },
+  turbopack: {
+    ...(turbopackRoot ? { root: turbopackRoot } : {}),
+    resolveAlias: {
+      // three-render-objects imports the WebGPU build even when WebGPU is off.
+      // KnowledgeGraph3D is WebGL-only, so do not ship the unused renderer.
+      'three/webgpu': {
+        browser: './src/components/dashboard/knowledge-graph3d/three-webgpu-stub.ts',
+      },
+    },
+    rules: {
+      // Keep the package's optional base64 Office fonts out of client chunks.
+      // PowerPointSlides passes the extracted hashed assets explicitly instead.
+      '**/@extend-ai/react-pptx/dist/*-data-*.js': {
+        loaders: [join(process.cwd(), 'scripts', 'empty-pptx-font-data-loader.mjs')],
+        as: '*.js',
+      },
+      // Keep architecture-only layout dependencies out of Mermaid parsing and
+      // all non-architecture diagram groups; load them only when drawing.
+      '**/mermaid/dist/chunks/mermaid.core/architectureDiagram-*.mjs': {
+        loaders: [join(process.cwd(), 'scripts', 'lazy-mermaid-architecture-loader.mjs')],
+        as: '*.js',
+      },
+      // ELK's bundled engine alone exceeds the async-group budget. Keep the
+      // supported Dagre renderer and record ELK layout as a safe degradation.
+      '**/mermaid/dist/chunks/mermaid.core/elk-*.mjs': {
+        loaders: [join(process.cwd(), 'scripts', 'dagre-only-mermaid-layout-loader.mjs')],
+        as: '*.js',
+      },
+    },
+  },
   env: {
     NEXT_PUBLIC_BUILD_ID: dashboardBuildId,
     NEXT_PUBLIC_BUILT_AT: dashboardBuiltAt,

@@ -3,6 +3,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import '@testing-library/jest-dom/vitest';
 import { DocumentPreview } from './document-preview';
 
+const { prefetchPowerPointRuntime } = vi.hoisted(() => ({
+  prefetchPowerPointRuntime: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('@/lib/pptx-runtime', () => ({ prefetchPowerPointRuntime }));
+
 vi.mock('next/dynamic', () => ({
   default: () => function Slides({ page, onLoad }: { page: number; onLoad: (_count: number) => void }) {
     React.useEffect(() => onLoad(3), [onLoad]);
@@ -15,6 +20,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  prefetchPowerPointRuntime.mockClear();
 });
 
 function mockDownload() {
@@ -28,6 +34,23 @@ function mockDownload() {
 }
 
 describe('DocumentPreview', () => {
+  it('prefetches the PPT viewer runtime before the deck download resolves', async () => {
+    let resolveDownload!: (_response: { ok: boolean; headers: Headers; arrayBuffer: () => Promise<ArrayBuffer> }) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => { resolveDownload = resolve; })));
+    render(<DocumentPreview url="/report.pptx" filename="report.pptx" />);
+    expect(prefetchPowerPointRuntime).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledOnce();
+    resolveDownload({ ok: true, headers: new Headers(), arrayBuffer: async () => new ArrayBuffer(8) });
+    await screen.findByText('页面内容 1');
+  });
+
+  it('does not prefetch the PPT runtime for PDF documents', async () => {
+    mockDownload();
+    render(<DocumentPreview url="/report.pdf" filename="report.pdf" />);
+    await screen.findByText('页面内容 1');
+    expect(prefetchPowerPointRuntime).not.toHaveBeenCalled();
+  });
+
   it('forwards the Matrix credential when opening authenticated media', async () => {
     const download = mockDownload();
     render(<DocumentPreview url="/api/matrix/media/report" filename="report.pdf" accessToken="preview-token" />);

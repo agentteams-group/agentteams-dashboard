@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
       synced: nacosSkills.length,
       totalNacos: config.lastSyncAt ? nacosSkills.length : 0,
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: 'Nacos 同步失败' }, { status: 502 });
   }
 }

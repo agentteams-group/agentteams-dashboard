@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { GitBranch } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useApiTaskBoard } from '@/hooks/use-projects';
+import { useAggregatedTaskBoard } from '@/hooks/use-aggregate-task-board';
 import type { BoardTask } from '@/hooks/use-task-board';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
@@ -38,7 +38,7 @@ export function TaskTopologyPopover({ roomId, taskId, roomTaskData }: { roomId: 
 }
 
 function StandaloneRoomTopology({ roomId, taskId }: { roomId: string; taskId?: string }) {
-  const board = useApiTaskBoard();
+  const board = useAggregatedTaskBoard();
   const data = useRoomTaskData(roomId, board);
   return <RoomTopology roomId={roomId} taskId={taskId} data={data} />;
 }

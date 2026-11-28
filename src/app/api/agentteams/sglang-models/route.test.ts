@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,6 +44,16 @@ afterAll(async () => {
   fs.rmSync(configDir, { recursive: true, force: true });
 });
 
+beforeEach(() => {
+  // Ambient container proxy settings turn an intentional connection refusal
+  // into a proxy HTTP error. Keep these network-failure tests hermetic.
+  for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
+    vi.stubEnv(key, '');
+  }
+  vi.stubEnv('NO_PROXY', '127.0.0.1,localhost');
+  vi.stubEnv('no_proxy', '127.0.0.1,localhost');
+});
+
 afterEach(() => {
   receivedPaths.length = 0;
   receivedAuth.length = 0;
@@ -51,6 +61,7 @@ afterEach(() => {
   const file = path.join(configDir, 'config.json');
   if (fs.existsSync(file)) fs.rmSync(file);
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 /** 写一份 setup 页保存的配置（逐地址凭据）并指过去。 */
@@ -183,6 +194,7 @@ describe('GET /api/agentteams/sglang-models: per-address auth', () => {
 
   it('does not leak a credential to an address it was not saved for', async () => {
     response.body = JSON.stringify({ data: [] });
+    const deniedFetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('intentional unreachable target'));
     vi.stubEnv('AGENTTEAMS_SGLANG_URL', sglangUrl);
     writeBackendConfig({
       sglang: {
@@ -197,6 +209,7 @@ describe('GET /api/agentteams/sglang-models: per-address auth', () => {
 
     // 配置地址优先 → 探测别的地址（不可达），关键断言：凭据没有发出去。
     expect(res.status).toBe(503);
+    expect(deniedFetch).toHaveBeenCalledTimes(1);
     expect(receivedAuth).toEqual([]);
   });
 });

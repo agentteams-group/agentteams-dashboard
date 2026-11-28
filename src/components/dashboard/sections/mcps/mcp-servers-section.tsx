@@ -31,6 +31,8 @@ import { McpSetupDialog } from './mcp-setup-dialog';
 import { McpDetailDialog } from './mcp-detail-dialog';
 import { mcpManagementApi } from '@/lib/mcp-management-api';
 import { MCP_KIND_LABELS } from '@/lib/mcp-management';
+import { useAgentTeamsStore } from '@/lib/agentteams-store';
+import { checkPermissionByLevel } from '@/lib/rbac-engine';
 
 export function McpServersSection() {
   const [search, setSearch] = useState('');
@@ -44,6 +46,8 @@ export function McpServersSection() {
   const [testingServer, setTestingServer] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
+  const userLevel = useAgentTeamsStore((state) => state.userLevel);
+  const canWriteMcps = checkPermissionByLevel(userLevel, 'update');
   const { data: servers = [], refetch, isRefetching } = useMcpServers();
   const deleteMutation = useDeleteMcpServer();
   // 「谁接了它」列（上游 #1250 部署目录，Controller 只读）——MinIO 注册表不带
@@ -81,7 +85,7 @@ export function McpServersSection() {
   const detailServer = listedDetail && (!detail?.updatedAt || (listedDetail.updatedAt ?? '') >= detail.updatedAt) ? listedDetail : detail;
 
   const handleDelete = useCallback(async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !checkPermissionByLevel(useAgentTeamsStore.getState().userLevel, 'delete')) return;
     setActionError('');
     try {
       if (servers.find((s) => s.name === deleteTarget)?.managed) { await mcpManagementApi.remove(deleteTarget); refetch(); }
@@ -119,7 +123,7 @@ export function McpServersSection() {
     <div className="space-y-4">
       <SectionHeader title={`MCP 工具 · ${servers.length}`} onRefresh={handleRefresh} isRefreshing={isRefetching}
         meta={<Input aria-label="搜索 MCP" placeholder="搜索 MCP 服务器..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-72" />}
-        actions={<><Button size="sm" onClick={() => { setManagedEdit(undefined); setSetupOpen(true); }}>接入 MCP</Button><ResourceListMenu label="MCP 更多操作" items={[{ label: '登记已有网关地址', onSelect: () => { setEditingServer(undefined); setDialogOpen(true); } }]} /></>} />
+        actions={canWriteMcps ? <><Button size="sm" onClick={() => { setManagedEdit(undefined); setSetupOpen(true); }}>接入 MCP</Button><ResourceListMenu label="MCP 更多操作" items={[{ label: '登记已有网关地址', onSelect: () => { setEditingServer(undefined); setDialogOpen(true); } }]} /></> : <span className="text-xs text-muted-foreground">只读权限</span>} />
       <McpOnboardingPanel />
       {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
 
@@ -133,7 +137,7 @@ export function McpServersSection() {
                 servers.length === 0 ? '接入已有 MCP、HTTP API 或数据库，再分配给需要使用的 Agent。' : undefined
               }
               action={
-                servers.length === 0
+                canWriteMcps && servers.length === 0
                   ? {
                       label: '接入 MCP',
                       onClick: () => {
@@ -159,8 +163,10 @@ export function McpServersSection() {
               <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">{server.gatewayOnly ? '未登记' : server.managed ? `${server.authorizedWorkerCount ?? server.authorizedWorkers?.length ?? 0} 个已授权` : catalog.off ? '待分配' : `${(catalog.workersByServer.get(server.name) ?? []).length} 个已配置`}</td>
               <td className="px-4 py-4"><div className="flex items-center justify-end gap-1 whitespace-nowrap">
                 {server.gatewayOnly || (server.managed && !server.connection) ? <span className="text-xs text-muted-foreground">{server.gatewayOnly ? '在 Higress 中管理' : '管理员可管理'}</span> : <><Button variant="ghost" size="sm" disabled={testingServer === server.name} onClick={() => handleTest(server)}>{testingServer === server.name ? '测试中…' : '测试'}</Button>
-                  <Button variant="ghost" size="sm" onClick={() => { if (server.managed) setDetail(server); else { setEditingServer(server); setDialogOpen(true); } }}>{server.managed ? '详情' : '编辑'}</Button>
-                  <ResourceListMenu label={`更多操作 ${server.name}`} items={[{ label: server.managed ? '删除服务' : '删除登记', onSelect: () => setDeleteTarget(server.name) }]} /></>}
+                  {server.managed
+                    ? <Button variant="ghost" size="sm" onClick={() => setDetail(server)}>详情</Button>
+                    : canWriteMcps && <Button variant="ghost" size="sm" onClick={() => { setEditingServer(server); setDialogOpen(true); }}>编辑</Button>}
+                  {canWriteMcps && <ResourceListMenu label={`更多操作 ${server.name}`} items={[{ label: server.managed ? '删除服务' : '删除登记', onSelect: () => setDeleteTarget(server.name) }]} />}</>}
               </div></td>
             </tr>)}</tbody>
           </table>
