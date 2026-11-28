@@ -12,6 +12,7 @@ import { useMatrixStore } from '@/lib/matrix-store';
 import { mxcToDownloadUrl } from '@/lib/matrix-media';
 import { DocumentPreview } from '@/components/dashboard/document-preview';
 import { isSlideDocument } from '@/lib/document-preview';
+import { markdownUrl } from '@/lib/markdown-url';
 
 export interface PreviewAttachment {
   filename: string;
@@ -78,8 +79,8 @@ function PreviewContent({ file }: { file: PreviewAttachment }) {
   return (
     <div className="h-full min-h-0 overflow-auto p-5 text-sm leading-relaxed">
       {kind === 'markdown' ? (
-        <article className="space-y-3 break-words [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_a]:text-primary [&_a]:underline [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_th]:border [&_td]:border [&_th]:bg-muted [&_th]:p-2 [&_td]:p-2">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{query.data.text}</ReactMarkdown>
+        <article className="space-y-3 break-words [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_a]:text-primary [&_a]:underline [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_table]:w-full [&_th]:border [&_td]:border [&_th]:bg-muted [&_th]:p-2 [&_td]:p-2">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrl} skipHtml>{query.data.text}</ReactMarkdown>
         </article>
       ) : <pre className="whitespace-pre-wrap break-words font-mono">{query.data.text}</pre>}
       {query.data.truncated && <p className="mt-4 text-xs text-muted-foreground">内容已截断，请下载查看全文。</p>}

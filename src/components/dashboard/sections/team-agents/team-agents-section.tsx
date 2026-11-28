@@ -38,7 +38,7 @@ import { openChatRoom } from '@/lib/open-chat-room';
 const RESOURCE_CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] items-start gap-5';
 
 const EMPTY_TEAM: CreateTeamRequest = { name: '', leader: { name: '' }, workerNames: [] };
-const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'openclaw' };
+const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'codex' };
 
 function openResource(hash: string) {
   window.location.hash = hash;

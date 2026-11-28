@@ -8,6 +8,11 @@
 // 用一行说明把限制讲清楚，而不是留一个「看起来能存」的输入框。
 
 import { useState } from 'react';
+import { AgentApprovalMode } from '../shared/agent-approval-mode';
+import { CREATABLE_MANAGER_RUNTIMES } from '@/lib/runtime-options';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 import {
   Dialog,
@@ -35,8 +40,11 @@ function resolveProviderHint(
 export function ManagerModelDialog({
   open,
   managerName,
+  runtime = "",
+  image = "",
   model,
   modelProvider,
+  approvalMode,
   modelOptions,
   saving,
   onCancel,
@@ -44,14 +52,20 @@ export function ManagerModelDialog({
 }: {
   open: boolean;
   managerName: string;
+  runtime?: string;
+  image?: string;
   model: string;
   modelProvider?: string;
+  approvalMode?: 'ask' | 'allow';
   modelOptions: ModelSelectionOption[];
   sessionIssue?: string | null;
   saving: boolean;
   onCancel: () => void;
-  onSubmit: (_model: string, _provider: string) => void;
+  onSubmit: (_model: string, _provider: string, _runtime: string, _image: string, _approvalMode?: 'ask' | 'allow') => void;
 }) {
+  const [draftApprovalMode, setDraftApprovalMode] = useState(approvalMode);
+  const [draftRuntime, setDraftRuntime] = useState(runtime);
+  const [draftImage, setDraftImage] = useState(image);
   const [draft, setDraft] = useState(model);
   const [provider, setProvider] = useState(modelProvider ?? '');
   const [providerTouched, setProviderTouched] = useState(false);
@@ -68,6 +82,9 @@ export function ManagerModelDialog({
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) {
+      setDraftApprovalMode(approvalMode);
+      setDraftRuntime(runtime);
+      setDraftImage(image);
       setDraft(model);
       setProvider(modelProvider ?? '');
       setProviderTouched(false);
@@ -76,20 +93,21 @@ export function ManagerModelDialog({
 
   const providerHint = resolveProviderHint(draft, modelOptions);
   const providerCatalog = buildModelCandidateCatalog(modelOptions);
-  const changed = draft.trim() !== model.trim() || providerTouched;
+  const changed = draft.trim() !== model.trim() || providerTouched || draftRuntime !== runtime || draftImage !== image || draftApprovalMode !== approvalMode;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
-      <DialogContent className="max-w-[95vw] sm:max-w-md">
+      <DialogContent onOpenAutoFocus={event => event.preventDefault()} className="max-w-[95vw] sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>编辑模型 - {managerName}</DialogTitle>
+          <DialogTitle>编辑基础配置 - {managerName}</DialogTitle>
           <DialogDescription>
-            选择模型连接和模型。保存后可通过网关验证确认实际可调用。
+            选择模型连接、模型和运行时。
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
           <ModelPicker
+            requireProvider
             providers={providerCatalog.providers}
             provider={provider}
             model={draft}
@@ -116,8 +134,17 @@ export function ManagerModelDialog({
               }
             }}
           />
+          <AgentApprovalMode value={draftApprovalMode} disabled={saving} onChange={setDraftApprovalMode} />
+          <div className="space-y-2">
+            <Label>运行时</Label>
+            <Select value={draftRuntime} onValueChange={(next) => { setDraftRuntime(next); setDraftImage(""); }}>
+              <SelectTrigger aria-label="运行时"><SelectValue placeholder="选择运行时" /></SelectTrigger>
+              <SelectContent>{CREATABLE_MANAGER_RUNTIMES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2"><Label htmlFor="manager-image">镜像</Label><Input id="manager-image" value={draftImage} onChange={event => setDraftImage(event.target.value)} placeholder="容器镜像地址（可选）" /></div>
           <p className="text-xs text-muted-foreground">
-            模型名称默认与模型 ID 相同，也可以使用连接中配置的调用别名。未指定连接时沿用当前设置。
+            模型名称默认与模型 ID 相同，也可以使用连接中配置的调用别名。请选择当前助手使用的连接。
           </p>
 
           <p className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
@@ -130,7 +157,7 @@ export function ManagerModelDialog({
             取消
           </Button>
           <Button
-            disabled={!changed || saving || !draft.trim()}
+            disabled={!changed || saving || !draft.trim() || !provider.trim() || !draftRuntime}
             onClick={() => {
               const trimmedProvider = provider.trim();
               // 手选优先；未手选但自动跟随 binding 得到了与现值不同的 provider
@@ -140,7 +167,7 @@ export function ManagerModelDialog({
                 trimmedProvider !== (modelProvider ?? '').trim()
                   ? trimmedProvider
                   : '';
-              onSubmit(draft.trim(), submittedProvider);
+              onSubmit(draft.trim(), submittedProvider || provider.trim(), draftRuntime, draftImage, draftApprovalMode);
             }}
           >
             {saving ? (

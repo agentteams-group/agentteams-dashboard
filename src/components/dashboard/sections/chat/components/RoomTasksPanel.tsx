@@ -3,9 +3,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
-import { CircleCheck, CircleX, ListTodo, Loader2 } from 'lucide-react';
+import { CircleCheck, CircleX, Eye, ListTodo, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { selectTasksByRooms, useTaskStore, type TaskEntry } from '@/lib/task-store';
 import { getProjectWorkflow } from '@/lib/agentteams-projects-api';
 import { isProjectMiss, workflowLiveFromProject } from '@/lib/chat-workflow-live';
@@ -15,7 +16,7 @@ import type { WorkflowItem } from '@/lib/a2ui/workflow';
 import type { BoardTask } from '@/hooks/use-task-board';
 import { useApiTaskBoard } from '@/hooks/use-projects';
 import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
-import { TASK_STATUS, taskStatus } from '@/lib/task-status';
+import { TASK_STATUS, awaitsLeaderReview, taskStatus } from '@/lib/task-status';
 import { TaskCollaborationActions } from '../../task-collaboration-actions';
 import { completedTaskDuration, TaskDetailSheet, taskMetaQuery } from '../../task-detail-sheet';
 
@@ -26,8 +27,9 @@ function statusLabel(status?: string): string {
   return taskStatus(status).label;
 }
 
-function StatusPill({ status }: { status?: string }) {
-  return <Badge variant="outline" className="shrink-0 gap-1.5 border-border bg-transparent text-xs text-foreground"><StepGlyph status={status} />{statusLabel(status)}</Badge>;
+function StatusPill({ status, progress }: { status?: string; progress?: { total: number; completed: number } }) {
+  const presentation = taskStatus(status, progress);
+  return <Badge variant="outline" className="shrink-0 gap-1.5 text-xs" style={{ color: presentation.color, borderColor: `color-mix(in srgb, ${presentation.color} 25%, transparent)`, backgroundColor: `color-mix(in srgb, ${presentation.color} 9%, transparent)` }}>{awaitsLeaderReview(status, progress) ? <Eye className="size-3" /> : <StepGlyph status={status} />}{presentation.label}</Badge>;
 }
 
 function StepGlyph({ status }: { status?: string }) {
@@ -76,15 +78,12 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
   };
 
   return (
-    <div className="space-y-2 rounded-lg border border-border/60 bg-background/40 p-2.5">
+    <div className="space-y-3 rounded-xl border border-border/70 bg-card p-3.5 shadow-sm">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold" title={title}>{title}</p>
-          <p className="truncate font-mono text-xs text-muted-foreground" title={task.runId}>
-            {task.runId}
-          </p>
+          <p className="line-clamp-2 text-sm font-semibold leading-snug" title={title}>{title}</p>
         </div>
-        <StatusPill status={status} />
+        <StatusPill status={status} progress={{ total: steps.length, completed }} />
       </div>
 
       <div className="space-y-1 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {completed}/{steps.length} 已完成</span><span>{steps.length ? Math.round(completed / steps.length * 100) : COMPLETE_STATUSES.has(status ?? '') ? 100 : 0}%</span></div><progress aria-label="子任务进度" max={steps.length || 1} value={steps.length ? completed : COMPLETE_STATUSES.has(status ?? '') ? 1 : 0} className="h-1.5 w-full accent-[var(--action-primary)]" /></div>
@@ -110,7 +109,7 @@ function RoomTaskCard({ task }: { task: TaskEntry }) {
       <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-1.5">
         <span className="min-w-0 truncate text-xs text-muted-foreground">
           {steps.length > 0 ? `${completed}/${steps.length} 完成` : statusLabel(status)}
-          {data && <span className="ml-1 text-emerald-600 dark:text-emerald-400">live</span>}
+          {data && <span className="ml-1 text-emerald-600 dark:text-emerald-400">已同步</span>}
           {snapshotOnly && <span className="ml-1 text-amber-600 dark:text-amber-400">快照</span>}
         </span>
         <Button
@@ -174,7 +173,7 @@ function RoomTaskCards({ data: { board, roots, snapshots } }: { data: RoomTaskDa
   }
 
   return (
-    <div className="h-full space-y-2 overflow-y-auto custom-scrollbar p-2">
+    <div className="h-full space-y-3 overflow-y-auto bg-muted/20 p-3 custom-scrollbar">
       {roots.map(root => <RoomBoardTaskCard key={`${root.teamId ?? ''}/${root.runId}`} root={root} tasks={boardTasks} onOpenDetails={button => {
         detailTrigger.current = button;
         selectTask(root);
@@ -207,15 +206,20 @@ function RoomBoardTaskCard({ root, tasks, onOpenDetails }: {
   const duration = completedTaskDuration(root, detail.data);
   const progress = subtaskProgress(root, tasks);
   const percent = progress.total ? progress.percent : root.status === 'completed' ? 100 : 0;
-  return <article aria-label={root.title} className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3">
-    <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{root.title}</h3><StatusPill status={root.status} /></div>
-    <div className="space-y-2 text-xs text-muted-foreground"><div className="flex justify-between"><span>子任务 {progress.completed}/{progress.total} 已完成</span><span>{percent}%</span></div><progress className="h-1.5 w-full accent-[var(--action-primary)]" aria-label="子任务进度" max={100} value={percent} /></div>
+  const active = subtasksOf(root, tasks).filter(child => child.status === 'in_progress' || child.status === 'assigned');
+  return <article aria-label={root.title} className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+    <div className="space-y-3 p-3.5">
+    <div className="flex items-center gap-2"><span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><ListTodo className="size-4" /></span><span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{root.teamId || '当前会话'}</span><StatusPill status={root.status} progress={progress} /></div>
+    <h3 className="line-clamp-2 text-sm font-semibold leading-snug" title={root.title}>{root.title}</h3>
+    <p className="truncate text-xs text-muted-foreground" title={active.map(child => child.title).join('、')}>{active.length ? `当前阶段：${active.map(child => child.title).join('、')}` : awaitsLeaderReview(root.status, progress) ? '子任务已完成，等待 Leader 复核交付' : root.status === 'completed' ? '任务已验收，交付结果可在会话中查看' : `负责人：${root.assignedTo || '待分配'}`}</p>
+    <div className="space-y-2 text-xs text-muted-foreground"><div className="flex justify-between gap-2"><span>子任务 {progress.completed}/{progress.total} 已完成</span><span className="tabular-nums">{percent}%</span></div><Progress className={`h-1.5 bg-muted ${percent === 100 ? '[&_[data-slot=progress-indicator]]:bg-status-done' : '[&_[data-slot=progress-indicator]]:bg-status-running'}`} aria-label="子任务进度" value={percent} /></div>
     {root.status === 'completed' && (
       <p className="text-xs tabular-nums text-muted-foreground">
         总耗时 {duration ?? (detail.isLoading ? '读取中…' : '暂无记录')}
       </p>
     )}
-    <div className="border-t border-border/60 pt-2">
+    </div>
+    <div className="border-t border-border/60 bg-muted/20 px-2.5 py-2">
       <TaskCollaborationActions task={root} tasks={tasks}>
         <Button variant="ghost" size="sm" className="text-xs" onClick={event => onOpenDetails(event.currentTarget)}>
           查看详情

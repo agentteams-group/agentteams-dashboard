@@ -80,7 +80,8 @@ describe('SettingsDialog · 模块更新已迁出', () => {
 
   it('保留既有 tab 集合', () => {
     render(<SettingsDialog />);
-    for (const name of ['管理', '连接', '聊天', '后端', '外观', 'Beta功能', '插件', '更新']) {
+    expect(screen.queryByRole('tab', { name: 'Beta功能' })).not.toBeInTheDocument();
+    for (const name of ['管理', '连接', '聊天', '后端', '外观', '插件', '更新']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument();
     }
   });

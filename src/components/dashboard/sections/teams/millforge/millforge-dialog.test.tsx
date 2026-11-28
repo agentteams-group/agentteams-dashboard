@@ -667,12 +667,13 @@ describe('MillforgeDialog · 枚举/模型字段控件形态', () => {
     expect(runtime.tagName).toBe('INPUT');
     fireEvent.focus(runtime);
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'openclaw',
-      'hermes',
-      'qwenpaw',
-      'deepseek-harness',
       'codex',
+      'qwenpaw',
+      'claudecode',
+      'hermes',
+      'deepseek-harness',
       'openhuman',
+      'openclaw',
     ]);
 
     fireEvent.change(runtime, { target: { value: 'custom-runtime' } });

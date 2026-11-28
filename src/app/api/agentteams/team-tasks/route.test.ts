@@ -29,7 +29,7 @@ describe('normalizeStatus', () => {
     ['queued', 'pending'],
     // AgentTeams TaskMeta raw statuses (controller normalizeTaskStatus):
     // planned→pending, delegated→assigned, submitted→in_progress,
-    // revision keeps its own state, cancelled→blocked.
+    // revision keeps its own state, cancelled remains terminal.
     ['planned', 'pending'],
     ['assigned', 'assigned'],
     ['delegated', 'assigned'],
@@ -46,8 +46,8 @@ describe('normalizeStatus', () => {
     ['done', 'completed'],
     ['failed', 'failed'],
     ['blocked', 'blocked'],
-    ['cancelled', 'blocked'],
-    ['canceled', 'blocked'],
+    ['cancelled', 'cancelled'],
+    ['canceled', 'cancelled'],
     ['paused', 'blocked'],
     [undefined, 'unknown'],
     ['', 'unknown'],

@@ -318,11 +318,10 @@ export function WorkerRuntimeConfigSurface({
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1 space-y-1">
             <p className="font-medium text-foreground">
-              当前 Controller 未提供 {runtimeLabel(runtime)} 的运行时配置面（endpoint unsupported）
+              {runtimeLabel(runtime)} 暂不支持在此编辑这项配置
             </p>
             <p>
-              该运行时未注册 member-config surface 适配器，面板保持只读降级，不会显示伪造字段。
-              Controller 增加适配器后本面板自动生效。
+              你可以在左侧查看已支持的配置项。
             </p>
             <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => void load()}>
               <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />

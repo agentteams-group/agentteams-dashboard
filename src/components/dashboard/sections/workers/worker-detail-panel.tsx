@@ -43,22 +43,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { StatusDot } from '@/components/dashboard/status-dot';
 import { PhaseBadge, RuntimeBadge } from '@/components/dashboard/phase-badge';
-import { WorkerApprovalControl } from './worker-approval-control';
-import { WorkerChannelsPanel } from './worker-channels-panel';
 import { WorkerCheckpointsCard } from './worker-checkpoints-card';
 import { WorkerCodingCliPanel } from './worker-coding-cli-panel';
 import { WorkerEnvCard } from './worker-env-card';
 import { WorkerHeartbeatControl } from './worker-heartbeat-control';
-import { WorkerLlmTuningPanel } from './worker-llm-tuning-panel';
 import { WorkerMcpPanel } from './worker-mcp-panel';
 import { WorkerEditDialog, type WorkerEditForm } from './worker-edit-dialog';
 import { WorkerPluginsCard } from './worker-plugins-card';
 import { WorkerChatsPanel } from './worker-chats-panel';
-import { QwenpawRuntimeConfigPanel } from './qwenpaw-runtime-config-panel';
-import { WorkerRuntimeConfigSurface } from './worker-runtime-config-surface';
 import { WorkerSkillAssign } from './worker-skill-assign';
 import { WorkerSkillUploadDialog } from './worker-skill-upload-dialog';
-import { WorkerToolsPanel } from './worker-tools-panel';
 import { WorkerWorkspaceFilesPanel } from './worker-workspace-files-panel';
 import { FilesBrowserPanel } from '../chat/views/worker-files-panel';
 import { useNowTick } from '@/hooks/use-now-tick';
@@ -75,6 +69,7 @@ import { buildStatusNarrative, formatAgoZh } from '@/lib/worker-activity';
 import { fetchWorkerDetail, invalidateWorkerDetail } from '@/lib/worker-detail';
 import { isLegacyCopaw } from '@/lib/runtime-options';
 import { runtimeLabel } from '@/lib/runtime-labels';
+import { getRuntimeMeta } from '@/lib/runtime-meta';
 import { hashForSection, roomHash } from '@/lib/nav-hash';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { formatErrorMessage } from '@/lib/api-error';
@@ -136,8 +131,6 @@ export function WorkerDetailPanel({
   const workerName = worker.name;
   const [detail, setDetail] = useState<WorkerResponse | null>(worker);
   const [editForm, setEditForm] = useState<WorkerEditForm | null>(null);
-  const [envOpen, setEnvOpen] = useState(false);
-  const [llmOpen, setLlmOpen] = useState(false);
   const [expandedCards, setExpandedCards] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -266,14 +259,23 @@ export function WorkerDetailPanel({
 
 
 
-  const openDm = useCallback(() => {
+  const openDm = useCallback(async () => {
     if (!dm) return;
-    if (onDm) {
-      onDm(dm.mxid, dm.roomId);
-      return;
+    try {
+      let roomId = dm.roomId;
+      if ((view.role === 'team_leader' || view.role === 'leader') && view.team) {
+        const team = await agentteamsApi.getTeam(view.team);
+        if (team.leaderName === view.name) roomId = team.leaderDMRoomID || roomId;
+      }
+      if (onDm) {
+        onDm(dm.mxid, roomId);
+        return;
+      }
+      window.location.hash = roomId ? roomHash(roomId) : hashForSection('chat');
+    } catch (error) {
+      toast.error(formatErrorMessage(error));
     }
-    window.location.hash = dm.roomId ? roomHash(dm.roomId) : hashForSection('chat');
-  }, [dm, onDm]);
+  }, [dm, onDm, view.name, view.role, view.team]);
 
   if (!view) return null;
 
@@ -281,46 +283,8 @@ export function WorkerDetailPanel({
   const showEnsureReady = view.phase === 'Pending' || view.phase === 'Stopped';
   const actionPending = wakeWorker.isPending || sleepWorker.isPending || ensureReadyWorker.isPending;
 
-  // Non-QwenPaw runtimes expose their native config through the controller's
-  // member-config surface; capability cards reuse that surface (bucket filter)
-  // instead of calling QwenPaw-only worker endpoints that answer 400.
-  //
-  // QwenPaw is the exception: the controller registers no member-config
-  // surface adapter for it (only openclaw + hermes), so the legacy
-  // `runtime-config` end is the only real config plane. An empty runtime is
-  // treated as non-QwenPaw (surface), never as a fake QwenPaw form.
   const nonQwenpaw = Boolean(view.runtime) && view.runtime !== 'qwenpaw';
-  const isQwenpaw = view.runtime === 'qwenpaw';
   const runtimeName = runtimeLabel(view.runtime);
-  const envCount = Object.keys(view.env ?? {}).length;
-
-  const surface = (bucket: 'config' | 'mcp' | 'tools' | 'skills' | 'channels' | 'approval') => (
-    <WorkerRuntimeConfigSurface
-      key={`surface-${bucket}-${view.name}`}
-      workerName={view.name}
-      runtime={view.runtime}
-      bucket={bucket}
-      canWrite={userLevel >= 3}
-      onChanged={() => {
-        invalidateWorkerDetail(view.name);
-        void refreshDetail(true);
-        onChanged?.();
-      }}
-    />
-  );
-
-  const qwenpawRuntimeConfig = (
-    <QwenpawRuntimeConfigPanel
-      key={`qwenpaw-runtime-${view.name}`}
-      workerName={view.name}
-      canWrite={userLevel >= 3}
-      onChanged={() => {
-        invalidateWorkerDetail(view.name);
-        void refreshDetail(true);
-        onChanged?.();
-      }}
-    />
-  );
 
   const resourceCards: Array<{
     id: string;
@@ -331,21 +295,19 @@ export function WorkerDetailPanel({
     {
       id: 'runtime',
       title: '高级配置',
-      desc: isQwenpaw
-        ? `${runtimeName} · 全部配置分区 / 循环 / 重启生效`
-        : `${runtimeName} · 分组 / 搜索 / 已改计数 / 回滚`,
-      render: () => (isQwenpaw ? qwenpawRuntimeConfig : surface('config')),
+      desc: 'Agent 整体工具审批策略',
+      render: () => (
+        <div className="space-y-3">
+          <p className="text-sm">当前策略：{view.approvalMode === 'allow' ? '自动通过' : view.approvalMode === 'ask' ? '请求审批' : '尚未设置'}</p>
+          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '', approvalMode: view.approvalMode })}>编辑工具审批</Button>
+        </div>
+      ),
     },
     {
       id: 'mcp',
       title: 'MCP',
-      desc: nonQwenpaw
-        ? `${runtimeName} 配置面（surface 驱动）`
-        : `${view.mcpServers?.length ?? 0} 个声明 server · 声明 + 自注册合并`,
-      render: () =>
-        nonQwenpaw && view.runtime !== 'codex' ? (
-          surface('mcp')
-        ) : (
+      desc: `${view.mcpServers?.length ?? 0} 个 MCP 服务`,
+      render: () => (
           <WorkerMcpPanel
             key={`mcp-${view.name}`}
             worker={view}
@@ -361,30 +323,10 @@ export function WorkerDetailPanel({
         ),
     },
     {
-      id: 'tools',
-      title: '工具',
-      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '内置工具启用列表',
-      render: () =>
-        nonQwenpaw ? (
-          surface('tools')
-        ) : (
-          <WorkerToolsPanel
-            key={`tools-${view.name}`}
-            workerName={view.name}
-            runtime={view.runtime}
-          />
-        ),
-    },
-    {
       id: 'skills',
       title: '技能',
-      desc: nonQwenpaw
-        ? `${runtimeName} 配置面（surface 驱动）`
-        : `${view.skills?.length ?? 0} 项 · 目录 / 分配矩阵`,
-      render: () =>
-        nonQwenpaw ? (
-          surface('skills')
-        ) : (
+      desc: `${view.skills?.length ?? 0} 项 · 目录 / 分配矩阵`,
+      render: () => (
           <div className="space-y-2">
             {Boolean(worker.skillWarnings?.length) && <div role="alert" className="space-y-1 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
               <p className="font-medium">部分技能未能加载，Agent 可继续运行</p>
@@ -404,28 +346,6 @@ export function WorkerDetailPanel({
               上传技能包
             </Button>
           </div>
-        ),
-    },
-    {
-      id: 'channels',
-      title: '频道',
-      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '频道配置 + 二维码授权 + 重启',
-      render: () =>
-        nonQwenpaw ? (
-          surface('channels')
-        ) : (
-          <WorkerChannelsPanel key={`channels-${view.name}`} workerName={view.name} />
-        ),
-    },
-    {
-      id: 'approval',
-      title: '审批模式',
-      desc: nonQwenpaw ? `${runtimeName} 配置面（surface 驱动）` : '审批三档 + 保存',
-      render: () =>
-        nonQwenpaw ? (
-          surface('approval')
-        ) : (
-          <WorkerApprovalControl key={`approval-${view.name}`} workerName={view.name} />
         ),
     },
     {
@@ -487,7 +407,7 @@ export function WorkerDetailPanel({
             variant="outline"
             className="h-11 text-sm"
             onClick={() => {
-              setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' });
+              setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '', approvalMode: view.approvalMode });
             }}
           >
             升级到 QwenPaw
@@ -503,7 +423,13 @@ export function WorkerDetailPanel({
     desc: '回迁 / 恢复',
     render: () => <WorkerCheckpointsCard key={`checkpoints-${view.name}`} workerName={view.name} />,
   });
-  const tabIds = ['mcp', 'skills', 'runtime', 'workspace-files', 'chats'];
+  resourceCards.push({
+    id: 'environment', title: '环境变量与参数', desc: '环境变量与网关',
+    render: () => <WorkerEnvCard key={view.name} worker={view} onSaved={() => {
+      invalidateWorkerDetail(view.name); void refreshDetail(true); onChanged?.();
+    }} />,
+  });
+  const tabIds = ['mcp', 'skills', 'environment', 'runtime', 'workspace-files', 'chats'];
   const tabCards = tabIds.flatMap((id) => resourceCards.filter((card) => card.id === id));
   const advancedCards = resourceCards.filter((card) => !tabIds.includes(card.id));
 
@@ -608,7 +534,7 @@ export function WorkerDetailPanel({
           <Row label="模型 ID" value={view.model || '未设置'} />
           <Row label="模型连接" value={view.modelProvider || providerName || '默认连接'} />
           <Row label="镜像" value={view.image || '默认镜像'} />
-          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '' })}>编辑基础配置</Button>
+          <Button size="sm" variant="outline" disabled={userLevel < 3} onClick={() => setEditForm({ model: view.model || '', runtime: view.runtime, image: view.image || '', approvalMode: view.approvalMode })}>编辑基础配置</Button>
         </section>
         {/* 状态区 */}
         <section className="space-y-1.5 rounded-lg border p-2.5" aria-label="状态">
@@ -625,9 +551,9 @@ export function WorkerDetailPanel({
           )}
         </section>
 
-        {view.runtime === 'openclaw' ? (
-          <WorkerHeartbeatControl
+        <WorkerHeartbeatControl
             enabled={view.llmHeartbeatEnabled}
+            supported={getRuntimeMeta(view.runtime)?.supportsAutonomousHeartbeat === true}
             disabled={userLevel < 3 || !view.envEditable || updateWorker.isPending}
             onCheckedChange={(enabled) => updateWorker.mutate(
               { name: workerName, data: { llmHeartbeatEnabled: enabled } },
@@ -639,21 +565,7 @@ export function WorkerDetailPanel({
                 },
               },
             )}
-          />
-        ) : null}
-
-        <details className="rounded-lg border p-3" onToggle={(event) => setEnvOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer text-sm">环境变量与网关 · {envCount} 个变量</summary>
-          {envOpen && <div className="pt-3"><WorkerEnvCard key={`env-${view.name}`} worker={view} onSaved={() => {
-            invalidateWorkerDetail(view.name);
-            void refreshDetail(true);
-            onChanged?.();
-          }} /></div>}
-        </details>
-        <details className="rounded-lg border p-3" onToggle={(event) => setLlmOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer text-sm">模型调优</summary>
-          {llmOpen && <div className="pt-3"><WorkerLlmTuningPanel key={`llm-${view.name}`} workerName={view.name} /></div>}
-        </details>
+        />
         </div> },
         ...tabCards.map(card => ({ ...card, render: () => (
           <div className="space-y-4">

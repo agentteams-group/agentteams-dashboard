@@ -144,7 +144,7 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
     expect(screen.queryByText('别的空间任务')).toBeNull();
     expect(await screen.findByText('产品介绍页生产线（正源）')).toBeInTheDocument();
     expect(screen.getByText('1/2 完成')).toBeInTheDocument();
-    expect(screen.getByText('live')).toBeInTheDocument();
+    expect(screen.getByText('已同步')).toBeInTheDocument();
     expect(getProjectWorkflow).toHaveBeenCalledWith('proj-1', { includeTasks: true });
   });
 
@@ -152,7 +152,7 @@ describe('RoomTasksPanel（房间任务 tab · 底座接线）', () => {
     seedTask();
     renderPanel();
     // 等正源 overlay 落地后再点，deep-link 才能带上 Controller 的 team_id。
-    await screen.findByText('live');
+    await screen.findByText('已同步');
 
     fireEvent.click(screen.getByRole('button', { name: '查看项目详情' }));
 

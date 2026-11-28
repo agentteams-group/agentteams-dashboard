@@ -189,7 +189,7 @@ describe('TeamCreateDialog 内联新建 Worker（9/13 装验反馈：参考插�
     await waitFor(() =>
       expect(createWorker).toHaveBeenCalledWith({
         name: 'new-w',
-        runtime: 'openclaw',
+        runtime: 'codex',
         model: undefined,
         modelProvider: undefined,
         soul: undefined,

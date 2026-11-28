@@ -212,7 +212,7 @@ it('opens the selected task detail and keeps populated groups at a fixed height'
   expect(card.closest('[class*="h-[360px]"]')?.querySelector('[aria-hidden="true"]')).toHaveStyle({ backgroundColor: '#CB9300' });
   fireEvent.click(card);
   expect(await screen.findByRole('dialog')).toBeInTheDocument();
-  expect(await screen.findByText('核对分析结论和原始文件')).toBeInTheDocument();
+  expect((await screen.findAllByText('核对分析结论和原始文件'))[0]).toBeInTheDocument();
   expect(screen.getByText('报告.md')).toBeInTheDocument();
   expect(within(screen.getByRole('dialog')).getByText('待验收')).toBeInTheDocument();
   cleanup();
@@ -232,6 +232,17 @@ it('separates lifecycle columns from attention states and places submitted tasks
   const card = within(flow).getByRole('button', { name: /待确认的报告/ });
   expect(card.closest('[class*="h-[360px]"]')).toHaveTextContent('待验收');
   expect(within(card).queryByLabelText('任务正在执行')).toBeNull();
+  cleanup();
+  viewPreference.value = 'projects';
+  viewPreference.tasks = [];
+});
+
+it('keeps cancelled tasks out of the attention queue', () => {
+  viewPreference.value = 'kanban';
+  viewPreference.tasks = [{ runId: 'cancelled-task', title: '已取消的旧验收', status: 'cancelled', assignedTo: '成员', projectId: 'proj-1', roomId: '', dependsOn: [], createdAt: 0, outcome: null, source: 'api' }];
+  renderSection();
+  expect(within(screen.getByRole('region', { name: '需要关注' })).queryByText('已取消的旧验收')).toBeNull();
+  expect(within(screen.getByRole('region', { name: '已取消' })).getByText('已取消的旧验收')).toBeInTheDocument();
   cleanup();
   viewPreference.value = 'projects';
   viewPreference.tasks = [];
@@ -421,7 +432,7 @@ describe('task collaboration room entry', () => {
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: /执行分析/ }));
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findByText('协作详情已加载');
+    await within(dialog).findAllByText('协作详情已加载');
     fireEvent.click(within(dialog).getByRole('button', { name: '进入协作房间' }));
     await vi.waitFor(() => expect(roomNavigation.open).toHaveBeenCalledWith('!execution:test', 'task-room'));
     expect(fetch).toHaveBeenCalledTimes(1);

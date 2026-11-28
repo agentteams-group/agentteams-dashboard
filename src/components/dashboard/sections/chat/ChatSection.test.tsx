@@ -52,11 +52,12 @@ vi.mock('@/hooks/use-matrix', async () => {
 });
 
 // --- Heavy children: stub, but capture the selection ------------------------
-const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null, runtimeMap: {} as RuntimeMap }));
+const chatPanelSpy = vi.hoisted(() => ({ lastRoomId: null as string | null, lastRoomName: null as string | null, runtimeMap: {} as RuntimeMap }));
 
 vi.mock('./ChatPanel', () => ({
-  ChatPanel: ({ room, headerTitle, headerLeading, headerActions }: { room: { id: string }; headerTitle?: ReactNode; headerLeading?: ReactNode; headerActions?: ReactNode }) => {
+  ChatPanel: ({ room, headerTitle, headerLeading, headerActions }: { room: { id: string; name: string }; headerTitle?: ReactNode; headerLeading?: ReactNode; headerActions?: ReactNode }) => {
     chatPanelSpy.lastRoomId = room.id;
+    chatPanelSpy.lastRoomName = room.name;
     return <div data-testid="chat-panel-stub">{headerLeading}{headerTitle}{headerActions}{room.id}</div>;
   },
 }));
@@ -152,6 +153,23 @@ describe('ChatSection deep-link consumption (FUNC-04)', () => {
     expect(screen.queryByRole('button', { name: /切换团队/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回任务看板' }));
     expect(useSectionStore.getState().activeSection).toBe('tasks');
+  });
+  it.each(['TASK：task-123', '用户自定义房间名'])('shows the task title while preserving a custom room name: %s', async roomName => {
+    loaded();
+    taskFeedMock.workflows = [];
+    taskBoardMock.tasks = [{ runId: 'task-123', title: '离线问候页面', status: 'in_progress',
+      executionRoomId: '!task:test', roomId: '!leader:test', assignedTo: 'leader', dependsOn: [],
+      createdAt: 0, source: 'controller', outcome: null }];
+    taskBoardMock.tasks.unshift({ ...taskBoardMock.tasks[0], runId: 'exec-123', parentTaskId: 'task-123', title: '开发节点' });
+    useRoomMetaStore.setState({ meta: { '!task:test': { roomName, updatedAt: 0 } } });
+    hooksMock.useRoomAccess.mockReturnValue({ joinedRooms: ['!task:test'], state: 'joined', refetch: vi.fn() });
+    useSectionStore.setState({ activeSection: 'chat', taskCollaboration: { taskId: 'task-123', roomId: '!task:test' } });
+    renderWithQueryClient();
+    await waitFor(() => expect(chatPanelSpy.lastRoomId).toBe('!task:test'));
+    expect(screen.getByRole('navigation', { name: '任务协作导航' })).toHaveTextContent('离线问候页面/协作');
+    expect(screen.getByTitle('task-123')).toHaveTextContent('离线问候页面');
+    expect(chatPanelSpy.lastRoomName).toBe(roomName === 'TASK：task-123' ? '离线问候页面' : roomName);
+    expect(useSectionStore.getState().taskCollaboration?.taskId).toBe('task-123');
   });
   it('shows task collaboration navigation and returns to the board without opening task details', async () => {
     loaded();

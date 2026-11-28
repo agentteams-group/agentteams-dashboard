@@ -63,7 +63,7 @@ import {
 } from './team-agents-logic';
 
 const EMPTY_TEAM: CreateTeamRequest = { name: '', leader: { name: '' }, workerNames: [] };
-const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'openclaw' };
+const EMPTY_WORKER: CreateWorkerRequest = { name: '', runtime: 'codex' };
 
 /**
  * 统一选择（#233 F1：无页签、无「选择→抽屉」路径）——列表/拓扑里点谁，

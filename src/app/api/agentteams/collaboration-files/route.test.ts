@@ -1,14 +1,15 @@
 // @vitest-environment node
+import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { NextRequest, NextResponse } from 'next/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { GET, POST } from './route';
 
-const mock = vi.hoisted(() => ({ proxy: vi.fn(), list: vi.fn(), put: vi.fn() }));
+const mock = vi.hoisted(() => ({ proxy: vi.fn(), list: vi.fn(), put: vi.fn(), stat: vi.fn(), get: vi.fn() }));
 vi.mock('../proxy-helper', () => ({ getControllerUrl: () => '', proxyToAgentTeams: mock.proxy }));
 vi.mock('@/lib/minio-client', () => ({
   getMinioBucket: () => 'bucket',
-  createMinioClient: () => ({ listObjects: mock.list, putObject: mock.put }),
+  createMinioClient: () => ({ listObjects: mock.list, putObject: mock.put, statObject: mock.stat, getObject: mock.get }),
 }));
 
 function request(params: Record<string, string>, user?: string, prefix?: string) {
@@ -37,6 +38,9 @@ beforeEach(() => {
     const stream = new EventEmitter();
     queueMicrotask(() => {
       stream.emit('data', { name: prefix + '报告.md', size: 6 });
+      for (const name of ['index.HTML', 'app.min.js', 'layout.css', 'search.test.tsx', 'Dockerfile']) {
+        stream.emit('data', { name: prefix + name, size: 12 });
+      }
       stream.emit('data', { prefix: prefix + '.ssh/' });
       stream.emit('data', { name: 'another/place/other.md', size: 4 });
       stream.emit('end');
@@ -68,7 +72,9 @@ it('checks the room binding and rejects paths outside the workspace', async () =
 
 it('uses the shared root for browsing and restricts member uploads to the attachment folder', async () => {
   const listing = await GET(request({ team: 'travel', prefix: '聊天附件/' }));
-  expect((await listing.json()).objects[0].key).toBe('聊天附件/报告.md');
+  const keys = (await listing.json()).objects.map((obj: { key: string }) => obj.key);
+  expect(keys).toContain('聊天附件/报告.md');
+  expect(keys).toContain('聊天附件/index.HTML');
   expect(mock.list).toHaveBeenCalledWith('bucket', 'teams/旅行团队/shared/聊天附件/', false);
   expect((await POST(request({ team: 'travel' }, 'outsider'))).status).toBe(403);
   expect((await POST(request({ team: 'travel' }, 'alice', 'tasks/t1/'))).status).toBe(403);
@@ -78,4 +84,17 @@ it('uses the shared root for browsing and restricts member uploads to the attach
   const { key } = await saved.json();
   expect(key).toMatch(/^聊天附件\/[a-f0-9-]+-报告\.md$/);
   expect(mock.put).toHaveBeenCalledWith('bucket', 'teams/旅行团队/shared/' + key, Buffer.from('报告'), 6, { 'content-type': 'text/markdown' });
+});
+
+
+it('keeps a declared standalone HTML directly viewable while excluding sources from the file list', async () => {
+  const html = '<html><body>hello</body></html>';
+  mock.stat.mockResolvedValue({ size: html.length, metaData: { 'content-type': 'text/html' } });
+  mock.get.mockResolvedValue(Readable.from([Buffer.from(html)]));
+  const response = await GET(request({ room: '!task:test', key: 'hello.html' }));
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe(html);
+  expect(response.headers.get('Content-Type')).toBe('text/html');
+  expect(response.headers.get('Content-Disposition')).toContain('attachment;');
+  expect(mock.get).toHaveBeenCalledWith('bucket', 'teams/旅行团队/shared/tasks/t1/hello.html');
 });

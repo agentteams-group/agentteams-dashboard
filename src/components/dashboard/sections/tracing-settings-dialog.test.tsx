@@ -22,7 +22,7 @@ it('saves late configuration, clears the secret field and applies only the selec
   });
   vi.stubGlobal('fetch', fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(<QueryClientProvider client={client}><TracingSettingsDialog scope={{ teams: [], workers: [{ name: 'qwen', team: '', runtime: 'qwenpaw' }, { name: 'hermes', team: '', runtime: 'hermes' }] }} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={client}><TracingSettingsDialog scope={{ teams: [], workers: [{ name: 'qwen', team: '', runtime: 'qwenpaw' }, { name: 'hermes', team: '', runtime: 'hermes' }, { name: 'codex', team: '', runtime: 'codex' }, { name: 'claude', team: '', runtime: 'claudecode' }, { name: 'deepseek', team: '', runtime: 'deepseek-harness' }] }} /></QueryClientProvider>);
   fireEvent.click(screen.getByRole('button', { name: '可观测配置' }));
   await screen.findByLabelText('Langfuse 服务端地址');
   fireEvent.click(screen.getByRole('switch', { name: '启用 Worker Tracing' }));
@@ -34,6 +34,7 @@ it('saves late configuration, clears the secret field and applies only the selec
   await screen.findByText('配置已保存');
   expect((screen.getByLabelText('Secret Key') as HTMLInputElement).value).toBe('');
   expect(screen.getByLabelText('Secret Key').getAttribute('placeholder')).toBe('已配置，留空保留');
+  for (const name of ['qwen', 'hermes', 'codex', 'claude', 'deepseek']) expect(screen.getByRole('checkbox', { name })).toBeTruthy();
   fireEvent.click(screen.getByRole('checkbox', { name: 'qwen' }));
   fireEvent.click(screen.getByRole('button', { name: '应用到所选 Worker（重建生效）' }));
   await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options.method === 'POST' && JSON.stringify(JSON.parse(String(options.body))) === JSON.stringify({ action: 'apply', workers: ['qwen'], revision: 'saved-one' }))).toBe(true));

@@ -9,12 +9,12 @@ describe('Assistant private room picker', () => {
   it('separates AT and team assistants and requires confirmed room membership', () => {
     const choose = vi.fn();
     const rooms: RoomInfo[] = [
-      { id: '!ops:test', name: 'AT助手', type: 'manager', agentRole: 'operations', members: [], access: 'joined' },
+      { id: '!ops:test', name: 'AgentTeams助手', type: 'manager', agentRole: 'operations', members: [], access: 'joined' },
       { id: '!leader:test', name: '设计团队助手', type: 'manager', agentRole: 'leader', members: [], access: 'not-joined' },
       { id: '!group:test', name: '设计团队群聊', type: 'team', members: [], access: 'joined' },
     ];
     render(<AssistantRoomList rooms={rooms} selectedRoomId="!ops:test" onSelectRoom={choose} />);
-    const at = within(screen.getByRole('region', { name: 'AT助手' })).getByRole('button', { name: 'AT助手' });
+    const at = within(screen.getByRole('region', { name: 'AgentTeams助手' })).getByRole('button', { name: 'AgentTeams助手' });
     fireEvent.pointerEnter(at, { pointerType: 'mouse' });
     expect(choose).not.toHaveBeenCalled();
     fireEvent.click(at);
@@ -26,7 +26,7 @@ describe('Assistant private room picker', () => {
 
   it('explains unavailable assistant types without exposing private room identifiers', () => {
     render(<AssistantRoomList rooms={[]} selectedRoomId={null} onSelectRoom={vi.fn()} />);
-    expect(screen.getByText('当前账号没有可用的 AT 助手私聊。')).toBeInTheDocument();
+    expect(screen.getByText('当前账号没有可用的 AgentTeams助手私聊。')).toBeInTheDocument();
     expect(screen.getByText('团队助手仅对你担任 Team Admin 的团队开放。')).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -78,5 +78,8 @@ it('updates progress while open and draws an undecomposed task as a single node'
   rerender(topology([main, itinerary, { ...budget, runId: 'main-budget', title: 'main-budget', status: 'completed' }]));
   expect(screen.getByRole('button', { name: 'budget · planner' })).toBeVisible();
   expect(screen.getByText('子任务 2/2 已完成')).toBeVisible();
+  expect(within(screen.getByRole('region', { name: '任务概要' })).getByText('Leader 验收中')).toBeVisible();
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+  rerender(topology([{ ...main, status: 'completed' }, itinerary, { ...budget, status: 'completed' }]));
+  expect(screen.queryByText('Leader 验收中')).toBeNull();
 });

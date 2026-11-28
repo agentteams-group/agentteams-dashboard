@@ -52,6 +52,19 @@ describe('model-catalog', () => {
     expect(MODEL_PRESET_NOTES['gpt-6.1-sol']).toContain('Responses');
   });
 
+  it('keeps a passthrough connection selectable without an explicit alias mapping', () => {
+    const options = buildModelSelectionOptions([{
+      ...routes[0], name: 'default-ai-route', modelPredicates: [],
+      upstreams: [{ provider: 'qwen', weight: 100, modelMapping: {} }],
+    }], [{ name: 'qwen', type: 'qwen', tokenCount: 1 }]);
+    const catalog = buildModelCandidateCatalog(options);
+    expect(catalog.providers).toContain('qwen');
+    expect(catalog.modelsByProvider.qwen).toContain('qwen3.8-max');
+    expect(options.find(option => option.alias === 'qwen3.8-max')?.binding).toMatchObject({
+      providerName: 'qwen', available: false, passthrough: true,
+    });
+  });
+
   it('combines configured aliases with builtin aliases', () => {
     const options = buildModelSelectionOptions(routes, providers);
 

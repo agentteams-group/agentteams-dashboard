@@ -95,7 +95,7 @@ export function ManagerCreateDialog({
               <InfoTip label="运行时选择说明">推荐 QwenPaw。CoPaw 已停止新建。</InfoTip>
             </div>
             <Select
-              value={value.runtime || 'openclaw'}
+              value={value.runtime || 'qwenpaw'}
               onValueChange={(runtime) => onChange({ ...value, runtime })}
             >
               <SelectTrigger className="w-full min-w-0">

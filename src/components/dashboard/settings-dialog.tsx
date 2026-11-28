@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAgentTeamsStore } from '@/lib/agentteams-store';
 import { apiUrl } from '@/lib/api-base';
 import {
@@ -30,11 +30,8 @@ import {
   Cpu,
   Server,
   History,
-  Eye,
-  EyeOff,
   Palette,
   Puzzle,
-  Sparkles,
 } from 'lucide-react';
 import { useInfrastructure } from '@/hooks/use-agentteams-infrastructure';
 import { ThemeTab } from './settings/theme-tab';
@@ -45,9 +42,7 @@ import { ClientConfigTab } from './settings/client-config-tab';
 import { ChatConnectionSettings } from './settings/chat-connection-settings';
 import { ChatInputSettings } from './settings/chat-input-settings';
 import { UpdateTab } from './settings/update-tab';
-import { ManagementTab, navigateFromSettings } from './settings/management-tab';
-
-const PluginGallery = lazy(() => import('./sections/plugins/plugin-gallery').then(module => ({ default: module.PluginGallery })));
+import { ManagementTab } from './settings/management-tab';
 
 // Empty default means "use the server-side AGENTTEAMS_CONTROLLER_URL" so the same
 // image works in embedded (localhost) and Kubernetes (in-cluster) modes.
@@ -71,8 +66,6 @@ export function SettingsDialog() {
     connectionLatency,
     lastConnectedAt,
     connectionHistory,
-    taskBoardVisible,
-    setTaskBoardVisible,
     userLevel,
   } = useAgentTeamsStore();
 
@@ -184,10 +177,6 @@ export function SettingsDialog() {
             <TabsTrigger value="theme">
               <Palette className="w-3.5 h-3.5 mr-1" />
               外观
-            </TabsTrigger>
-            <TabsTrigger value="beta">
-              <Sparkles className="w-3.5 h-3.5 mr-1" />
-              Beta功能
             </TabsTrigger>
             <TabsTrigger value="plugins">
               <Puzzle className="w-3.5 h-3.5 mr-1" />
@@ -376,30 +365,6 @@ export function SettingsDialog() {
             )}
           </TabsContent>
 
-          <TabsContent value="beta" className="space-y-4 py-4">
-            {/* Task board visibility */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="flex items-center gap-2">
-                  {taskBoardVisible ? (
-                    <Eye className="w-3.5 h-3.5" />
-                  ) : (
-                    <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
-                  )}
-                  任务看板
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  关闭后工作台的任务与产物分类会隐藏，原有直接链接仍然可用
-                </p>
-              </div>
-              <Switch
-                checked={taskBoardVisible}
-                onCheckedChange={setTaskBoardVisible}
-              />
-            </div>
-
-          </TabsContent>
-
           <TabsContent value="backends" className="space-y-6 py-4">
             <BackendTab />
             <SpeechSettings canManage={isL1} />
@@ -411,7 +376,6 @@ export function SettingsDialog() {
 
           <TabsContent value="plugins" className="py-4">
             <div className="space-y-6">
-              <Suspense fallback={<p className="text-sm text-muted-foreground">加载插件…</p>}><PluginGallery onNavigate={navigateFromSettings} /></Suspense>
               <PluginsTab />
             </div>
           </TabsContent>

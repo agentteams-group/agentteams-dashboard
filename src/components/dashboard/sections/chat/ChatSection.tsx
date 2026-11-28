@@ -135,7 +135,13 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
       const projected = buildRooms(workers, teams, managers, roomMeta as RoomMetaByRoomId, humans, taskFeed.workflows);
       for (const task of taskBoard.tasks) {
         const id = task.executionRoomId?.replace(/^room:/, '');
-        if (id && !projected.some(room => room.id === id)) projected.push({ id, name: roomMeta[id]?.roomName || task.title, type: 'project', members: [], parentTeam: task.teamId, teamId: task.teamId, projectId: task.projectId });
+        if (!id) continue;
+        const displayTask = taskBoard.tasks.find(parent => parent.runId === task.parentTaskId && parent.teamId === task.teamId) ?? task;
+        const roomName = roomMeta[id]?.roomName;
+        const name = !roomName || roomName === `TASK：${task.runId}` || roomName === `TASK：${displayTask.runId}` ? displayTask.title : roomName;
+        const existing = projected.find(room => room.id === id);
+        if (existing) existing.name = name;
+        else projected.push({ id, name, type: 'project', members: [], parentTeam: task.teamId, teamId: task.teamId, projectId: task.projectId });
       }
       for (const archived of archivedRooms.data?.rooms ?? []) {
         const existing = projected.find(room => room.id === archived.room_id);
@@ -165,10 +171,12 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
   const attentionPending = taskFeed.degraded || taskFeed.partialError ? '任务数据待更新' : taskFeed.loading ? '任务同步中…' : undefined;
   const taskIdForRoom = useCallback((room: RoomInfo) => {
     if (room.type !== 'project' && room.type !== 'unknown') return undefined;
-    return room.name.match(/^TASK[：:]\s*(.+)$/i)?.[1]
-      ?? taskBoard.tasks.find(task => task.executionRoomId?.replace(/^room:/, '') === room.id)?.runId
+    const task = taskBoard.tasks.find(task => task.executionRoomId?.replace(/^room:/, '') === room.id);
+    return task?.parentTaskId ?? task?.runId
+      ?? roomMeta[room.id]?.roomName?.match(/^TASK[：:]\s*(.+)$/i)?.[1]
+      ?? room.name.match(/^TASK[：:]\s*(.+)$/i)?.[1]
       ?? taskFeed.workflows.flatMap(workflow => workflow.tasks_detail ?? []).find(task => task.room_id?.replace(/^room:/, '') === room.id)?.task_id;
-  }, [taskFeed.workflows, taskBoard.tasks]);
+  }, [taskFeed.workflows, taskBoard.tasks, roomMeta]);
 
   const handleSelectRoom = useCallback((roomId: string, remember = true) => {
     const room = availableRooms.find(room => room.id === roomId);
@@ -352,7 +360,7 @@ export function ChatSection({ view = 'all' }: { view?: 'all' | 'assistants' | 't
               <ArrowLeft className="size-4" />返回任务看板
             </Button>
             <span aria-hidden className="text-muted-foreground">/</span>
-            <span className="min-w-0 truncate" title={taskCollaboration.taskId}>{taskCollaboration.taskId}</span>
+            <span className="min-w-0 truncate" title={taskCollaboration.taskId}>{taskBoard.tasks.find(task => task.runId === taskCollaboration.taskId)?.title || taskCollaboration.taskId}</span>
             <span aria-hidden className="text-muted-foreground">/</span>
             <span aria-current="page">协作</span>
           </nav>

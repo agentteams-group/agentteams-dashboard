@@ -122,7 +122,7 @@ export function WorkspaceHome({ teams, managers, workerCount, tasks, loading, de
         <WorkspaceClock />
         <div className="flex flex-wrap items-center gap-3">
           {level >= 3 && <form className={styles.composer} onSubmit={event => { event.preventDefault(); const text = draft.trim(); if (text) { sendCommand(text); setDraft(''); } }}>
-            <input className={styles.composerInput} value={draft} onChange={event => setDraft(event.target.value)} placeholder="今天想完成什么？交给 Agent 开始..." aria-label="向 AT 助手输入指令" />
+            <input className={styles.composerInput} value={draft} onChange={event => setDraft(event.target.value)} placeholder="今天想完成什么？交给 Agent 开始..." aria-label="向 AgentTeams助手输入指令" />
             <div className={styles.composerRow}>
               <button type="button" className={styles.chip} aria-pressed={withContext} onClick={() => setWithContext(value => !value)}>+ 添加上下文</button>
               <button type="button" className={styles.chip} aria-pressed={autoAssign} onClick={() => setAutoAssign(value => !value)}>自动分配 Agent</button>
@@ -149,7 +149,7 @@ export function WorkspaceHome({ teams, managers, workerCount, tasks, loading, de
           {loading ? <p className={styles.empty}>正在加载推荐…</p>
             : degraded ? <p className={styles.empty}>任务暂时无法加载，请稍后重试。</p>
               : recommendations.length ? recommendations.map(recommendation => <div key={recommendation.key} className={styles.row}><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium" title={recommendation.title}>{recommendation.title}</p><p className="mt-1 truncate text-xs text-muted-foreground">{recommendation.meta}</p></div><Button variant="link" size="sm" onClick={() => recommendation.roomId ? openChatRoom(recommendation.roomId) : openTasks(recommendation.task)}>去处理<ArrowUpRight className="size-3.5" /></Button></div>)
-                : <p role="status" className={styles.empty}>今日暂无推荐，先和 AT 助手说一句吧</p>}
+                : <p role="status" className={styles.empty}>今日暂无推荐，先和 AgentTeams助手说一句吧</p>}
           <div className={styles.quick}>
             {QUICK_COMMANDS.map(command => <button key={command} type="button" className={styles.chip} onClick={() => sendCommand(command)}>{command}</button>)}
           </div>

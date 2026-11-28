@@ -47,16 +47,11 @@ import { useHumans } from '@/hooks/use-agentteams-humans';
 import { CopyButton } from '@/components/dashboard/copy-button';
 import { PhaseBadge } from '@/components/dashboard/phase-badge';
 import { StatusDot } from '@/components/dashboard/status-dot';
-import { LlmTuningFields } from '@/components/dashboard/sections/workers/llm-tuning-fields';
 import { useCreateTeam, useDeleteTeam, useUpdateTeam } from '@/hooks/use-agentteams-mutations';
 import { teamHumanMembers, type TeamResponse, type WorkerResponse } from '@/lib/agentteams-api';
 import { formatErrorMessage } from '@/lib/api-error';
-import {
-  findLlmTuningError,
-  pickLlmTuning,
-  type LlmTuningKey,
-  type LlmTuningRecord,
-} from '@/lib/llm-tuning';
+import { getRuntimeMeta } from '@/lib/runtime-meta';
+import { pickLlmTuning } from '@/lib/llm-tuning';
 import type { ModelSelectionOption } from '@/lib/model-catalog';
 import { computeTeamAnalytics } from '@/lib/team-analytics';
 import { toast } from 'sonner';
@@ -156,7 +151,6 @@ export function TeamSettingsPanel({
   ]);
   const agentCount = new Set([...(team.workerNames ?? []), ...(team.leaderName ? [team.leaderName] : [])]).size;
   const [basic, setBasic] = useState<TeamBasicDraft>(() => buildBasicDraft(team));
-  const [llm, setLlm] = useState<LlmTuningRecord>(() => pickLlmTuning(team));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notices, setNotices] = useState<string[]>([]);
@@ -173,7 +167,7 @@ export function TeamSettingsPanel({
     ? '暂时无法连接对话服务，请检查服务状态。'
     : '展开技术详情，查看具体失败原因。';
   const showPeerMentions = typeof team.peerMentions === 'boolean';
-  const llmError = findLlmTuningError(llm);
+  const supportsHeartbeat = workers.some(worker => (worker.name === team.leaderName || team.workerNames?.includes(worker.name)) && getRuntimeMeta(worker.runtime)?.supportsAutonomousHeartbeat === true);
 
   const toggle = (id: string) => {
     setExpanded((previous) => {
@@ -186,11 +180,7 @@ export function TeamSettingsPanel({
 
   const handleSaveBasic = async () => {
     if (saving) return;
-    if (llmError) {
-      setError(`${llmError.label}：${llmError.message}`);
-      return;
-    }
-    const data = buildBasicUpdate(team, basic, llm);
+    const data = buildBasicUpdate(team, basic, pickLlmTuning(team));
     if (Object.keys(data).length === 0) {
       toast.info('没有需要保存的改动');
       return;
@@ -216,7 +206,6 @@ export function TeamSettingsPanel({
         nextNotices.push('团队名称未生效：请检查后端返回');
       }
       setNotices(nextNotices);
-      setLlm(pickLlmTuning(updated ?? team));
       onChanged?.();
     } catch (err) {
       setError(formatErrorMessage(err));
@@ -379,6 +368,7 @@ export function TeamSettingsPanel({
               </Label>
               <Input
                 id="team-drawer-heartbeat"
+                disabled={!supportsHeartbeat}
                 className="min-h-11 text-xs sm:min-h-9"
                 value={basic.heartbeatEvery}
                 placeholder="如 10m（留空 = 清空）"
@@ -386,20 +376,7 @@ export function TeamSettingsPanel({
                   setBasic({ ...basic, heartbeatEvery: event.target.value })
                 }
               />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="team-drawer-subagent-model" className="text-xs">
-                子代理默认模型（subagentModel）
-              </Label>
-              <Input
-                id="team-drawer-subagent-model"
-                className="min-h-11 text-xs sm:min-h-9"
-                value={basic.subagentModel}
-                placeholder="留空 = 继承各 Worker 主模型"
-                onChange={(event) =>
-                  setBasic({ ...basic, subagentModel: event.target.value })
-                }
-              />
+              {!supportsHeartbeat && <p className="text-xs text-muted-foreground">当前团队成员的运行时暂不支持自主巡检。</p>}
             </div>
             {showPeerMentions && (
               <div className="flex min-h-11 items-center gap-2">
@@ -414,26 +391,6 @@ export function TeamSettingsPanel({
               </div>
             )}
 
-              <div className="border-t pt-4">
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              团队级默认：成员 Worker 未单独设置时继承。留空 = 不设置；保存随团队 PUT。
-            </p>
-            <LlmTuningFields
-              values={llm}
-              onChange={(key: LlmTuningKey, value: string) =>
-                setLlm((previous) => ({ ...previous, [key]: value }))
-              }
-              disabled={saving}
-              idPrefix="team-drawer-llm"
-            />
-            {llmError && (
-              <p className="text-xs text-destructive">
-                {llmError.label}：{llmError.message}
-              </p>
-            )}
-          </div>
-              </div>
               </div>
             </SettingsSection>
             <SettingsSection title="运行状态与房间信息" icon={Users} expanded={expanded.has('status')} onToggle={() => toggle('status')}>

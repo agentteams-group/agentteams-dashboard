@@ -8,8 +8,8 @@ import type { BoardTask } from '@/hooks/use-task-board';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { RoomTasksPanel, useRoomTaskData, type RoomTaskData } from './RoomTasksPanel';
-import { completedTaskDuration, StatusBadge, SubtaskProgress, TaskDependencies, taskMetaQuery } from '../../task-detail-sheet';
-import { subtasksOf } from '@/lib/task-hierarchy';
+import { completedTaskDuration, StatusBadge, SubtaskProgress, TaskDependencies, taskMetaQuery, taskSummaryText } from '../../task-detail-sheet';
+import { subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
 import { isComposing, isDesktopHover } from '@/lib/desktop-interactions';
 
 export function TaskTopologyPopover({ roomId, taskId, roomTaskData }: { roomId: string; taskId?: string; roomTaskData?: RoomTaskData }) {
@@ -29,7 +29,7 @@ export function TaskTopologyPopover({ roomId, taskId, roomTaskData }: { roomId: 
         <GitBranch className="size-4" />任务拓扑
       </Button>
     </PopoverAnchor>
-    <PopoverContent role="dialog" aria-label="任务拓扑" align="end" side="bottom" sideOffset={8} className="w-[min(90vw,52rem)] max-h-[min(70vh,32rem)] overflow-auto rounded-xl border-border/70 p-0 shadow-lg" onPointerEnter={clear} onPointerLeave={leave} onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => { if (openedByHover.current) event.preventDefault(); }}>
+    <PopoverContent role="dialog" aria-label="任务拓扑" align="end" side="bottom" sideOffset={8} className="w-[min(90vw,52rem)] max-h-[min(80vh,48rem)] overflow-auto rounded-xl border-border/70 p-0 shadow-lg" onPointerEnter={clear} onPointerLeave={leave} onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => { if (openedByHover.current) event.preventDefault(); }}>
       {roomTaskData
         ? <RoomTopology roomId={roomId} taskId={taskId} data={roomTaskData} />
         : <StandaloneRoomTopology roomId={roomId} taskId={taskId} />}
@@ -72,30 +72,31 @@ function TaskTopology({ task, tasks }: { task: BoardTask; tasks: BoardTask[] }) 
     refetchInterval: task.status === 'completed' ? false : 5000,
   });
   const meta = detail.data;
-  const summary = meta?.summary || meta?.description || meta?.spec || task.spec;
+  const summary = taskSummaryText(meta?.summary || meta?.description || meta?.spec || task.spec);
   const latestProgress = meta?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const progressNote = task.status === 'completed' ? meta?.result_summary || latestProgress : latestProgress;
   const elapsed = completedTaskDuration(task, meta);
+  const progress = subtaskProgress(task, tasks);
 
-  return <div className="space-y-4 p-4 sm:p-5">
-    <section aria-label="任务概要" className="space-y-2">
-      <h3 className="text-xs font-medium text-muted-foreground">任务概要</h3>
-      <h4 className="break-words text-base font-semibold">{task.title}</h4>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span className="break-all font-mono">{task.runId}</span>
-        {task.assignedTo && <span>负责人 {task.assignedTo}</span>}
+  return <div className="bg-muted/20">
+    <section aria-label="任务概要" className="sticky top-0 z-10 space-y-2 border-b border-border/70 bg-card px-4 py-4 sm:px-5">
+      <div className="flex items-center justify-between gap-3"><h3 className="text-xs font-medium text-muted-foreground">任务概要</h3><StatusBadge status={task.status} progress={progress} /></div>
+      <h4 className="line-clamp-2 break-words text-base font-semibold leading-snug" title={task.title}>{task.title}</h4>
+      {summary && <p className="line-clamp-1 whitespace-pre-wrap break-words text-sm text-muted-foreground" title={summary}>{summary}</p>}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" title={task.runId}>
+        {task.assignedTo && <span title={task.assignedTo}>负责人 {task.assignedTo.replace(/^@([^:]+):.+$/, '$1')}</span>}
+        {elapsed && <span className="ml-auto tabular-nums">总耗时 {elapsed}</span>}
       </div>
-      {summary && <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground" title={summary}>{summary}</p>}
     </section>
-    <section aria-label="当前进度" className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+    <div className="space-y-4 p-4 sm:p-5">
+    <section aria-label="当前进度" className="space-y-2 rounded-xl border border-border/70 bg-card p-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="mr-auto text-xs font-medium">当前进度</h3>
-        {elapsed && <span className="text-xs text-muted-foreground">总耗时 {elapsed}</span>}
-        <StatusBadge status={task.status} />
       </div>
       <SubtaskProgress task={task} tasks={tasks} />
       {progressNote && <p className="line-clamp-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground" title={progressNote}>{progressNote}</p>}
     </section>
     <TaskDependencies task={task} tasks={tasks} showSingleTask />
+    </div>
   </div>;
 }

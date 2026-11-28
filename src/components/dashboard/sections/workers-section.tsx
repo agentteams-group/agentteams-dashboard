@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useWorkers } from '@/hooks/use-agentteams-workers';
+import { useTeams } from '@/hooks/use-agentteams-teams';
 import {
   useCreateWorker,
   useDeleteWorker,
@@ -139,6 +140,7 @@ function skillChipClass(done: boolean, failed: boolean, specFailed: boolean): st
 
 export function WorkersSection() {
   const { data: workers, isLoading, isError, refetch, isRefetching } = useWorkers();
+  const { data: teams } = useTeams();
   const { isConnected, userLevel } = useAgentTeamsStore();
   const { searchQuery } = useSearch();
   const createWorker = useCreateWorker();
@@ -176,7 +178,7 @@ export function WorkersSection() {
   const [deletingWorkerNames, setDeletingWorkerNames] = useState<Set<string>>(new Set());
   const [deleteError, setDeleteError] = useState<{ worker: string; message: string } | null>(null);
 
-  const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'openclaw' });
+  const [newWorker, setNewWorker] = useState<CreateWorkerRequest>({ name: '', runtime: 'codex' });
   const [editForm, setEditForm] = useState<WorkerEditForm>({});
   const [agentSpecs, setAgentSpecs] = useState<Array<{ name: string; description: string; version: string }>>([]);
   // modelOptions 来自 useModelSelection（上方）——同源单一实现。
@@ -438,7 +440,7 @@ export function WorkersSection() {
     createWorker.mutate(newWorker, {
       onSuccess: (worker) => {
         setCreateOpen(false);
-        setNewWorker({ name: '', runtime: 'openclaw' });
+        setNewWorker({ name: '', runtime: 'codex' });
         const skills = newWorker.skills;
         if (skills?.length && worker) {
           void syncWorkerSkills(worker.name, skills);
@@ -607,7 +609,7 @@ export function WorkersSection() {
     setConfigError(null);
     try {
       const parsed = JSON.parse(configText);
-      const runtime = parsed.runtime || 'openclaw';
+      const runtime = parsed.runtime || 'codex';
       const blocked = rejectCopawCreate(runtime);
       if (blocked) {
         setConfigError(blocked);
@@ -849,7 +851,15 @@ export function WorkersSection() {
               onToggleSelect={toggleSelect}
               onView={openDetail}
               onEdit={openEdit}
-              onOpenChat={(worker) => openChatRoom(worker.roomID)}
+              onOpenChat={async (worker) => {
+                try {
+                  const team = teams?.find(item => item.leaderName === worker.name)
+                    ?? (worker.role === 'team_leader' && worker.team ? await agentteamsApi.getTeam(worker.team) : undefined);
+                  openChatRoom(team?.leaderName === worker.name ? team.leaderDMRoomID || worker.roomID : worker.roomID);
+                } catch (error) {
+                  toast.error(formatErrorMessage(error));
+                }
+              }}
               onWake={(name) => wakeWorker.mutate(name)}
               onSleep={(name) => sleepWorker.mutate(name)}
               onEnsureReady={(name) => ensureReadyWorker.mutate(name)}

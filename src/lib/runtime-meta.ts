@@ -7,18 +7,25 @@ import type { WorkerRuntime } from '@/lib/agentteams-api';
 export interface RuntimeMeta {
   /** Product logo, bundled locally; provenance is in public/runtime-logos/README.md. */
   logo: string;
+  /** Standard desired.heartbeat consumption is currently implemented by OpenClaw only. */
+  supportsAutonomousHeartbeat?: boolean;
   /** One-line capability note shown in tooltips and the card feature strip. */
   description: string;
 }
 
 export const RUNTIME_META: Record<WorkerRuntime, RuntimeMeta> = {
+  claudecode: {
+    logo: '/runtime-logos/claudecode.svg',
+    description: 'Claude Code Harness，支持原生工具、会话与审批',
+  },
   codex: {
     logo: '/runtime-logos/codex.svg',
     description: 'Codex Harness，支持 Matrix 任务消息与运行时审批回执',
   },
   openclaw: {
+    supportsAutonomousHeartbeat: true,
     logo: '/runtime-logos/openclaw.svg',
-    description: '默认基础运行时，支持 A2UI 协议',
+    description: '兼容运行时，资源占用较大，不推荐新建',
   },
   copaw: {
     logo: '/runtime-logos/copaw.png',

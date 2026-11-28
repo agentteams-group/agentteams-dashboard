@@ -3,7 +3,7 @@
 // Existing aliases are retained so upgrading does not discard saved values.
 
 import type { AiRoute, LlmProviderResponse } from '@/lib/higress-api';
-import { listAvailableRequestModelAliases, type AgentTeamsModelBinding } from '@/lib/model-bindings';
+import { buildModelBindings, listAvailableRequestModelAliases, type AgentTeamsModelBinding } from '@/lib/model-bindings';
 
 export const PROVIDER_MODEL_PRESETS: Readonly<Record<string, readonly string[]>> = {
   // https://developers.openai.com/api/docs/models
@@ -144,7 +144,15 @@ export function buildModelSelectionOptions(
   providers: LlmProviderResponse[],
   sglangModels: readonly string[] = [],
 ): ModelSelectionOption[] {
-  const available = listAvailableRequestModelAliases(routes, providers);
+  // Resolve presets through existing passthrough routes as well as explicit aliases.
+  const aliases = [...new Set([
+    ...BUILTIN_MODEL_ALIASES,
+    ...listAvailableRequestModelAliases(routes, providers).map(binding => binding.requestModelAlias),
+  ])];
+  const providerNames = new Set(providers.map(provider => provider.name));
+  const available = buildModelBindings(aliases, routes, providers).filter(binding =>
+    binding.available || (binding.passthrough && providerNames.has(binding.providerName)),
+  );
   const configuredAliases = new Set(available.map((binding) => binding.requestModelAlias));
   const routesByName = new Map(routes.map((route) => [route.name, route]));
   const aliasLayer: ModelSelectionOption[] = [
@@ -152,7 +160,7 @@ export function buildModelSelectionOptions(
       const route = binding.routeName ? routesByName.get(binding.routeName) : undefined;
       return {
         alias: binding.requestModelAlias,
-        kind: 'configured' as const,
+        kind: binding.available ? 'configured' as const : 'builtin' as const,
         binding,
         routeAuth: route
           ? {

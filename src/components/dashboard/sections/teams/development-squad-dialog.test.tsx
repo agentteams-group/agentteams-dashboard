@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 describe('development squad request dialog', () => {
   it('shows four Codex roles and requires a repository before sending', () => {
     render(<DevelopmentSquadDialog open onOpenChange={() => {}} onRequested={() => {}} />);
-    for (const name of ['研发 Leader', '开发工程师', '代码评审工程师', '测试工程师']) expect(screen.getByText(name)).toBeInTheDocument();
+    for (const name of ['研发 Leader', '开发工程师', 'Issue 分析员', '测试工程师']) expect(screen.getByText(name)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '一键部署' })).toBeDisabled();
     expect(screen.getByText(/四个角色统一使用 Codex/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('留空使用当前集群默认模型')).toBeInTheDocument();

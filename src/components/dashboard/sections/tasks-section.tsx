@@ -1,7 +1,7 @@
 'use client';
 
 import { isDesktopHover } from '@/lib/desktop-interactions';
-import { taskStatus } from '@/lib/task-status';
+import { awaitsLeaderReview, taskStatus } from '@/lib/task-status';
 
 import { useState, useMemo, useCallback, useEffect, useRef, useId } from 'react';
 import { useShallow } from 'zustand/shallow';
@@ -67,7 +67,7 @@ import { useTaskStore } from '@/lib/task-store';
 import { useHitlInboxStore } from '@/lib/hitl-inbox';
 import { openChatRoom } from '@/lib/open-chat-room';
 import { buildProjectDag } from '@/lib/project-dag';
-import { mainTasks, subtasksOf } from '@/lib/task-hierarchy';
+import { mainTasks, subtasksOf, subtaskProgress } from '@/lib/task-hierarchy';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { isStaleProjectSelection } from './task-selectors';
 import { ProjectDagSvg } from '@/components/dashboard/project-dag-svg';
@@ -156,7 +156,7 @@ function TaskPreview({ task, tasks, project, team, onOpenDetails }: { task: Boar
   const latestProgress = detail.data?.history?.findLast(event => event.action === 'report_progress' && event.note)?.note;
   const created = task.createdAt || (detail.data?.created_at ? new Date(detail.data.created_at).getTime() : 0);
   return <div className="space-y-2">
-    <div className="space-y-2 pr-6"><StatusBadge status={task.status} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
+    <div className="space-y-2 pr-6"><StatusBadge status={task.status} progress={subtaskProgress(task, tasks)} /><h3 className="text-sm font-semibold leading-6">{task.title}</h3></div>
     <SubtaskProgress task={task} tasks={tasks} />
     <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-muted-foreground">创建时间</dt><dd>{created > 0 ? new Date(created).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂未提供'}</dd>
@@ -229,6 +229,8 @@ function TaskCard({
   project?: BoardProject;
 }) {
   const expanded = selected ?? (highlightProjectId === task.projectId);
+  const progress = subtaskProgress(task, tasks);
+  const reviewing = awaitsLeaderReview(task.status, progress);
   const [previewOpen, setPreviewOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewTitle = useId();
@@ -260,11 +262,11 @@ function TaskCard({
         <div className="flex items-start gap-2">
           <OverflowText text={task.title} multiline className="min-w-0 flex-1 text-sm font-medium leading-6" />
           {task.kind === 'project-summary' && <Badge variant="outline">项目</Badge>}
-          {!showStatus && task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />}
+          {!showStatus && (reviewing ? <StatusBadge status={task.status} progress={progress} /> : task.status === 'in_progress' && <Loader2 aria-label="任务正在执行" className="mt-1 size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />)}
         </div>
         <SubtaskProgress task={task} tasks={tasks} />
         {(showStatus || task.outcome || task.dependsOn.length > 0) && <div className="flex items-start gap-2">
-          {showStatus && <StatusBadge status={task.status} />}
+          {showStatus && <StatusBadge status={task.status} progress={subtaskProgress(task, tasks)} />}
           {task.outcome && <OutcomeBadge outcome={task.outcome} />}
           {task.dependsOn.length > 0 && (
             <Badge
@@ -820,6 +822,7 @@ export function TasksSection() {
           {[
             { title: '任务流程', keys: ['pending', 'assigned', 'in_progress', 'submitted', 'completed'], layout: 'grid-cols-1 md:grid-cols-3 xl:grid-cols-5' },
             { title: '需要关注', keys: ['blocked', 'revision', 'failed', ...(tasksByStatus.get('unknown')?.length ? ['unknown'] : [])], layout: 'grid-cols-1 md:grid-cols-3' },
+            ...(tasksByStatus.get('cancelled')?.length ? [{ title: '已取消', keys: ['cancelled'], layout: 'grid-cols-1' }] : []),
           ].map((group) => (
             <section key={group.title} className="space-y-3" aria-label={group.title}>
               <h3 className="text-sm font-medium text-muted-foreground">{group.title}</h3>

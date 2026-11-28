@@ -145,7 +145,7 @@ describe('ManagerDrawer', () => {
     expect(screen.getAllByText('运行中')).toHaveLength(1);
     expect(screen.queryByText('Running')).toBeNull();
     expect(screen.queryByText('欢迎消息')).toBeNull();
-    expect(screen.queryByText(baseManager.image)).toBeNull();
+    expect(screen.getByText(baseManager.image)).toBeInTheDocument();
     expect(screen.getByText('版本 2.2.2')).toHaveAttribute('title', baseManager.image);
     expect(screen.getByText('管理员会话')).toBeInTheDocument();
     expect(screen.getByText(/不代表当前登录账号的专属私聊/)).toBeInTheDocument();
@@ -203,15 +203,15 @@ describe('ManagerDrawer', () => {
 
   it('saves the model through updateManagerModel', async () => {
     renderDrawer();
-    selectTab('模型');
-    fireEvent.click(screen.getByRole('button', { name: '模型配置' }));
+    selectTab('基础配置');
+    fireEvent.click(screen.getByRole('button', { name: '编辑基础配置' }));
 
     const input = await screen.findByRole('combobox', { name: /^(请求模型别名|模型)$/ });
     fireEvent.change(input, { target: { value: 'team-chat-v2' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() =>
-      expect(mocks.updateManagerModel).toHaveBeenCalledWith('manager-a', 'team-chat-v2', undefined),
+      expect(mocks.updateManagerAsync).toHaveBeenCalledWith({ name: 'manager-a', data: { model: 'team-chat-v2', modelProvider: baseManager.modelProvider, runtime: baseManager.runtime, image: baseManager.image } }),
     );
   });
 
@@ -298,7 +298,7 @@ describe('ManagerDrawer', () => {
 
   it('keeps the environment draft open when the Controller does not echo a saved value', async () => {
     renderDrawer();
-    selectTab('环境变量');
+    selectTab('环境变量与参数');
     fireEvent.click(await screen.findByRole('button', { name: '环境变量' }));
 
     fireEvent.change(screen.getByLabelText('变量值 1'), { target: { value: '2' } });
@@ -317,7 +317,7 @@ describe('ManagerDrawer', () => {
   it('does not offer a save operation on older Controllers without environment support', async () => {
     mocks.fetchManagerFull.mockResolvedValue(managerWith({ envEditable: undefined }));
     renderDrawer(managerWith({ envEditable: undefined }));
-    selectTab('环境变量');
+    selectTab('环境变量与参数');
     expect(await screen.findByText(/当前 Controller 不支持编辑助手环境变量/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '环境变量' })).toBeDisabled();
     expect(mocks.updateManagerAsync).not.toHaveBeenCalled();
@@ -325,7 +325,7 @@ describe('ManagerDrawer', () => {
 
   it('confirms an environment save only after the values read back correctly', async () => {
     renderDrawer();
-    selectTab('环境变量');
+    selectTab('环境变量与参数');
     fireEvent.click(await screen.findByRole('button', { name: '环境变量' }));
     fireEvent.change(screen.getByLabelText('变量值 1'), { target: { value: '2' } });
     mocks.fetchManagerFull.mockResolvedValue(managerWith({ envEditable: true, env: { A: '2' } }));
@@ -368,8 +368,8 @@ describe('ManagerDrawer', () => {
     expect(screen.queryByRole('button', { name: '休眠' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重启' })).not.toBeInTheDocument();
     expect(screen.getByText(/只读：编辑 Manager 配置需要 L1 管理员权限/)).toBeInTheDocument();
-    selectTab('模型');
-    expect(screen.getByRole('button', { name: '模型配置' })).toBeDisabled();
+    selectTab('基础配置');
+    expect(screen.getByRole('button', { name: '编辑基础配置' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /容器日志/ })).not.toBeInTheDocument();
     selectTab('运行参数');
     expect(screen.getByLabelText('心跳间隔')).toBeDisabled();
@@ -450,4 +450,15 @@ describe('ManagerDrawer container logs', () => {
     expect(await screen.findByText('（无日志行）')).toBeInTheDocument();
     expect(mocks.getManagerLogs).toHaveBeenCalledTimes(1);
   });
+});
+
+it.each(['qwenpaw', 'hermes', 'deepseek-harness', 'claudecode', 'codex'])('shows the same standard Manager approval page for %s', async (runtime) => {
+  const manager = managerWith({ runtime, approvalMode: 'allow' });
+  mocks.fetchManagerFull.mockResolvedValue(manager);
+  renderDrawer(manager);
+  await waitFor(() => expect(mocks.fetchManagerFull).toHaveBeenCalled());
+  fireEvent.mouseDown(screen.getByRole('tab', { name: '高级配置' }), { button: 0 });
+  expect(await screen.findByText('当前策略：自动通过')).toBeVisible();
+  expect(screen.getByRole('button', { name: '编辑工具审批' })).toBeEnabled();
+  expect(screen.queryByText(/endpoint unsupported/)).not.toBeInTheDocument();
 });

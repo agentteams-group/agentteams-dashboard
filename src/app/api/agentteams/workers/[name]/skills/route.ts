@@ -201,7 +201,7 @@ export async function POST(
       description: parsed.description,
       filesCount: parsed.files.length,
       prefix: workerSkillsPrefix(name, runtime),
-      runtime: runtime ?? 'openclaw',
+      runtime: runtime ?? 'qwenpaw',
       note,
     });
   } catch (err: unknown) {
